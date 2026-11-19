@@ -102,7 +102,7 @@ help: the following other types implement trait `co3::stored::_::DecodeMove_cfg0
    | |         Self: RustSpec<Layout = Stable> + ReprC<CType: crate::CType + RefCarrier<R>>,
    | |         R: RustSpec<Layout = Stable, Size: Thin>,
    | |         <R as RustSpec>::Mutability: InteriorTrap<Trap = Robust>,
-   | |________________________________________________________________^ `&'r R` implements `co3::stored::_::DecodeMove_cfg0<'d, co3::rust_spec::Stable, co3::rust_spec::Stable, <R as RustSpec>::Mutability, _TŠČ1>`
+   | |_________________________________________________________________^ `&'r R` implements `co3::stored::_::DecodeMove_cfg0<'d, co3::rust_spec::Stable, co3::rust_spec::Stable, <R as RustSpec>::Mutability, _TŠČ1>`
 ...
    | /     unsafe impl<
    | |         'd,
@@ -111,12 +111,12 @@ help: the following other types implement trait `co3::stored::_::DecodeMove_cfg0
 ...  |
    | |         R: Wide<Metadata = usize>,
    | |         <R as RustSpec>::Mutability: InteriorTrap<Trap = Robust>,
-   | |________________________________________________________________^ `&'r R` implements `co3::stored::_::DecodeMove_cfg0<'d, Unstable, co3::rust_spec::Stable, <R as RustSpec>::Mutability, co3::rust_spec::size::MetaSized<SliceLike>>`
+   | |_________________________________________________________________^ `&'r R` implements `co3::stored::_::DecodeMove_cfg0<'d, Unstable, co3::rust_spec::Stable, <R as RustSpec>::Mutability, co3::rust_spec::size::MetaSized<SliceLike>>`
 ...
    | /     unsafe impl<'d, R: SoftDecodeRef<'d> + ?Sized> DecodeMove<'d> for &'d R
    | |     where
    | |         R: RustSpec<Layout = Unstable>,
    | |         Self: RustSpec<Layout = Unstable> + ReprC<CType: CType + Sized>,
-   | |_______________________________________________________________________^ `&'d R` implements `co3::stored::_::DecodeMove_cfg0<'d, Unstable, Unstable, <R as RustSpec>::Mutability, <R as RustSpec>::Size>`
+   | |________________________________________________________________________^ `&'d R` implements `co3::stored::_::DecodeMove_cfg0<'d, Unstable, Unstable, <R as RustSpec>::Mutability, <R as RustSpec>::Size>`
    = note: required for `&dyn Trait` to implement `DecodeMove<'_>`
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)

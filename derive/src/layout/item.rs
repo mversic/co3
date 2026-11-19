@@ -4,7 +4,7 @@ use syn::{Ident, parse_quote};
 
 use crate::{
     layout::{
-        Ownership, ReprCAttrs, VariantReprCAttrs,
+        ReprCAttrs, VariantReprCAttrs,
         attr::ReprKind,
         borrow::{
             either_variant_name, gen_either_name, gen_identity_borrow_impls, gen_item_borrow_impls,
@@ -100,7 +100,7 @@ pub(super) fn derive_item(
             .predicates
             .push(bound);
     }
-    let marked = !is_wide_data
+    let is_move = !is_wide_data
         && !matches!(&input.data, syn::Data::Struct(data) if data.fields.iter().next_back().is_some_and(
             |last| matches!(classify_tail(&last.ty, &input.generics), super::ctype::TailClass::Unsized(_))
         ));
@@ -116,12 +116,12 @@ pub(super) fn derive_item(
         input,
         attrs,
         variant_attrs,
-        marked,
+        is_move,
     );
-    let niche_impls = gen_item_niche_impls(repr, &bounded_impl_input, attrs, marked);
+    let niche_impls = gen_item_niche_impls(repr, &bounded_impl_input, attrs);
     let repr_c_impls = repr
         .is_some()
-        .then(|| gen_item_repr_c_impls(repr, &bounded_impl_input, attrs, variant_attrs, marked));
+        .then(|| gen_item_repr_c_impls(repr, &bounded_impl_input, attrs, variant_attrs));
 
     quote! {
         #ctype_def
@@ -138,7 +138,6 @@ fn gen_item_niche_impls(
     repr: Option<&ReprKind>,
     input: &syn::DeriveInput,
     attrs: &ReprCAttrs,
-    marked: bool,
 ) -> TokenStream {
     match &input.data {
         syn::Data::Struct(data) => gen_struct_niche_ir(
@@ -146,16 +145,10 @@ fn gen_item_niche_impls(
             &input.generics,
             &data.fields,
             attrs.niche_value.as_ref(),
-            marked,
         ),
-        syn::Data::Enum(data) => gen_enum_niche_ir(
-            repr,
-            &input.ident,
-            &input.generics,
-            &data.variants,
-            false,
-            marked,
-        ),
+        syn::Data::Enum(data) => {
+            gen_enum_niche_ir(repr, &input.ident, &input.generics, &data.variants, false)
+        }
         syn::Data::Union(_) => unreachable!(),
     }
 }
@@ -172,10 +165,8 @@ fn gen_item_codec_impls(
     reference_input: &syn::DeriveInput,
     attrs: &ReprCAttrs,
     variant_attrs: &[VariantReprCAttrs],
-    marked: bool,
+    is_move: bool,
 ) -> TokenStream {
-    let is_move = marked;
-
     let generate = |mode, input: &syn::DeriveInput| match &input.data {
         syn::Data::Struct(data) => gen_struct_codec_impls(
             mode,
@@ -184,7 +175,6 @@ fn gen_item_codec_impls(
             &input.generics,
             &data.fields,
             attrs.is_valid.as_ref(),
-            marked,
         ),
         syn::Data::Enum(data) => gen_enum_codec_impls(
             mode,
@@ -193,7 +183,7 @@ fn gen_item_codec_impls(
             &input.generics,
             &data.variants,
             variant_attrs,
-            marked,
+            is_move,
         ),
         syn::Data::Union(_) => unreachable!(),
     };
@@ -240,7 +230,6 @@ fn gen_item_repr_c_impls(
     input: &syn::DeriveInput,
     attrs: &ReprCAttrs,
     variant_attrs: &[VariantReprCAttrs],
-    marked: bool,
 ) -> TokenStream {
     match &input.data {
         syn::Data::Struct(data) => gen_repr_c_struct_impls(
@@ -249,7 +238,6 @@ fn gen_item_repr_c_impls(
             &data.fields,
             attrs.is_valid.as_ref(),
             attrs.niche_value.as_ref(),
-            marked,
         ),
         syn::Data::Enum(data) if is_transparent_enum_repr(repr, &data.variants) => {
             let variant = &data.variants[0];
@@ -263,14 +251,7 @@ fn gen_item_repr_c_impls(
                 }
             }
 
-            gen_repr_c_struct_impls(
-                &input.ident,
-                &generics,
-                &variant.fields,
-                is_valid,
-                None,
-                marked,
-            )
+            gen_repr_c_struct_impls(&input.ident, &generics, &variant.fields, is_valid, None)
         }
         syn::Data::Enum(data) => gen_repr_c_data_enum_impls(
             repr,
@@ -278,7 +259,6 @@ fn gen_item_repr_c_impls(
             &input.generics,
             &data.variants,
             variant_attrs,
-            marked,
         ),
         syn::Data::Union(_) => unreachable!(),
     }
@@ -291,7 +271,6 @@ fn gen_struct_codec_impls(
     generics: &syn::Generics,
     fields: &syn::Fields,
     is_valid: Option<&syn::ExprClosure>,
-    marked: bool,
 ) -> TokenStream {
     let field_types = fields.iter().map(|field| &field.ty).collect::<Vec<_>>();
 
@@ -347,15 +326,7 @@ fn gen_struct_codec_impls(
         }
     };
 
-    gen_codec_impls(
-        mode,
-        is_move,
-        name,
-        generics,
-        &field_types,
-        codec_impls,
-        marked,
-    )
+    gen_codec_impls(mode, is_move, name, generics, &field_types, codec_impls)
 }
 
 fn gen_enum_codec_impls(
@@ -365,9 +336,8 @@ fn gen_enum_codec_impls(
     generics: &syn::Generics,
     variants: &syn::punctuated::Punctuated<syn::Variant, syn::Token![,]>,
     variant_attrs: &[VariantReprCAttrs],
-    marked: bool,
+    is_move: bool,
 ) -> TokenStream {
-    let is_move = marked;
     let ctype_name = gen_ctype_name(name);
 
     if is_transparent_enum_repr(repr, variants) {
@@ -378,7 +348,6 @@ fn gen_enum_codec_impls(
             generics,
             variants,
             variant_attrs,
-            marked,
         );
     }
     let tag_type = enum_tag_type(repr, variants.len());
@@ -664,7 +633,7 @@ fn gen_enum_codec_impls(
         decode_unchecked_impl,
     };
 
-    gen_codec_impls(mode, is_move, name, generics, &fields, codec_impls, marked)
+    gen_codec_impls(mode, is_move, name, generics, &fields, codec_impls)
 }
 
 fn gen_transparent_enum_codec_impls(
@@ -674,7 +643,6 @@ fn gen_transparent_enum_codec_impls(
     generics: &syn::Generics,
     variants: &syn::punctuated::Punctuated<syn::Variant, syn::Token![,]>,
     variant_attrs: &[VariantReprCAttrs],
-    marked: bool,
 ) -> TokenStream {
     if variants.len() > 1 {
         return quote! {};
@@ -766,7 +734,6 @@ fn gen_transparent_enum_codec_impls(
                 #decode_unchecked_body
             },
         },
-        marked,
     )
 }
 
@@ -776,7 +743,6 @@ fn gen_repr_c_struct_impls(
     fields: &syn::Fields,
     is_valid: Option<&syn::ExprClosure>,
     niche_value: Option<&syn::Expr>,
-    marked: bool,
 ) -> TokenStream {
     let field_types = fields.iter().map(|field| &field.ty).collect::<Vec<_>>();
     let field_vars = field_vars(fields);
@@ -811,7 +777,7 @@ fn gen_repr_c_struct_impls(
         #is_valid_body
     };
 
-    gen_repr_c_impls(name, generics, &field_types, is_valid_impl, marked)
+    gen_repr_c_impls(name, generics, &field_types, is_valid_impl)
 }
 
 fn gen_repr_c_data_enum_impls(
@@ -820,7 +786,6 @@ fn gen_repr_c_data_enum_impls(
     generics: &syn::Generics,
     variants: &syn::punctuated::Punctuated<syn::Variant, syn::Token![,]>,
     variant_attrs: &[VariantReprCAttrs],
-    marked: bool,
 ) -> TokenStream {
     let tag_type = enum_tag_type(repr, variants.len());
     let tag_values = enum_variant_tag_exprs(variants, &tag_type);
@@ -913,7 +878,7 @@ fn gen_repr_c_data_enum_impls(
     let predicates = &mut bounded_generics.make_where_clause().predicates;
     predicates.extend(gen_enum_union_copy_bounds(name, generics, variants));
 
-    gen_repr_c_impls(name, &bounded_generics, &fields, is_valid_impl, marked)
+    gen_repr_c_impls(name, &bounded_generics, &fields, is_valid_impl)
 }
 
 fn gen_enum_union_copy_bounds(
@@ -929,37 +894,27 @@ fn gen_repr_c_impls(
     generics: &syn::Generics,
     fields: &[&syn::Type],
     is_valid_body: TokenStream,
-    marked: bool,
 ) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     let predicates = where_clause.as_ref().map(|w| &w.predicates);
     let checked_transmute_bounds = gen_checked_transmute_bounds(generics, fields, false);
     let validation_bounds = gen_checked_transmute_bounds(generics, fields, true);
 
-    let ownership = Ownership::new(name, generics, marked);
-    let target = ownership.apply("payload", quote!(target));
-    let carrier_bound = ownership.repr_bound(quote!(+ Sized));
-    let speculative = speculative_marker(generics.params.is_empty());
-    let selected = marked.then(|| quote!(#speculative Self: #carrier_bound,));
-
     quote! {
         unsafe impl #impl_generics co3::convert::AbiCompatibleValidate for #name #ty_generics
         where
             #(#validation_bounds,)*
-            #selected
 
             #predicates
         {
             #[inline(always)]
             unsafe fn is_valid(target: &Self::CType) -> bool {
-                let target = #target;
                 #is_valid_body
             }
         }
         unsafe impl #impl_generics co3::marker::AbiCompatible for #name #ty_generics
         where
             #(#checked_transmute_bounds,)*
-            #selected
 
             #predicates
         {}
@@ -1045,21 +1000,9 @@ pub(super) fn derive_fieldless_enum(
     let variants = &data.variants;
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     let ctype_name = gen_ctype_name(name);
-    let ownership = Ownership::new(name, generics, is_move);
-    let carrier = ownership.carrier(quote!(#ctype_name #ty_generics));
-    let predicates = where_clause.as_ref().map(|w| &w.predicates);
-    let source_bound = is_move.then(|| {
-        let carrier_bound = ownership.repr_bound(quote!(+ Sized));
-        quote!(Self: #carrier_bound,)
-    });
-    let source_where = quote!(where #source_bound #predicates);
+    let carrier = quote!(#ctype_name #ty_generics);
+    let reference_repr = quote!(co3::ReprC<CType = #carrier>);
     let source_generics = generics.clone();
-    let unwrap = ownership.apply("unwrap", quote!(source));
-    let reference_repr = if ownership.marked {
-        ownership.repr_bound(quote!(+ Sized))
-    } else {
-        quote!(co3::ReprC<CType = #carrier>)
-    };
 
     let mut decode_generics = generics.clone();
     decode_generics.params.insert(0, parse_quote!('_dšč));
@@ -1144,11 +1087,11 @@ pub(super) fn derive_fieldless_enum(
         Some(ReprKind::C(None)) => unreachable!(),
         Some(ReprKind::Transparent | ReprKind::C(Some(_)) | ReprKind::Primitive(_)) => {
             quote! {
-                unsafe impl #impl_generics co3::convert::AbiCompatibleValidate for #name #ty_generics #source_where {
+                unsafe impl #impl_generics co3::convert::AbiCompatibleValidate for #name #ty_generics #where_clause {
                     #[inline(always)]
                     #checked_transmute_method
                 }
-                unsafe impl #impl_generics co3::marker::AbiCompatible for #name #ty_generics #source_where {}
+                unsafe impl #impl_generics co3::marker::AbiCompatible for #name #ty_generics #where_clause {}
             }
         }
     };
@@ -1227,8 +1170,7 @@ pub(super) fn derive_fieldless_enum(
     } else {
         encode_body.clone()
     };
-    let moved_encode_body = ownership.apply("wrap", quote!({ #moved_encode_body }));
-    let ref_encode_body = ownership.apply("wrap", quote!({ #encode_body }));
+    let ref_encode_body = encode_body;
     let decode_body = if tag_type.is_some() {
         quote! {
             match #tag_from_ctype {
@@ -1246,7 +1188,7 @@ pub(super) fn derive_fieldless_enum(
     };
     let niche_impl = tag_type
         .is_some()
-        .then(|| gen_enum_niche_ir(repr, name, &source_generics, variants, false, is_move));
+        .then(|| gen_enum_niche_ir(repr, name, &source_generics, variants, false));
 
     let borrow_impls = gen_item_borrow_impls(input, TokenStream::new());
     let tag_const_defs = tag_consts.iter().map(|(tag_name, value)| {
@@ -1263,7 +1205,11 @@ pub(super) fn derive_fieldless_enum(
         }
     });
 
-    let repr_c_impl = ownership.repr_c(generics, quote!(#predicates));
+    let repr_c_impl = quote! {
+        impl #impl_generics co3::ReprC for #name #ty_generics #where_clause {
+            type CType = #carrier;
+        }
+    };
 
     let ctype_variant_ctors = {
         quote! {
@@ -1318,7 +1264,7 @@ pub(super) fn derive_fieldless_enum(
             unsafe impl #ref_impl_generics #trait_name<'_ršč> for #name #ty_generics
             where
                 Self: #reference_repr,
-                &'_ršč Self: co3::ReprC<CType = co3::reference::SoftRef<<Self as co3::ReprC>::CType>>,
+                &'_ršč Self: co3::ReprC<CType = co3::reference::abi::SoftRef<<Self as co3::ReprC>::CType>>,
                 #predicates
             {
                 type #store_name = co3::sync::RefSizedEncodeStore<Self, ()>;
@@ -1330,13 +1276,13 @@ pub(super) fn derive_fieldless_enum(
             where
                 #drop_speculative Self: co3::ReprC<CType: co3::CType + Sized>
                     + #abi_bound + '_ršč,
-                &'_ršč Self: co3::ReprC<CType = co3::reference::Ref<'_ršč, <Self as co3::ReprC>::CType>>,
+                &'_ršč Self: co3::ReprC<CType = co3::reference::abi::Ref<'_ršč, <Self as co3::ReprC>::CType>>,
                 #validation_bound
                 #predicates
             {
                 type #store_name = ();
                 #unsafe_fn fn #method<'itm>(&'_ršč self, _: &'itm mut ()) -> #output where '_ršč: 'itm {
-                    let encoded = unsafe { co3::reference::Ref::from_raw(core::ptr::from_ref(self).cast()) };
+                    let encoded = unsafe { co3::reference::abi::Ref::from_raw(core::ptr::from_ref(self).cast()) };
                     #validation
                     encoded
                 }
@@ -1357,7 +1303,7 @@ pub(super) fn derive_fieldless_enum(
         #stable_mut_impls
         #shared_ref_impls
 
-        unsafe impl #impl_generics co3::convert::EncodeMove for #name #ty_generics #source_where {
+        unsafe impl #impl_generics co3::convert::EncodeMove for #name #ty_generics #where_clause {
             type Store = ();
 
             fn soft_encode<'_išč>(self, (): &mut ()) -> Self::CType
@@ -1368,7 +1314,7 @@ pub(super) fn derive_fieldless_enum(
                 unsafe { co3::convert::EncodeMoveUnchecked::soft_encode_unchecked(self, &mut ()) }
             }
         }
-        unsafe impl #impl_generics co3::convert::EncodeMoveUnchecked for #name #ty_generics #source_where {
+        unsafe impl #impl_generics co3::convert::EncodeMoveUnchecked for #name #ty_generics #where_clause {
             type SoftStore = ();
 
             unsafe fn soft_encode_unchecked<'itm>(self, (): &'itm mut ()) -> Self::CType where Self: 'itm {
@@ -1376,16 +1322,14 @@ pub(super) fn derive_fieldless_enum(
             }
         }
 
-        unsafe impl #decode_impl_generics co3::convert::DecodeMove<'_dšč> for #name #ty_generics #source_where {
+        unsafe impl #decode_impl_generics co3::convert::DecodeMove<'_dšč> for #name #ty_generics #where_clause {
             type Store = ();
 
             unsafe fn soft_decode<'_išč: '_dšč>(source: Self::CType, (): &mut ()) -> Option<Self> {
-                let source = #unwrap;
                 #decode_body
             }
 
             unsafe fn soft_decode_unchecked<'_išč: '_dšč>(source: Self::CType, (): &mut ()) -> Self {
-                let source = #unwrap;
                 #decode_unchecked
             }
         }
@@ -1611,7 +1555,6 @@ fn gen_codec_impls(
     generics: &syn::Generics,
     fields: &[&syn::Type],
     codec_impls: CodecImpls,
-    marked: bool,
 ) -> TokenStream {
     let CodecImpls {
         encode_store,
@@ -1644,20 +1587,8 @@ fn gen_codec_impls(
         )
     });
     let ctype_name = gen_ctype_name(name);
-    let ctype_ty_generics = quote!(#ty_generics);
-    let ownership = Ownership::new(name, generics, marked);
-    let carrier = ownership.carrier(quote!(#ctype_name #ctype_ty_generics));
-    let wrap = ownership.apply("wrap", quote!({ #encode_impl }));
-    let wrap_unchecked = ownership.apply("wrap", quote!({ #direct_encode_impl }));
-    let unwrap = ownership.apply("unwrap", quote!(source));
-    let reference_repr = if ownership.marked {
-        ownership.repr_bound(quote!(+ Sized))
-    } else {
-        quote!(co3::ReprC<CType = #carrier>)
-    };
-    let carrier_bound = ownership.repr_bound(quote!(+ Sized));
-    let speculative = speculative_marker(generics.params.is_empty());
-    let selected = marked.then(|| quote!(#speculative Self: #carrier_bound,));
+    let carrier = quote!(#ctype_name #ty_generics);
+    let reference_repr = quote!(co3::ReprC<CType = #carrier>);
 
     let extern_c_bounds = gen_extern_c_bounds_for_ctype(generics, fields);
 
@@ -1705,9 +1636,9 @@ fn gen_codec_impls(
                 debug_assert!(unsafe { <&'_ršč Self as co3::convert::AbiCompatibleValidate>::is_valid(&encoded) }, "encoding failed AbiCompatibleValidate::is_valid");
             });
             let (field_store, encode_body) = if unchecked {
-                (&direct_store, &wrap_unchecked)
+                (&direct_store, &direct_encode_impl)
             } else {
-                (&encode_store, &wrap)
+                (&encode_store, &encode_impl)
             };
             let field_trait = if unchecked { quote!(__Co3EncodeFieldUnchecked) } else { quote!(__Co3EncodeField) };
             let field_bounds = field_types(fields, generics)
@@ -1723,7 +1654,7 @@ fn gen_codec_impls(
                     #(#field_bounds,)*
                     #leading_predicates
                     #speculative Self: #reference_repr + '_ršč,
-                    &'_ršč Self: co3::ReprC<CType = co3::reference::SoftRef<<Self as co3::ReprC>::CType>>,
+                    &'_ršč Self: co3::ReprC<CType = co3::reference::abi::SoftRef<<Self as co3::ReprC>::CType>>,
 
                 {
                     type #store_name = co3::sync::RefSizedEncodeStore<Self, #field_store>;
@@ -1739,12 +1670,12 @@ fn gen_codec_impls(
                     #speculative Self: co3::ReprC<CType: co3::CType + Sized>
                         + #abi_bound
                         + Sized + '_ršč,
-                    &'_ršč Self: co3::ReprC<CType = co3::reference::Ref<'_ršč, <Self as co3::ReprC>::CType>>,
+                    &'_ršč Self: co3::ReprC<CType = co3::reference::abi::Ref<'_ršč, <Self as co3::ReprC>::CType>>,
                     #validation_bound
                 {
                     type #store_name = ();
                     #unsafe_fn fn #method<'itm>(&'_ršč self, _: &'itm mut ()) -> #output where '_ršč: 'itm {
-                        let encoded = unsafe { co3::reference::Ref::from_raw(core::ptr::from_ref(self).cast()) };
+                        let encoded = unsafe { co3::reference::abi::Ref::from_raw(core::ptr::from_ref(self).cast()) };
                         #validation
                         encoded
                     }
@@ -1758,7 +1689,6 @@ fn gen_codec_impls(
         unsafe impl #impl_generics co3::convert::EncodeMove for #name #ty_generics
         where
             #sized_bound
-            #selected
 
             #(#repr_c_bounds,)*
             #(#encode_move_bounds,)*
@@ -1768,14 +1698,13 @@ fn gen_codec_impls(
             type Store = #encode_store;
 
             fn soft_encode<'_išč>(self, store: &'_išč mut Self::Store) -> Self::CType where Self: '_išč {
-                #wrap
+                #encode_impl
             }
 
         }
         unsafe impl #impl_generics co3::convert::EncodeMoveUnchecked for #name #ty_generics
         where
             #sized_bound
-            #selected
 
             #(#repr_c_bounds,)*
             #(#direct_encode_bounds,)*
@@ -1785,13 +1714,12 @@ fn gen_codec_impls(
             type SoftStore = #direct_store;
 
             unsafe fn soft_encode_unchecked<'itm>(self, store: &'itm mut <Self as co3::convert::EncodeMoveUnchecked>::SoftStore) -> Self::CType where Self: 'itm {
-                #wrap_unchecked
+                #direct_encode_impl
             }
         }
         unsafe impl #decode_impl_generics co3::convert::DecodeMove<'_dšč> for #name #ty_generics
         where
             #sized_bound
-            #selected
 
             #(#repr_c_bounds,)*
             #(#decode_move_bounds,)*
@@ -1801,12 +1729,10 @@ fn gen_codec_impls(
             type Store = #decode_store;
 
             unsafe fn soft_decode<'_išč: '_dšč>(source: Self::CType, store: &'_išč mut Self::Store) -> Option<Self> {
-                let source = #unwrap;
                 #decode_impl
             }
 
             unsafe fn soft_decode_unchecked<'_išč: '_dšč>(source: Self::CType, store: &'_išč mut Self::Store) -> Self {
-                let source = #unwrap;
                 #decode_unchecked_impl
             }
         }
@@ -1814,7 +1740,6 @@ fn gen_codec_impls(
         impl #impl_generics co3::convert::Encode for #name #ty_generics where
             #direct_drop_bound
             #sized_bound
-            #selected
 
             #(#repr_c_bounds,)*
             #(#encode_bounds,)*
@@ -1824,7 +1749,6 @@ fn gen_codec_impls(
         impl #impl_generics co3::convert::EncodeUnchecked for #name #ty_generics where
             #direct_drop_bound
             #sized_bound
-            #selected
 
             #(#repr_c_bounds,)*
             #(#direct_bounds,)*
@@ -1834,7 +1758,6 @@ fn gen_codec_impls(
         impl #decode_impl_generics co3::convert::Decode<'_dšč> for #name #ty_generics where
             #direct_drop_bound
             #sized_bound
-            #selected
 
             #(#repr_c_bounds,)*
             #(#decode_bounds,)*
@@ -1843,15 +1766,17 @@ fn gen_codec_impls(
         {}
     });
 
-    let repr_c_impl = ownership.repr_c(
-        generics,
-        quote!(
+    let repr_c_impl = quote! {
+        impl #impl_generics co3::ReprC for #name #ty_generics
+        where
             #validity_bound
             #(#repr_c_bounds,)*
             #(#extern_c_bounds,)*
             #predicates
-        ),
-    );
+        {
+            type CType = #carrier;
+        }
+    };
     quote! {
         #repr_c_impl
 

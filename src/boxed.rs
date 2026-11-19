@@ -12,7 +12,7 @@ use crate::{
     marker::AbiCompatible,
     marker::Zeroable,
     reference::impl_thin_pointer_traits,
-    wide::{abi::WideBox as AbiWideBox, impl_carrier_borrow, impl_identity_carrier},
+    wide::{impl_carrier_borrow, impl_identity_carrier},
 };
 
 /// Converts owned carrier allocations without assuming their headers have equal layout.
@@ -26,51 +26,6 @@ impl<C> OwnedBoxCarrier<C> for C {
     }
     unsafe fn into_box_carrier(self) -> Self {
         self
-    }
-}
-
-impl<R: CType> OwnedBoxCarrier<AbiWideBox<[R]>> for crate::vec::abi::Vec<R> {
-    unsafe fn from_box_carrier(value: AbiWideBox<[R]>) -> Option<Self> {
-        let data = NonNull::new(value.as_ptr())?;
-        let slice = core::ptr::slice_from_raw_parts_mut(data.as_ptr(), value.metadata());
-        // SAFETY: The caller transfers ownership of the boxed allocation.
-        Some(Self::from_vec(
-            unsafe { alloc::boxed::Box::from_raw(slice) }.into_vec(),
-        ))
-    }
-
-    unsafe fn into_box_carrier(self) -> AbiWideBox<[R]> {
-        // Shrink before discarding capacity, so Box deallocates with the correct layout.
-        let value = unsafe { self.into_vec().expect("encoded owned vector is valid") };
-        AbiWideBox::from_box(value.into_boxed_slice())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use static_assertions::{assert_impl_all, assert_type_eq_all};
-
-    use super::{Box, abi};
-    use crate::{CType, ReprC};
-
-    struct Payload;
-    unsafe impl CType for Payload {}
-
-    #[test]
-    fn carrier_accepts_lowered_payload_without_source_mapping() {
-        assert_impl_all!(abi::Box<Payload>: CType, ReprC);
-        assert_type_eq_all!(<abi::Box<Payload> as ReprC>::CType, abi::Box<Payload>);
-        assert_type_eq_all!(
-            <Box<bool> as ReprC>::CType,
-            abi::Box<crate::primitive::abi::bool>
-        );
-
-        let source = Box::new(Payload);
-        let pointer = core::ptr::from_ref(&*source);
-        let carrier = abi::Box::from_box(source);
-        assert_eq!(carrier.as_ptr().cast_const(), pointer);
-        let recovered = unsafe { carrier.into_box() }.unwrap();
-        assert_eq!(core::ptr::from_ref(&*recovered), pointer);
     }
 }
 
@@ -166,4 +121,47 @@ pub mod abi {
     impl_carrier_borrow! { Box, [T: CType], [T] }
 
     unsafe impl<T: CType> Zeroable for Box<T> {}
+}
+
+#[cfg(test)]
+mod tests {
+    use static_assertions::{assert_impl_all, assert_type_eq_all};
+
+    use super::{Box, abi};
+    use crate::{CType, ReprC};
+
+    struct Payload;
+    unsafe impl CType for Payload {}
+
+    #[test]
+    fn carrier_accepts_lowered_payload_without_source_mapping() {
+        assert_impl_all!(abi::Box<Payload>: CType, ReprC);
+        assert_type_eq_all!(<abi::Box<Payload> as ReprC>::CType, abi::Box<Payload>);
+        assert_type_eq_all!(
+            <Box<bool> as ReprC>::CType,
+            abi::Box<crate::primitive::abi::bool>
+        );
+
+        let source = Box::new(Payload);
+        let pointer = core::ptr::from_ref(&*source);
+        let carrier = abi::Box::from_box(source);
+        assert_eq!(carrier.as_ptr().cast_const(), pointer);
+        let recovered = unsafe { carrier.into_box() }.unwrap();
+        assert_eq!(core::ptr::from_ref(&*recovered), pointer);
+    }
+
+    #[test]
+    fn interior_box_validation_checks_null_and_pointee() {
+        use core::cell::Cell;
+
+        use crate::convert::AbiCompatibleValidate;
+
+        assert!(!unsafe { Box::<Cell<bool>>::is_valid(&abi::Box::null()) });
+        let carrier = unsafe { crate::encode_unchecked(Box::new(Cell::new(true))) };
+        assert!(unsafe { Box::<Cell<bool>>::is_valid(&carrier) });
+        drop(
+            unsafe { crate::soft_decode::<Box<Cell<bool>>>(carrier, &mut Default::default()) }
+                .unwrap(),
+        );
+    }
 }

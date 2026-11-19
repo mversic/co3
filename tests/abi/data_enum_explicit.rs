@@ -1,32 +1,5 @@
 use co3::{ReprC, encode, niche::Niche, rust_spec::RustSpec, soft_decode};
 
-#[test]
-fn tagged_carrier_constructors_preserve_active_payloads() {
-    use core::mem::MaybeUninit;
-
-    use co3::{option::abi::Option as AbiOption, result::abi::Result as AbiResult};
-
-    assert_eq!(AbiOption::<u32>::new(Some(7)).into_option(), Some(Some(7)));
-    assert_eq!(AbiOption::<u32>::new(None).into_option(), Some(None));
-    let option = unsafe { AbiOption::<u32>::from_raw_parts(2, MaybeUninit::uninit()) };
-    assert!(option != option);
-    assert_eq!(option.partial_cmp(&option), None);
-    assert_eq!(option.into_option(), None);
-    let option = unsafe { AbiOption::<u32>::from_raw_parts(1, MaybeUninit::new(9)) };
-    assert_eq!(option.into_option(), Some(Some(9)));
-    assert_eq!(AbiResult::<u32, u16>::new(Ok(7)).into_result(), Some(Ok(7)));
-    assert_eq!(
-        AbiResult::<u32, u16>::new(Err(4)).into_result(),
-        Some(Err(4))
-    );
-    let result = unsafe { AbiResult::<u32, u16>::from_raw_parts(2, Ok(MaybeUninit::uninit())) };
-    assert!(result != result);
-    assert_eq!(result.partial_cmp(&result), None);
-    assert_eq!(result.into_result(), None);
-    let result = unsafe { AbiResult::<u32, u16>::from_raw_parts(1, Err(MaybeUninit::new(5))) };
-    assert_eq!(result.into_result(), Some(Err(5)));
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, RustSpec, ReprC)]
 #[repr(u8)]
 enum SparseInt {
@@ -58,11 +31,6 @@ const CONST_INT_TAG: u8 = CONST_INT.tag();
 const CONST_C: <SparseC as ReprC>::CType = <SparseC as ReprC>::CType::A(42);
 const CONST_C_NICHE: <SparseC as ReprC>::CType = <SparseC as ReprC>::CType::niche();
 const CONST_C_TAG: u8 = CONST_C.tag();
-const CONST_OPTION: Option<Option<u32>> = co3::option::abi::Option::<u32>::Some(7).into_option();
-const CONST_RESULT: Option<Result<u32, u16>> =
-    co3::result::abi::Result::<u32, u16>::Err(4).into_result();
-const CONST_NULL_REF: Option<&'static u8> =
-    unsafe { co3::reference::SoftRef::<u8>::null().into_ref() };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, RustSpec, ReprC)]
 #[repr(u8)]
@@ -106,9 +74,6 @@ fn explicit_tags_drive_encoding_decoding_and_niches() {
     assert!(CONST_C_NICHE.is_niche());
     assert_eq!(CONST_INT_NICHE.tag(), <SparseInt as Niche>::NICHE.tag());
     assert_eq!(CONST_C_NICHE.tag(), <SparseC as Niche>::NICHE.tag());
-    assert_eq!(CONST_OPTION, Some(Some(7)));
-    assert_eq!(CONST_RESULT, Some(Err(4)));
-    assert_eq!(CONST_NULL_REF, None);
     let a = encode(SparseInt::A(42));
     assert!(!a.is_niche());
     let raw =

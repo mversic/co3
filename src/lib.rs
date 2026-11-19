@@ -589,7 +589,7 @@ use crate::{
     convert::Store,
     marker::Stable,
     niche::Niche,
-    reference::{Ref, RefMut, SoftRef, SoftRefMut},
+    reference::abi::{Ref, RefMut, SoftRef, SoftRefMut},
     wide::{
         Wide, WideHeader,
         abi::{
@@ -624,6 +624,7 @@ pub mod pack;
 #[doc(hidden)]
 pub mod primitive;
 mod ptr;
+#[doc(hidden)]
 pub mod reference;
 pub mod result;
 mod shared;
@@ -982,18 +983,18 @@ mod tests {
     use crate::{
         marker::{Borrowed, NonZero},
         option::abi::Option as AbiOption,
-        reference::SoftRefMut,
+        reference::abi::SoftRefMut,
         wide::abi::SoftWideRefMut as AbiSoftWideRefMut,
     };
 
     #[test]
     #[cfg(feature = "alloc")]
     fn carrier_types_are_zeroable() {
-        static_assertions::assert_impl_all!(reference::SoftRef<u8>: marker::Zeroable);
-        static_assertions::assert_impl_all!(reference::SoftRefMut<u8>: marker::Zeroable);
+        static_assertions::assert_impl_all!(reference::abi::SoftRef<u8>: marker::Zeroable);
+        static_assertions::assert_impl_all!(reference::abi::SoftRefMut<u8>: marker::Zeroable);
         static_assertions::assert_impl_all!(wide::abi::SoftWideRef<[u8]>: marker::Zeroable);
         static_assertions::assert_impl_all!(wide::abi::SoftWideRefMut<[u8]>: marker::Zeroable);
-        static_assertions::assert_impl_all!(crate::reference::RefMut<'static, u8>: marker::Zeroable);
+        static_assertions::assert_impl_all!(crate::reference::abi::RefMut<'static, u8>: marker::Zeroable);
         static_assertions::assert_impl_all!(boxed::abi::Box<u8>: marker::Zeroable);
         static_assertions::assert_impl_all!(crate::wide::abi::WideRef<'static, [u8]>: marker::Zeroable);
         static_assertions::assert_impl_all!(crate::wide::abi::WideRefMut<'static, [u8]>: marker::Zeroable);

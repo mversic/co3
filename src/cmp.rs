@@ -17,40 +17,6 @@ use crate::{
     primitive::{fieldless_enum_derive, primitive_derive},
 };
 
-#[doc(hidden)]
-pub mod abi {
-    use super::*;
-
-    /// C-compatible carrier for [`Ordering`].
-    ///
-    /// Every byte value is valid for this carrier; conversion to `Ordering` accepts only -1, 0, and 1.
-    #[derive(Debug, Clone, Copy, Default, RustSpec)]
-    #[repr(transparent)]
-    #[doc(hidden)]
-    pub struct Ordering(pub i8);
-}
-
-unsafe impl Zeroable for abi::Ordering {}
-
-impl abi::Ordering {
-    pub const LESS: Self = Self(-1);
-    pub const EQUAL: Self = Self(0);
-    pub const GREATER: Self = Self(1);
-}
-
-impl PartialEq for abi::Ordering {
-    fn eq(&self, other: &Self) -> bool {
-        matches!(self.0, -1..=1) && self.0 == other.0
-    }
-}
-
-impl From<Ordering> for abi::Ordering {
-    #[inline(always)]
-    fn from(value: Ordering) -> Self {
-        Self(value as i8)
-    }
-}
-
 impl TryFrom<abi::Ordering> for Ordering {
     type Error = abi::Ordering;
 
@@ -65,7 +31,6 @@ impl TryFrom<abi::Ordering> for Ordering {
     }
 }
 
-primitive_derive! { abi::Ordering }
 fieldless_enum_derive! {
     Ordering => abi::Ordering: {abi::Ordering(-2)}:
     |i: &abi::Ordering| Ordering::try_from(*i).is_ok();
@@ -329,6 +294,42 @@ where
         let value = unsafe { <&'d mut T as DecodeMove<'d>>::soft_decode_unchecked(source, store) };
         unsafe { &mut *core::ptr::from_mut(value).cast::<Self>() }
     }
+}
+
+#[doc(hidden)]
+pub mod abi {
+    use super::*;
+
+    /// C-compatible carrier for [`core::cmp::Ordering`].
+    ///
+    /// Every byte value is valid for this carrier; conversion to `Ordering` accepts only -1, 0, and 1.
+    #[derive(Debug, Clone, Copy, Default, RustSpec)]
+    #[repr(transparent)]
+    #[doc(hidden)]
+    pub struct Ordering(pub i8);
+
+    unsafe impl Zeroable for Ordering {}
+
+    impl Ordering {
+        pub const LESS: Self = Self(-1);
+        pub const EQUAL: Self = Self(0);
+        pub const GREATER: Self = Self(1);
+    }
+
+    impl PartialEq for Ordering {
+        fn eq(&self, other: &Self) -> bool {
+            matches!(self.0, -1..=1) && self.0 == other.0
+        }
+    }
+
+    impl From<core::cmp::Ordering> for Ordering {
+        #[inline(always)]
+        fn from(value: core::cmp::Ordering) -> Self {
+            Self(value as i8)
+        }
+    }
+
+    primitive_derive! { Ordering }
 }
 
 #[cfg(test)]

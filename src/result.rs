@@ -1,5 +1,5 @@
 //! C-compatible representation of [`core::result::Result`].
-use core::{marker::PhantomData, mem::MaybeUninit, ops::Add, result::Result as RustResult};
+use core::{marker::PhantomData, mem::MaybeUninit, ops::Add};
 
 use rust_spec::{
     RustSpec,
@@ -19,27 +19,21 @@ use crate::{
     sync::RefSizedEncodeStore,
 };
 
-/// A transparent `Ok` payload with no Rust result discriminant.
-/// Lowers to `crate::marker::Stable<abi::ResultOk<T::CType, ()>>` and preserves the payload's validity requirements.
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, RustSpec)]
-pub struct ResultOk<T>(pub T);
-
-/// A transparent `Err` payload with no Rust result discriminant.
-/// Lowers to `crate::marker::Stable<abi::ResultErr<(), E::CType>>` and preserves the payload's validity requirements.
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, RustSpec)]
-pub struct ResultErr<E>(pub E);
-
-crate::option::impl_niche_payload!(ResultOk => crate::marker::Stable<abi::ResultOk<T::CType, ()>>);
-crate::option::impl_niche_payload!(ResultErr => crate::marker::Stable<abi::ResultErr<(), T::CType>>);
-
 /// A result with an explicit, stable discriminant representation.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, RustSpec)]
 pub enum Result<T, E> {
     Ok(T),
     Err(E),
+}
+
+impl<T, E> From<core::result::Result<T, E>> for Result<T, E> {
+    fn from(value: core::result::Result<T, E>) -> Self {
+        match value {
+            Ok(value) => Self::Ok(value),
+            Err(value) => Self::Err(value),
+        }
+    }
 }
 
 impl<T: ReprC<CType: Copy>, E: ReprC<CType: Copy>> ReprC for Result<T, E> {
@@ -51,7 +45,7 @@ macro_rules! result_codecs {
         unsafe impl<T: $unchecked<CType: Copy>, E: $unchecked<CType: Copy>> $unchecked
             for Result<T, E>
         {
-            type SoftStore = core::option::Option<RustResult<T::SoftStore, E::SoftStore>>;
+            type SoftStore = core::option::Option<core::result::Result<T::SoftStore, E::SoftStore>>;
 
             unsafe fn soft_encode_unchecked<'itm>(
                 self,
@@ -81,7 +75,7 @@ macro_rules! result_codecs {
             }
         }
         unsafe impl<T: $encode<CType: Copy>, E: $encode<CType: Copy>> $encode for Result<T, E> {
-            type Store = core::option::Option<RustResult<T::Store, E::Store>>;
+            type Store = core::option::Option<core::result::Result<T::Store, E::Store>>;
 
             fn soft_encode<'a>(self, store: &'a mut Self::Store) -> Self::CType
             where
@@ -106,7 +100,7 @@ macro_rules! result_codecs {
         unsafe impl<'d, T: $decode<'d, CType: Copy>, E: $decode<'d, CType: Copy>> $decode<'d>
             for Result<T, E>
         {
-            type Store = core::option::Option<RustResult<T::Store, E::Store>>;
+            type Store = core::option::Option<core::result::Result<T::Store, E::Store>>;
 
             unsafe fn soft_decode<'a: 'd>(
                 source: Self::CType,
@@ -156,8 +150,8 @@ const _: () = {
     unsafe impl<T: BorrowedEncodeUnchecked<CType: Copy>, E: BorrowedEncodeUnchecked<CType: Copy>>
         BorrowedEncodeUnchecked for Result<T, E>
     {
-        type Owner = core::option::Option<RustResult<T::Owner, E::Owner>>;
-        type SoftStore = core::option::Option<RustResult<T::SoftStore, E::SoftStore>>;
+        type Owner = core::option::Option<core::result::Result<T::Owner, E::Owner>>;
+        type SoftStore = core::option::Option<core::result::Result<T::SoftStore, E::SoftStore>>;
 
         unsafe fn soft_encode_unchecked<'itm>(
             self,
@@ -196,7 +190,7 @@ const _: () = {
     unsafe impl<T: BorrowedEncode<CType: Copy>, E: BorrowedEncode<CType: Copy>> BorrowedEncode
         for Result<T, E>
     {
-        type Store = core::option::Option<RustResult<T::Store, E::Store>>;
+        type Store = core::option::Option<core::result::Result<T::Store, E::Store>>;
 
         fn soft_encode<'a>(
             self,
@@ -239,7 +233,7 @@ const _: () = {
     unsafe impl<'d, T: BorrowedDecode<'d, CType: Copy>, E: BorrowedDecode<'d, CType: Copy>>
         BorrowedDecode<'d> for Result<T, E>
     {
-        type Store = core::option::Option<RustResult<T::Store, E::Store>>;
+        type Store = core::option::Option<core::result::Result<T::Store, E::Store>>;
 
         unsafe fn soft_decode<'a: 'd>(
             source: Self::CType,
@@ -286,7 +280,7 @@ const _: () = {
 unsafe impl<'a, T: ReprC<CType: Copy> + 'a, E: ReprC<CType: Copy> + 'a, __Interior: ExclusiveKind>
     SoftEncodeRefUnchecked<'a> for Result<T, E>
 where
-    &'a Self: crate::ReprC<CType = crate::reference::SoftRef<<Self as ReprC>::CType>>,
+    &'a Self: crate::ReprC<CType = crate::reference::abi::SoftRef<<Self as ReprC>::CType>>,
     Self: RustSpec<Mutability = Exclusive<__Interior>, Size: Thin> + 'a,
     &'a T: EncodeMoveUnchecked<CType: crate::reference::RefCarrier<T>>,
     &'a E: EncodeMoveUnchecked<CType: crate::reference::RefCarrier<E>>,
@@ -294,7 +288,7 @@ where
     type SoftStore = RefSizedEncodeStore<
         Self,
         Option<
-            RustResult<
+            core::result::Result<
                 <&'a T as EncodeMoveUnchecked>::SoftStore,
                 <&'a E as EncodeMoveUnchecked>::SoftStore,
             >,
@@ -332,7 +326,7 @@ where
 unsafe impl<'a, T: ReprC<CType: Copy> + 'a, E: ReprC<CType: Copy> + 'a, __Interior: ExclusiveKind>
     SoftEncodeRef<'a> for Result<T, E>
 where
-    &'a Self: crate::ReprC<CType = crate::reference::SoftRef<<Self as ReprC>::CType>>,
+    &'a Self: crate::ReprC<CType = crate::reference::abi::SoftRef<<Self as ReprC>::CType>>,
     Self: RustSpec<Mutability = Exclusive<__Interior>, Size: Thin> + 'a,
     &'a T: EncodeMove<CType: crate::reference::RefCarrier<T>>,
     &'a E: EncodeMove<CType: crate::reference::RefCarrier<E>>,
@@ -340,7 +334,7 @@ where
     type Store = RefSizedEncodeStore<
         Self,
         core::option::Option<
-            RustResult<<&'a T as EncodeMove>::Store, <&'a E as EncodeMove>::Store>,
+            core::result::Result<<&'a T as EncodeMove>::Store, <&'a E as EncodeMove>::Store>,
         >,
     >;
 
@@ -395,43 +389,73 @@ unsafe impl<T: AbiCompatible<CType: Copy>, E: AbiCompatible<CType: Copy>> AbiCom
 {
 }
 
-unsafe impl<T: EmptyStore, E: EmptyStore> EmptyStore for RustResult<T, E> {}
+impl<T: ReprC<CType: Copy>, E: ReprC<CType: Copy>> crate::niche::Niche for Result<T, E> {
+    const NICHE: Self::CType = crate::marker::Stable(abi::Result::niche());
 
-unsafe impl<T, E> CType for RustResult<T, E> where
-    Self: RustSpec<Layout = rust_spec::Stable, Trap = rust_spec::layout::Robust, Drop = NoDrop>
-{
-}
-
-unsafe impl<T, E> CFnArg for RustResult<T, E> where
-    Self: CType + RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>
-{
-}
-unsafe impl<T, E> CFnReturn for RustResult<T, E> where
-    Self: CType + RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>
-{
-}
-
-impl<R: Encode, E: Encode> Encode for RustResult<R, E> where Self: EncodeMove {}
-impl<R: EncodeUnchecked, E: EncodeUnchecked> EncodeUnchecked for RustResult<R, E> where
-    Self: EncodeMoveUnchecked
-{
-}
-impl<'d, R: Decode<'d>, E: Decode<'d>> Decode<'d> for RustResult<R, E> where Self: DecodeMove<'d> {}
-
-impl<T, E> From<RustResult<T, E>> for Result<T, E> {
-    fn from(value: RustResult<T, E>) -> Self {
-        match value {
-            Ok(value) => Self::Ok(value),
-            Err(value) => Self::Err(value),
-        }
+    fn is_niche(value: &Self::CType) -> bool {
+        value.is_niche()
     }
 }
-impl<T, E> From<Result<T, E>> for RustResult<T, E> {
+
+/// A transparent `Ok` payload with no Rust result discriminant.
+/// Lowers to `crate::marker::Stable<abi::ResultOk<T::CType, ()>>` and preserves the payload's validity requirements.
+#[repr(transparent)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, RustSpec)]
+pub struct ResultOk<T>(pub T);
+
+/// A transparent `Err` payload with no Rust result discriminant.
+/// Lowers to `crate::marker::Stable<abi::ResultErr<(), E::CType>>` and preserves the payload's validity requirements.
+#[repr(transparent)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, RustSpec)]
+pub struct ResultErr<E>(pub E);
+
+crate::option::impl_niche_payload!(ResultOk => crate::marker::Stable<abi::ResultOk<T::CType, ()>>);
+crate::option::impl_niche_payload!(ResultErr => crate::marker::Stable<abi::ResultErr<(), T::CType>>);
+
+impl<T, E> From<Result<T, E>> for core::result::Result<T, E> {
     fn from(value: Result<T, E>) -> Self {
         match value {
             Result::Ok(value) => Self::Ok(value),
             Result::Err(value) => Self::Err(value),
         }
+    }
+}
+
+unsafe impl<T: EmptyStore, E: EmptyStore> EmptyStore for core::result::Result<T, E> {}
+
+unsafe impl<T, E> CType for core::result::Result<T, E> where
+    Self: RustSpec<Layout = rust_spec::Stable, Trap = rust_spec::layout::Robust, Drop = NoDrop>
+{
+}
+
+unsafe impl<T, E> CFnArg for core::result::Result<T, E> where
+    Self: CType + RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>
+{
+}
+unsafe impl<T, E> CFnReturn for core::result::Result<T, E> where
+    Self: CType + RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>
+{
+}
+
+impl<R: Encode, E: Encode> Encode for core::result::Result<R, E> where Self: EncodeMove {}
+impl<R: EncodeUnchecked, E: EncodeUnchecked> EncodeUnchecked for core::result::Result<R, E> where
+    Self: EncodeMoveUnchecked
+{
+}
+impl<'d, R: Decode<'d>, E: Decode<'d>> Decode<'d> for core::result::Result<R, E> where
+    Self: DecodeMove<'d>
+{
+}
+
+impl<R: ReprC<CType: Copy>, E: ReprC<CType: Copy>> crate::niche::Niche
+    for core::result::Result<R, E>
+where
+    Self: ReprC<CType = abi::Result<<R as ReprC>::CType, <E as ReprC>::CType>>,
+{
+    const NICHE: Self::CType = abi::Result::niche();
+
+    fn is_niche(value: &Self::CType) -> bool {
+        value.is_niche()
     }
 }
 
@@ -645,7 +669,7 @@ pub mod abi {
         }
 
         /// Construct a carrier from a result payload.
-        pub const fn new(value: RustResult<T, E>) -> Self {
+        pub const fn new(value: core::result::Result<T, E>) -> Self {
             match value {
                 Ok(value) => Self::Ok(value),
                 Err(value) => Self::Err(value),
@@ -659,7 +683,7 @@ pub mod abi {
         /// an initialized `Err` payload. Other tags permit either payload to be uninitialized.
         pub const unsafe fn from_raw_parts(
             tag: u8,
-            payload: RustResult<MaybeUninit<T>, MaybeUninit<E>>,
+            payload: core::result::Result<MaybeUninit<T>, MaybeUninit<E>>,
         ) -> Self {
             match payload {
                 Ok(payload) => Self {
@@ -701,7 +725,7 @@ pub mod abi {
         }
 
         /// Return the represented `core::result::Result<T, E>`, or `None` for an invalid tag.
-        pub const fn into_result(self) -> core::option::Option<RustResult<T, E>> {
+        pub const fn into_result(self) -> core::option::Option<core::result::Result<T, E>> {
             match self.tag() {
                 0 => Some(Ok(unsafe { self.ok.1.assume_init() })),
                 1 => Some(Err(unsafe { self.err.1.assume_init() })),
@@ -710,7 +734,7 @@ pub mod abi {
         }
 
         /// Borrow only the active payload, rejecting invalid tags.
-        pub(crate) const fn as_result(&self) -> core::option::Option<RustResult<&T, &E>> {
+        pub(crate) const fn as_result(&self) -> core::option::Option<core::result::Result<&T, &E>> {
             match self.tag() {
                 0 => Some(Ok(unsafe { self.ok.1.assume_init_ref() })),
                 1 => Some(Err(unsafe { self.err.1.assume_init_ref() })),
@@ -751,4 +775,28 @@ pub mod abi {
     crate::borrow::__impl_borrowed_identity!([T: CType + Copy, E: CType + Copy] Result<T, E>);
 
     crate::wide::impl_identity_carrier! { Result, [T: CType + Copy, E: CType + Copy], [T, E] }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::abi::Result as AbiResult;
+    use core::mem::MaybeUninit;
+
+    const CONST_RESULT: Option<Result<u32, u16>> = AbiResult::<u32, u16>::Err(4).into_result();
+
+    #[test]
+    fn tagged_result_carrier_preserves_active_payloads() {
+        assert_eq!(CONST_RESULT, Some(Err(4)));
+        assert_eq!(AbiResult::<u32, u16>::new(Ok(7)).into_result(), Some(Ok(7)));
+        assert_eq!(
+            AbiResult::<u32, u16>::new(Err(4)).into_result(),
+            Some(Err(4))
+        );
+        let result = unsafe { AbiResult::<u32, u16>::from_raw_parts(2, Ok(MaybeUninit::uninit())) };
+        assert!(result != result);
+        assert_eq!(result.partial_cmp(&result), None);
+        assert_eq!(result.into_result(), None);
+        let result = unsafe { AbiResult::<u32, u16>::from_raw_parts(1, Err(MaybeUninit::new(5))) };
+        assert_eq!(result.into_result(), Some(Err(5)));
+    }
 }

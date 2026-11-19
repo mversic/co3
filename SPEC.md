@@ -29,8 +29,8 @@ Conversion modes define how values cross the FFI boundary, including ownership b
 Each mode makes explicit tradeoffs and is selected through compile-time configuration:
 
 1. **`move` (opt-in, on fn argument and return types)**
-- `Drop` types are borrowed instead of transferring ownership unless the argument/return is `move`d
-- Owned backing storage is kept alive in a type-specific store while exposing borrowed FFI views.
+- Owned types use borrowed conversion by default when available.
+- Opaque types nad derived custom-drop types require `move` for by-value transfer.
 - `move` removes the cost of cloning owned types in decode paths that is incurred by default.
 
 2. **`#[soft]` (opt-in, on fn arguments)**
@@ -56,7 +56,6 @@ A C-compatible companion type has a defined foreign representation and no trap r
 
 - By default, the derive defines a C-compatible companion type and conversions between the two types.
 - `#[repr_c(identity)]` uses a `#[repr(C)]` or `#[repr(transparent)]` type directly as its companion.
-- `#[repr_c(transparent)]` uses the `CType` of the inner field as its C-compatible companion.
 - `#[repr_c(is_valid = |field0, ...| {...})]` provides additional validity invariant of a struct/variant.
 - `#[repr_c(NICHE = <expr>)]` defines the struct's trap value that is used for niche optimization.
 - Conversions of types with explicit representation (i.e. `#[repr(C)]`/`#[repr(transparent)]`) are optimized.
@@ -83,7 +82,7 @@ It must always start with a declaration of direction and ABI (e.g. `#![unsafe(ex
 - `#[tag(TagTy)]` on a type declaration defines its tag type; `#[tag(TagTy, unsafe(val))]` also assigns its tag value.
 - `where use<T, ...> @ (<Type1> | ...)` opts into a kind of polymorphic dispatch where concrete types are known at compile time but erased at runtime.
 - `#[unpack(_, _)]` on an imported function argument unpacks the compound type into two funcion arguments (facilitates useing `&[T]` in legacy APIs).
-- A `type Name = T;` alias produces a lowered form of the declared type through `ReprC::CType` or `raw` function syntactical lowering.
+- A `type Name = T;` alias exposes the declared type's C-compatible representation, including lowered `raw` function signatures.
 - Using the `ffi` macro always carries a risk of UB as it relies on the correct user-provided argument types and lifetimes in the ABI.
 
 ### 2.3. `raw!`

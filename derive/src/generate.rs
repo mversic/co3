@@ -3585,17 +3585,17 @@ fn gen_owned_extern_type_impls(
             #[inline(always)]
             unsafe fn is_valid(target: &Self::CType) -> bool {
                 // The Rust owner stores NonNull; null is reserved for Option::None.
-                !target.0.is_null()
+                !target.is_null()
             }
         }
         unsafe impl #impl_generics #co3::marker::AbiCompatible for #owned_ident #ty_generics #where_clause {}
 
         impl #impl_generics #co3::ReprC for #owned_ident #ty_generics #where_clause {
-            type CType = #co3::marker::Owned<*mut #ident #ty_generics>;
+            type CType = *mut #ident #ty_generics;
         }
         impl #impl_generics #co3::niche::Niche for #owned_ident #ty_generics #where_clause {
-            const NICHE: Self::CType = #co3::marker::Owned(core::ptr::null_mut());
-            fn is_niche(value: &Self::CType) -> bool { value.0.is_null() }
+            const NICHE: Self::CType = core::ptr::null_mut();
+            fn is_niche(value: &Self::CType) -> bool { value.is_null() }
         }
 
         unsafe impl #impl_generics #co3::convert::EncodeMove for #owned_ident #ty_generics #where_clause {
@@ -3614,7 +3614,7 @@ fn gen_owned_extern_type_impls(
             type SoftStore = ();
 
             unsafe fn soft_encode_unchecked<'itm>(self, (): &'itm mut ()) -> Self::CType where Self: 'itm {
-                #co3::marker::Owned(core::mem::ManuallyDrop::new(self).0.as_ptr())
+                core::mem::ManuallyDrop::new(self).0.as_ptr()
             }
         }
         unsafe impl #decode_impl_generics #co3::convert::DecodeMove<'d> for #owned_ident #ty_generics #where_clause {
@@ -3622,14 +3622,12 @@ fn gen_owned_extern_type_impls(
 
             #[inline(always)]
             unsafe fn soft_decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
-                let #co3::marker::Owned(pointer) = source;
-                core::ptr::NonNull::new(pointer).map(Self)
+                core::ptr::NonNull::new(source).map(Self)
             }
 
             #[inline(always)]
             unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, (): &mut ()) -> Self {
-                let #co3::marker::Owned(pointer) = source;
-                Self(unsafe { core::ptr::NonNull::new_unchecked(pointer) })
+                Self(unsafe { core::ptr::NonNull::new_unchecked(source) })
             }
         }
 

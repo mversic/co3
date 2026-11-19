@@ -4,6 +4,7 @@ use core::{
     cell::{Cell, UnsafeCell},
     marker::PhantomData,
     mem::ManuallyDrop,
+    ptr::NonNull,
 };
 
 use disjoint_impls::disjoint_impls;
@@ -56,39 +57,42 @@ macro_rules! impl_raw_wide_unpack {
 
 impl_raw_wide_unpack!(*const R, *const, as_ptr);
 impl_raw_wide_unpack!(*mut R, *mut, as_mut_ptr);
+impl_raw_wide_unpack!(NonNull<R>, *const, as_ptr, 0);
+impl_raw_wide_unpack!(NonNull<R>, *mut, as_mut_ptr, 0);
 impl_raw_wide_unpack!(NonZero<*mut R>, *const, as_ptr, 0);
 impl_raw_wide_unpack!(NonZero<*mut R>, *mut, as_mut_ptr, 0);
 
-macro_rules! impl_ref_wide_pack {
-    ($reference:ty) => {
-        impl<R: ReprC<CType: Wide<Metadata: TryInto<U>>> + Wide + ?Sized, U: CType, Pointer: CType>
-            Unpack2<Pointer, U> for $reference
-        where
-            Self: ReprC<CType: WideRefCarrier<R, Pointer = Pointer>>,
-        {
-            type Error = <<R::CType as Wide>::Metadata as TryInto<U>>::Error;
-            #[inline(always)]
-            fn unpack(value: Self::CType) -> Result<(Pointer, U), Self::Error> {
-                Ok((value.as_ptr(), value.metadata().try_into()?))
-            }
-        }
-        impl<
-            R: ReprC<CType: Wide> + Wide + ?Sized,
-            U: CType + TryInto<<R::CType as Wide>::Metadata>,
-            Pointer: CType,
-        > Pack2<Pointer, U> for $reference
-        where
-            Self: ReprC<CType: WideRefCarrier<R, Pointer = Pointer>>,
-        {
-            type Error = <U as TryInto<<R::CType as Wide>::Metadata>>::Error;
-            #[inline(always)]
-            unsafe fn pack(data: Pointer, metadata: U) -> Result<Self::CType, Self::Error> {
-                Ok(unsafe { Self::CType::from_parts(data, metadata.try_into()?) })
-            }
-        }
-    };
+impl<R, U> Unpack2<*const PointeeData<R::CType>, U> for &R
+where
+    R: ReprC<CType: Wide<Header: WideHeader<Data: CType>, Metadata: TryInto<U>>> + Wide + ?Sized,
+    U: CType,
+    Self: ReprC<CType: WideRefCarrier<R, Pointer = *const PointeeData<R::CType>>>,
+{
+    type Error = <<R::CType as Wide>::Metadata as TryInto<U>>::Error;
+
+    #[inline(always)]
+    fn unpack(value: Self::CType) -> Result<(*const PointeeData<R::CType>, U), Self::Error> {
+        Ok((value.as_ptr(), value.metadata().try_into()?))
+    }
 }
-impl_ref_wide_pack!(&R);
+
+impl<R, U> Pack2<*const PointeeData<R::CType>, U> for &R
+where
+    R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + Wide + ?Sized,
+    U: CType + TryInto<<R::CType as Wide>::Metadata>,
+    Self: ReprC<CType: WideRefCarrier<R, Pointer = *const PointeeData<R::CType>>>,
+{
+    type Error = <U as TryInto<<R::CType as Wide>::Metadata>>::Error;
+
+    #[inline(always)]
+    unsafe fn pack(
+        data: *const PointeeData<R::CType>,
+        metadata: U,
+    ) -> Result<Self::CType, Self::Error> {
+        Ok(unsafe { Self::CType::from_parts(data, metadata.try_into()?) })
+    }
+}
+
 impl<R, U> Unpack2<*mut PointeeData<R::CType>, U> for &mut R
 where
     R: ReprC<CType: Wide<Header: WideHeader<Data: CType>, Metadata: TryInto<U>>> + Wide + ?Sized,
@@ -386,5 +390,23 @@ mod tests {
             <Option<Box<Pointee>> as Unpack2<*mut u8, usize>>::unpack(carrier).unwrap();
         assert!(pointer.is_null());
         assert_eq!(unpacked, metadata);
+    }
+
+    #[test]
+    fn exclusive_unsafe_cell_wide_uses_mutable_carrier() {
+        use core::cell::UnsafeCell;
+
+        let mut cell = UnsafeCell::new([1u8, 2, 3]);
+        let original: &mut UnsafeCell<[u8]> = &mut cell;
+
+        let carrier: crate::wide::abi::WideRef<'_, <UnsafeCell<[u8]> as crate::ReprC>::CType> =
+            crate::encode(original);
+        let (data, len) =
+            <&mut UnsafeCell<[u8]> as Unpack2<*mut u8, usize>>::unpack(carrier).unwrap();
+        assert_eq!(data, cell.get().cast());
+        assert_eq!(len, 3);
+        unsafe { data.add(1).write(9) };
+
+        assert_eq!(unsafe { &*cell.get() }, &[1, 9, 3]);
     }
 }

@@ -1,4 +1,4 @@
-use co3::{reference::SoftRef, string::abi::String as AbiString, vec::abi};
+use co3::{reference::abi::SoftRef, string::abi::String as AbiString, vec::abi};
 
 #[test]
 fn shared_string_decodes_without_taking_source_ownership() {

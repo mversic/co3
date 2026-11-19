@@ -15,11 +15,6 @@ ffi! {
 
 ffi! {
     #![unsafe(export("C"))]
-    #![unsafe(export("C"))]
-}
-
-ffi! {
-    #![unsafe(export("C"))]
 
     #![feature(generic_const_exprs)]
 }

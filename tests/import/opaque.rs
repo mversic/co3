@@ -156,7 +156,7 @@ fn imported_opaque_drop_sends_pointer() {
 fn owned_handle_has_null_niche() {
     use core::mem::{align_of, size_of};
 
-    use co3::{ReprC, marker::Owned, niche::Niche};
+    use co3::{ReprC, niche::Niche};
 
     type Carrier = <OwnedOpaqueStruct as ReprC>::CType;
     assert_eq!(size_of::<Option<OwnedOpaqueStruct>>(), size_of::<Carrier>());
@@ -165,15 +165,15 @@ fn owned_handle_has_null_niche() {
         align_of::<Carrier>()
     );
 
-    let null: Owned<*mut OpaqueStruct> = <OwnedOpaqueStruct as Niche>::NICHE;
-    assert!(null.0.is_null());
+    let null: *mut OpaqueStruct = <OwnedOpaqueStruct as Niche>::NICHE;
+    assert!(null.is_null());
     assert!(
         unsafe { co3::soft_decode::<OwnedOpaqueStruct>(null, &mut Default::default()) }.is_none()
     );
     assert!(matches!(
         unsafe {
             co3::soft_decode::<Option<OwnedOpaqueStruct>>(
-                co3::option::abi::OptionSome(null),
+                co3::soft_encode(None::<OwnedOpaqueStruct>, &mut None),
                 &mut None,
             )
         },
@@ -184,5 +184,5 @@ fn owned_handle_has_null_niche() {
     let decoded = unsafe { co3::soft_decode::<Option<OwnedOpaqueStruct>>(raw, &mut None) }
         .expect("valid carrier")
         .expect("non-null handle");
-    assert_eq!(decoded.name(), 42);
+    assert_eq!(core::ptr::from_ref(&*decoded).cast_mut(), raw.0);
 }

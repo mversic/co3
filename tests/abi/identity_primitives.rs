@@ -169,7 +169,7 @@ fn lowered_aggregates_use_codecs_without_conversion_traits() {
 fn safe_carrier_constructors_accept_lowered_storage() {
     use co3::{
         boxed::abi::Box as AbiBox,
-        reference::{SoftRef, SoftRefMut},
+        reference::abi::{SoftRef, SoftRefMut},
         wide::abi::{
             SoftWideRef as AbiSoftWideRef, SoftWideRefMut as AbiSoftWideRefMut,
             WideBox as AbiWideBox,
@@ -182,7 +182,10 @@ fn safe_carrier_constructors_accept_lowered_storage() {
     assert_eq!(*unsafe { co3::decode::<Box<u8>>(boxed) }.unwrap(), 9);
 
     let value = 8_u8;
-    assert_eq!(co3::reference::Ref::from_ref(&value), co3::encode(&value));
+    assert_eq!(
+        co3::reference::abi::Ref::from_ref(&value),
+        co3::encode(&value)
+    );
     assert!(co3::encode(None::<&u8>).payload().as_ptr().is_null());
 
     let raw = Box::into_raw(Box::new(10_u8));

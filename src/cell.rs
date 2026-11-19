@@ -97,13 +97,13 @@ mod tests {
             Encode,
         );
         assert_impl_all!(&UnsafeCell<u8>:
-            Niche<CType = crate::reference::Ref<'static, <UnsafeCell<u8> as crate::ReprC>::CType>>,
+            Niche<CType = crate::reference::abi::Ref<'static, <UnsafeCell<u8> as crate::ReprC>::CType>>,
             AbiCompatible,
             Encode,
         );
         assert_impl_all!(&UnsafeCell<u8>: Decode<'static>);
         assert_impl_all!(&mut UnsafeCell<u8>:
-            Niche<CType = crate::reference::RefMut<'static, <UnsafeCell<u8> as crate::ReprC>::CType>>,
+            Niche<CType = crate::reference::abi::RefMut<'static, <UnsafeCell<u8> as crate::ReprC>::CType>>,
             Decode<'static>,
             Encode,
         );
@@ -159,7 +159,7 @@ mod tests {
         assert_eq!(*cell.get_mut(), 9);
 
         let source = unsafe {
-            crate::reference::RefMut::from_raw(cell.get().cast::<core::cell::UnsafeCell<u8>>())
+            crate::reference::abi::RefMut::from_raw(cell.get().cast::<core::cell::UnsafeCell<u8>>())
         };
         let decoded = unsafe { crate::decode::<&mut UnsafeCell<u8>>(source) }.unwrap();
         *decoded.get_mut() = 11;
@@ -167,7 +167,7 @@ mod tests {
 
         let value = UnsafeCell::new(NonZero::new(3_u8).unwrap());
         let source = unsafe {
-            crate::reference::SoftRefMut::from_raw(
+            crate::reference::abi::SoftRefMut::from_raw(
                 value
                     .get()
                     .cast::<core::cell::UnsafeCell<crate::marker::NonZero<u8>>>(),
@@ -178,7 +178,7 @@ mod tests {
 
         let invalid = UnsafeCell::new(0_u8);
         let source = unsafe {
-            crate::reference::SoftRefMut::from_raw(
+            crate::reference::abi::SoftRefMut::from_raw(
                 invalid
                     .get()
                     .cast::<core::cell::UnsafeCell<crate::marker::NonZero<u8>>>(),
@@ -274,17 +274,17 @@ mod tests {
         type CellValue = UnsafeCell<NonZero<u8>>;
         assert_impl_all!(&'static mut CellValue:
             crate::convert::EncodeMoveUnchecked<SoftStore = ()>,
-            ReprC<CType = crate::reference::SoftRefMut<<CellValue as crate::ReprC>::CType>>
+            ReprC<CType = crate::reference::abi::SoftRefMut<<CellValue as crate::ReprC>::CType>>
         );
 
         let mut value = UnsafeCell::new(NonZero::new(3_u8).unwrap());
         let original = core::ptr::from_mut(&mut value).cast();
-        let unchecked: crate::reference::SoftRefMut<<CellValue as crate::ReprC>::CType> =
+        let unchecked: crate::reference::abi::SoftRefMut<<CellValue as crate::ReprC>::CType> =
             unsafe { crate::soft_encode_unchecked(&mut value, &mut ()) };
         assert_eq!(unchecked.as_ptr(), original);
 
         let mut store = Default::default();
-        let checked: crate::reference::SoftRefMut<<CellValue as crate::ReprC>::CType> =
+        let checked: crate::reference::abi::SoftRefMut<<CellValue as crate::ReprC>::CType> =
             crate::soft_encode(&mut value, &mut store);
         assert_ne!(checked.as_ptr(), original);
         unsafe {
@@ -304,11 +304,11 @@ mod tests {
             Encode,
         );
         assert_impl_all!(&UnsafeCell<NonZero<u8>>:
-            Niche<CType = crate::reference::Ref<'static, <UnsafeCell<NonZero<u8>> as crate::ReprC>::CType>>,
+            Niche<CType = crate::reference::abi::Ref<'static, <UnsafeCell<NonZero<u8>> as crate::ReprC>::CType>>,
         );
         assert_not_impl_any!(&UnsafeCell<NonZero<u8>>: Decode<'static>, AbiCompatible);
         assert_impl_all!(&mut UnsafeCell<NonZero<u8>>:
-            Niche<CType = crate::reference::SoftRefMut<<UnsafeCell<NonZero<u8>> as crate::ReprC>::CType>>,
+            Niche<CType = crate::reference::abi::SoftRefMut<<UnsafeCell<NonZero<u8>> as crate::ReprC>::CType>>,
             Decode<'static>,
         );
         #[cfg(feature = "alloc")]

@@ -89,7 +89,7 @@ impl<T: ?Sized> EncodeUnchecked for PhantomData<T> {}
 impl<T: ?Sized> Encode for PhantomData<T> {}
 
 unsafe impl<T: ?Sized> CType for PhantomData<T> {}
-crate::reference::impl_direct_mut!([T: ?Sized] PhantomData<T>);
+crate::mutable::impl_direct_mut!([T: ?Sized] PhantomData<T>);
 
 /// Marks a lowered ABI value that is borrowed across the FFI boundary.
 #[repr(transparent)]
@@ -166,64 +166,6 @@ impl<T: CType + PartialEq> PartialEq for Borrowed<T> {
     }
 }
 impl<T: CType + Eq> Eq for Borrowed<T> {}
-
-/// Marks an ABI payload that transfers ownership when passed by value.
-///
-/// The Rust owner defines how to release the resource. This carrier has the
-/// same ABI as its payload and does not destroy the resource itself.
-/// Copies of a carrier still refer to one resource and can only be consumed once in total.
-#[derive(RustSpec, Clone, Copy, Debug, PartialEq, Eq)]
-#[repr(transparent)]
-pub struct Owned<T: CType + ?Sized>(pub T);
-
-impl<T: CType + ?Sized> ReprC for Owned<T> {
-    type CType = Self;
-}
-
-unsafe impl<T: CType + ?Sized> CType for Owned<T> {}
-unsafe impl<T: CType + ?Sized> AbiCompatibleValidate for Owned<T> {
-    unsafe fn is_valid(_: &Self) -> bool {
-        true
-    }
-}
-unsafe impl<T: CType + ?Sized> AbiCompatible for Owned<T> {}
-unsafe impl<T: CFnArg> CFnArg for Owned<T> {}
-unsafe impl<T: CFnReturn> CFnReturn for Owned<T> {}
-
-unsafe impl<T: CType> EncodeMoveUnchecked for Owned<T> {
-    type SoftStore = ();
-
-    unsafe fn soft_encode_unchecked<'itm>(self, (): &'itm mut ()) -> Self
-    where
-        Self: 'itm,
-    {
-        self
-    }
-}
-
-unsafe impl<T: CType> EncodeMove for Owned<T> {
-    type Store = ();
-
-    fn soft_encode<'itm>(self, (): &'itm mut ()) -> Self
-    where
-        Self: 'itm,
-    {
-        self
-    }
-}
-
-unsafe impl<'d, T: CType> DecodeMove<'d> for Owned<T> {
-    type Store = ();
-
-    unsafe fn soft_decode<'itm: 'd>(source: Self, (): &'itm mut ()) -> Option<Self> {
-        Some(source)
-    }
-}
-
-impl<T: CType> Encode for Owned<T> {}
-impl<T: CType> EncodeUnchecked for Owned<T> {}
-impl<T: CType> Decode<'_> for Owned<T> {}
-crate::borrow::__impl_borrowed_identity!([T: CType] Owned<T>);
 
 /// Marks the lowered carrier of a source type that opted into co3's stable representation.
 ///

@@ -21,7 +21,7 @@ use crate::{
     },
     niche::Niche,
     option::abi::{Option as AbiOption, OptionSome as AbiOptionSome},
-    reference::SoftRef,
+    reference::abi::SoftRef,
     result::abi::{Result as AbiResult, ResultErr as AbiResultErr, ResultOk as AbiResultOk},
     sync::{ArrayStore, RefSizedEncodeStore},
     wide::{Wide, WideHeader, WideRefCarrier, abi::SoftWideRef as AbiSoftWideRef},
@@ -128,7 +128,7 @@ disjoint_impls! {
     #[cfg(feature = "alloc")]
     unsafe impl<'a, R: AbiCompatible, __Interior: ExclusiveKind> SoftEncodeRefUnchecked<'a> for Vec<R>
     where
-        &'a Self: crate::ReprC<CType = crate::reference::SoftRef<<Self as ReprC>::CType>>,
+        &'a Self: crate::ReprC<CType = crate::reference::abi::SoftRef<<Self as ReprC>::CType>>,
         <R as ReprC>::CType: crate::CType + Sized,
         R: RustSpec<Layout = Stable>,
         Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin>,
@@ -151,7 +151,7 @@ disjoint_impls! {
     #[cfg(feature = "alloc")]
     unsafe impl<'a, R: ReprC, __Interior: ExclusiveKind> SoftEncodeRefUnchecked<'a> for Vec<R>
     where
-        &'a Self: crate::ReprC<CType = crate::reference::SoftRef<<Self as ReprC>::CType>>,
+        &'a Self: crate::ReprC<CType = crate::reference::abi::SoftRef<<Self as ReprC>::CType>>,
         <R as ReprC>::CType: crate::CType + Copy,
         R: RustSpec<Layout = Unstable>,
         Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin>,
@@ -249,7 +249,7 @@ disjoint_impls! {
     unsafe impl<'a, R: ReprC, E: ReprC, K: SizedKind, __Interior: ExclusiveKind> SoftEncodeRefUnchecked<'a>
         for Result<R, E>
     where
-        &'a Self: crate::ReprC<CType = crate::reference::SoftRef<<Self as ReprC>::CType>>,
+        &'a Self: crate::ReprC<CType = crate::reference::abi::SoftRef<<Self as ReprC>::CType>>,
         Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin> + 'a,
         <R as ReprC>::CType: crate::CType + Copy,
         <E as ReprC>::CType: crate::CType + Copy,
@@ -299,7 +299,7 @@ disjoint_impls! {
     unsafe impl<'a, R: Niche, E: ReprC<CType: CType + Sized>, N: LayoutKind, __Interior: ExclusiveKind> SoftEncodeRefUnchecked<'a>
         for Result<R, E>
     where
-        &'a Self: crate::ReprC<CType = crate::reference::SoftRef<<Self as ReprC>::CType>>,
+        &'a Self: crate::ReprC<CType = crate::reference::abi::SoftRef<<Self as ReprC>::CType>>,
         Self: ReprC<CType = AbiResultOk<<R as ReprC>::CType, <E as ReprC>::CType>>,
         R: RustSpec<Size = RustSpecSized<rust_spec::Gt<Zero>>, Niche = WithNiche<N>>,
         E: RustSpec<Size = RustSpecSized<Zero>>,
@@ -333,7 +333,7 @@ disjoint_impls! {
     unsafe impl<'a, R: ReprC<CType: CType + Sized>, E: Niche, N: LayoutKind, __Interior: ExclusiveKind> SoftEncodeRefUnchecked<'a>
         for Result<R, E>
     where
-        &'a Self: crate::ReprC<CType = crate::reference::SoftRef<<Self as ReprC>::CType>>,
+        &'a Self: crate::ReprC<CType = crate::reference::abi::SoftRef<<Self as ReprC>::CType>>,
         Self: ReprC<CType = AbiResultErr<<R as ReprC>::CType, <E as ReprC>::CType>>,
         R: RustSpec<Size = RustSpecSized<Zero>>,
         E: RustSpec<Size = RustSpecSized<rust_spec::Gt<Zero>>, Niche = WithNiche<N>>,
@@ -524,7 +524,7 @@ disjoint_impls! {
         __Interior: ExclusiveKind,
     > SoftEncodeRef<'a> for Vec<T>
     where
-        &'a Self: crate::ReprC<CType = crate::reference::SoftRef<<Self as ReprC>::CType>>,
+        &'a Self: crate::ReprC<CType = crate::reference::abi::SoftRef<<Self as ReprC>::CType>>,
         T: RustSpec<Layout = Stable, Mutability: SharedVecMutability>,
         Self: ReprC<CType = AbiVec<<T as ReprC>::CType>>,
         Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin> + 'a,
@@ -545,7 +545,7 @@ disjoint_impls! {
     unsafe impl<'a, T: ReprC<CType: CType + Copy + Sized>, __Interior: ExclusiveKind> SoftEncodeRef<'a>
         for Vec<T>
     where
-        &'a Self: crate::ReprC<CType = crate::reference::SoftRef<<Self as ReprC>::CType>>,
+        &'a Self: crate::ReprC<CType = crate::reference::abi::SoftRef<<Self as ReprC>::CType>>,
         T: RustSpec<Layout = Unstable>,
         Self: crate::convert::SoftEncodeRefUnchecked<'a> + ReprC<CType = AbiVec<<T as ReprC>::CType>>,
         Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin> + 'a,
@@ -632,7 +632,7 @@ disjoint_impls! {
         __Interior: ExclusiveKind,
     > SoftEncodeRef<'a> for Result<R, E>
     where
-        &'a Self: crate::ReprC<CType = crate::reference::SoftRef<<Self as ReprC>::CType>>,
+        &'a Self: crate::ReprC<CType = crate::reference::abi::SoftRef<<Self as ReprC>::CType>>,
         Self: ReprC<CType = AbiResult<<R as ReprC>::CType, <E as ReprC>::CType>>,
         R: RustSpec<Size = RustSpecSized<K>>,
         E: RustSpec<Size = RustSpecSized<K>>,
@@ -672,7 +672,7 @@ disjoint_impls! {
     unsafe impl<'a, R: Niche, E: ReprC<CType: CType + Sized>, N: LayoutKind, __Interior: ExclusiveKind> SoftEncodeRef<'a>
         for Result<R, E>
     where
-        &'a Self: crate::ReprC<CType = crate::reference::SoftRef<<Self as ReprC>::CType>>,
+        &'a Self: crate::ReprC<CType = crate::reference::abi::SoftRef<<Self as ReprC>::CType>>,
         Self: ReprC<CType = AbiResultOk<<R as ReprC>::CType, <E as ReprC>::CType>>,
         R: RustSpec<Size = RustSpecSized<rust_spec::Gt<Zero>>, Niche = WithNiche<N>>,
         E: RustSpec<Size = RustSpecSized<Zero>>,
@@ -701,7 +701,7 @@ disjoint_impls! {
     unsafe impl<'a, R: ReprC<CType: CType + Sized>, E: Niche, N: LayoutKind, __Interior: ExclusiveKind> SoftEncodeRef<'a>
         for Result<R, E>
     where
-        &'a Self: crate::ReprC<CType = crate::reference::SoftRef<<Self as ReprC>::CType>>,
+        &'a Self: crate::ReprC<CType = crate::reference::abi::SoftRef<<Self as ReprC>::CType>>,
         Self: ReprC<CType = AbiResultErr<<R as ReprC>::CType, <E as ReprC>::CType>>,
         R: RustSpec<Size = RustSpecSized<Zero>>,
         E: RustSpec<Size = RustSpecSized<rust_spec::Gt<Zero>>, Niche = WithNiche<N>>,
@@ -805,7 +805,7 @@ disjoint_impls! {
 unsafe impl<'a, R: ReprC, __Interior: ExclusiveKind> SoftEncodeRefUnchecked<'a>
     for crate::vec::Vec<R>
 where
-    &'a Self: crate::ReprC<CType = crate::reference::SoftRef<<Self as ReprC>::CType>>,
+    &'a Self: crate::ReprC<CType = crate::reference::abi::SoftRef<<Self as ReprC>::CType>>,
     Self: ReprC<CType = crate::marker::Stable<AbiVec<<R as ReprC>::CType>>>,
     <R as ReprC>::CType: Copy,
     Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin> + 'a,
@@ -837,7 +837,7 @@ where
 unsafe impl<'a, T: ReprC<CType: CType + Copy + Sized>, __Interior: ExclusiveKind> SoftEncodeRef<'a>
     for crate::vec::Vec<T>
 where
-    &'a Self: crate::ReprC<CType = crate::reference::SoftRef<<Self as ReprC>::CType>>,
+    &'a Self: crate::ReprC<CType = crate::reference::abi::SoftRef<<Self as ReprC>::CType>>,
     Self: crate::convert::SoftEncodeRefUnchecked<'a>
         + ReprC<CType = crate::marker::Stable<AbiVec<<T as ReprC>::CType>>>,
     Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin> + 'a,
@@ -974,7 +974,7 @@ unsafe impl<'a> SoftEncodeRef<'a> for core::ffi::CStr {
 // backing store for the outer reference. The pointee is never cloned.
 unsafe impl<'a, 'b: 'a, R: ?Sized, __Interior: ExclusiveKind> SoftEncodeRefUnchecked<'a> for &'b R
 where
-    &'a Self: crate::ReprC<CType = crate::reference::SoftRef<<Self as ReprC>::CType>>,
+    &'a Self: crate::ReprC<CType = crate::reference::abi::SoftRef<<Self as ReprC>::CType>>,
     Self: EncodeMoveUnchecked
         + ReprC<CType: CType + Sized>
         + RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin>,
@@ -994,7 +994,7 @@ where
 
 unsafe impl<'a, 'b: 'a, R: ?Sized, __Interior: ExclusiveKind> SoftEncodeRef<'a> for &'b R
 where
-    &'a Self: crate::ReprC<CType = crate::reference::SoftRef<<Self as ReprC>::CType>>,
+    &'a Self: crate::ReprC<CType = crate::reference::abi::SoftRef<<Self as ReprC>::CType>>,
     Self: EncodeMove
         + ReprC<CType: CType + Sized>
         + RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin>,
@@ -1017,7 +1017,7 @@ where
 unsafe impl<'a, 'b: 'a, R: RustSpec + ?Sized, __Interior: ExclusiveKind> SoftEncodeRefUnchecked<'a>
     for &'b mut R
 where
-    &'a Self: crate::ReprC<CType = crate::reference::SoftRef<<Self as ReprC>::CType>>,
+    &'a Self: crate::ReprC<CType = crate::reference::abi::SoftRef<<Self as ReprC>::CType>>,
     Self: ReprC<CType: Copy + Sized>
         + RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin>,
     &'a R: EncodeMoveUnchecked + ReprC<CType: Copy + Sized>,
@@ -1049,7 +1049,7 @@ where
 unsafe impl<'a, 'b: 'a, R: RustSpec + ?Sized, __Interior: ExclusiveKind> SoftEncodeRef<'a>
     for &'b mut R
 where
-    &'a Self: crate::ReprC<CType = crate::reference::SoftRef<<Self as ReprC>::CType>>,
+    &'a Self: crate::ReprC<CType = crate::reference::abi::SoftRef<<Self as ReprC>::CType>>,
     Self: ReprC<CType: Copy + Sized>
         + RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin>,
     &'a R: EncodeMove + ReprC<CType: Copy + Sized>,

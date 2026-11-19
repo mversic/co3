@@ -5,7 +5,6 @@ use co3::{
     ops::{CFn1, CFn2},
     raw,
     rust_spec::RustSpec,
-    vec::abi,
 };
 
 type Number = u32;
@@ -32,9 +31,10 @@ raw! {
 
 #[test]
 fn call_returns_external_reference_while_synchronizing_argument_storage() {
-    use co3::reference::{Ref, SoftRefMut};
-    type Callback<'a> =
-        unsafe extern "C" fn(SoftRefMut<<bool as co3::ReprC>::CType>, Ref<'a, u32>) -> Ref<'a, u32>;
+    type Callback<'a> = unsafe extern "C" fn(
+        <&mut bool as ReprC>::CType,
+        <&'a u32 as ReprC>::CType,
+    ) -> <&'a u32 as ReprC>::CType;
     let callback: Callback<'_> = update_and_borrow_raw;
     let mut changed = false;
     let value = 42;
@@ -67,7 +67,7 @@ fn call_synchronizes_before_releasing_storage() {
 }
 
 #[unsafe(export_name = "co3_borrowed_vector_echo")]
-extern "C" fn echo_carrier(value: abi::Vec<u32>) -> abi::Vec<u32> {
+extern "C" fn echo_carrier(value: <Vec<u32> as ReprC>::CType) -> <Vec<u32> as ReprC>::CType {
     value
 }
 ffi! {

@@ -103,8 +103,9 @@ fn wide_reference_pack_reconstructs_unpacked_arguments() {
         Some(3usize)
     );
     let callback: unsafe extern "C" fn(_, _, _) -> _ = raw::mutable;
+    let data = bytes.as_mut_ptr();
     assert_eq!(
-        unsafe { callback.call(bytes.as_mut_ptr(), bytes.len(), bytes.as_mut_ptr()) },
+        unsafe { callback.call(data, bytes.len(), data) },
         Some(3usize)
     );
     assert_eq!(bytes, [9, 2, 3]);

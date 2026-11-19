@@ -158,17 +158,6 @@ ffi! {
 }
 
 ffi! {
-    #![unsafe(export("C"))]
-
-    impl<T> Kita for dyn T
-    where
-        use<T> @ <u32>,
-    {
-        fn kita(self) -> u32;
-    }
-}
-
-ffi! {
     #![unsafe(extern("C"))]
 
     impl<dyn(i64) T> Kita for T

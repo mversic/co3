@@ -473,7 +473,7 @@ fn inferred_non_option_unpack_part(arg_ty: &Type, part: u8) -> syn::Result<Type>
         });
     }
 
-    if let Some(wide_ty) = boxed_wide_type(arg_ty) {
+    if let Some(wide_ty) = boxed_or_nonnull_pointee(arg_ty) {
         return Ok(if part == 1 {
             parse_quote!(*mut <<<#wide_ty as co3::wide::Wide>::Header as co3::wide::WideHeader>::Data as co3::ReprC>::CType)
         } else {
@@ -518,7 +518,7 @@ fn inferred_non_option_unpack_part(arg_ty: &Type, part: u8) -> syn::Result<Type>
     Err(syn::Error::new_spanned(
         arg_ty,
         format!(
-            "the {position} `_` unpack argument is only supported for two-element tuples, references or raw pointers to `Wide` types, and `Box`es of `Wide` types"
+            "the {position} `_` unpack argument is only supported for two-element tuples, references or raw pointers to `Wide` types, and `Box` or `NonNull` pointers to `Wide` types"
         ),
     ))
 }
@@ -573,11 +573,12 @@ pub(crate) fn inferred_result_type(ty: &Type) -> Option<(Type, &Type)> {
     Some((parse_quote!(core::result::Result<#ok, #err>), payload))
 }
 
-fn boxed_wide_type(ty: &Type) -> Option<&Type> {
+fn boxed_or_nonnull_pointee(ty: &Type) -> Option<&Type> {
     let known = crate::known_type::recognize(ty)?;
-    (known.kind == crate::known_type::Kind::Box)
-        .then_some(known.inner)
-        .flatten()
+    match known.kind {
+        crate::known_type::Kind::Box | crate::known_type::Kind::NonNull => known.inner,
+        _ => None,
+    }
 }
 
 fn tuple_parts(ty: &Type) -> Option<(&Type, &Type)> {

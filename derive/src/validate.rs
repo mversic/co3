@@ -1298,10 +1298,11 @@ fn validate_method_generic_declarations(items: &[crate::ForeignItem]) -> Result<
 
 fn validate_unpack_export(sig: &syn::Signature) -> Result<()> {
     for input in &sig.inputs {
-        let syn::FnArg::Typed(input) = input else {
-            continue;
+        let attrs = match input {
+            syn::FnArg::Typed(input) => &input.attrs,
+            syn::FnArg::Receiver(receiver) => &receiver.attrs,
         };
-        if let Some(attr) = input.attrs.iter().find(|attr| is_unpack_attr(attr)) {
+        if let Some(attr) = attrs.iter().find(|attr| is_unpack_attr(attr)) {
             return Err(Error::new_spanned(
                 attr,
                 "#[unpack] is only supported in extern declarations",
@@ -2182,6 +2183,17 @@ fn validate_tag_id_pos(ty: &Type) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rejects_unpack_on_exported_receivers() {
+        let sig: syn::Signature = syn::parse_quote!(fn length(#[unpack(*const u8, usize)] &self));
+
+        let error = validate_unpack_export(&sig).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "#[unpack] is only supported in extern declarations"
+        );
+    }
 
     #[test]
     fn rejects_dispatch_param_associated_type() {

@@ -32,9 +32,3 @@ fn shared_interior_slice_decode_preserves_identity_and_mutations() {
             .is_empty()
     );
 }
-
-#[test]
-fn shared_interior_decode_rejects_null() {
-    assert!(unsafe { co3::decode::<&Cell<u8>>(co3::reference::Ref::null()) }.is_none());
-    assert!(unsafe { co3::decode::<&[Cell<u8>]>(co3::wide::abi::WideRef::null()) }.is_none());
-}

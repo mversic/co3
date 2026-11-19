@@ -6,6 +6,7 @@ pub(crate) use crate::stored::{encode_ref_field, encode_ref_field_unchecked};
 #[cfg(feature = "alloc")]
 use crate::{RustSpec, StableLayout, Unstable, boxed::Box};
 pub use crate::{
+    // FIXME: This trait doesn't belong here
     abi::AbiCompatibleValidate,
     decoded::{SoftDecodeMut, SoftDecodeRef},
     mutable::{SoftEncodeMut, SoftEncodeMutUnchecked},

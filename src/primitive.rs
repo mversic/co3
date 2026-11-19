@@ -69,7 +69,7 @@ unsafe impl AbiCompatibleValidate for () {
 unsafe impl AbiCompatible for () {}
 
 unsafe impl CType for () {}
-crate::reference::impl_direct_mut!([]());
+crate::mutable::impl_direct_mut!([]());
 unsafe impl CFnReturn for () {}
 
 unsafe impl EmptyStore for () {}
@@ -82,130 +82,23 @@ impl ReprC for str {
     type CType = co3::primitive::abi::str;
 }
 
-#[doc(hidden)]
-pub mod abi {
-    use rust_spec::RustSpec;
-    /// C-compatible byte region used as the representation of `str`.
-    ///
-    /// Every byte value is valid for this carrier; conversion to `str` accepts only valid `UTF-8`;
-    #[derive(RustSpec)]
-    #[allow(non_camel_case_types)]
-    #[repr(transparent)]
-    pub struct str(pub [u8]);
-
-    /// C-compatible carrier for [`prim@bool`].
-    ///
-    /// Every byte value is valid for this carrier; conversion to `bool` accepts only 0 and 1.
-    #[derive(Debug, Clone, Copy, Default, RustSpec)]
-    #[allow(non_camel_case_types)]
-    #[repr(transparent)]
-    pub struct bool(pub u8);
-
-    /// C-compatible carrier for a Unicode scalar value (`char`).
-    ///
-    /// Every `u32` value is valid for this carrier; conversion to `char` validates the scalar value.
-    #[derive(Debug, Clone, Copy, Default, RustSpec)]
-    #[allow(non_camel_case_types)]
-    #[repr(transparent)]
-    pub struct char(pub u32);
-}
-
-unsafe impl CType for abi::str {}
-
-impl ReprC for abi::str {
-    type CType = Self;
-}
-
-unsafe impl crate::convert::AbiCompatibleValidate for abi::str {
-    unsafe fn is_valid(_: &Self::CType) -> bool {
-        true
-    }
-}
-unsafe impl AbiCompatible for abi::str {}
-
-unsafe impl crate::wide::Wide for abi::str {
-    type Header = [u8; 0];
-    type Metadata = usize;
-
-    fn metadata(ptr: *const Self) -> usize {
-        (ptr as *const [u8]).len()
-    }
-
-    fn as_ptr(ptr: *const Self) -> *const Self::Header {
-        ptr.cast()
-    }
-
-    fn as_mut_ptr(ptr: *mut Self) -> *mut Self::Header {
-        ptr.cast()
-    }
-
-    unsafe fn from_raw_parts<'a>(data: *const Self::Header, len: usize) -> &'a Self {
-        let bytes = unsafe { core::slice::from_raw_parts(data.cast(), len) };
-        unsafe { &*(bytes as *const [u8] as *const Self) }
-    }
-
-    unsafe fn from_raw_parts_mut<'a>(data: *mut Self::Header, len: usize) -> &'a mut Self {
-        let bytes = unsafe { core::slice::from_raw_parts_mut(data.cast(), len) };
-        unsafe { &mut *(bytes as *mut [u8] as *mut Self) }
-    }
-
-    #[cfg(feature = "alloc")]
-    fn into_non_null(self: alloc::boxed::Box<Self>) -> core::ptr::NonNull<Self::Header> {
-        alloc::boxed::Box::into_non_null(self).cast()
-    }
-
-    #[cfg(feature = "alloc")]
-    unsafe fn from_non_null(
-        data: core::ptr::NonNull<Self::Header>,
-        len: usize,
-    ) -> alloc::boxed::Box<Self> {
-        let ptr = core::ptr::slice_from_raw_parts_mut(data.as_ptr().cast::<u8>(), len);
-        unsafe { alloc::boxed::Box::from_raw(ptr as *mut Self) }
-    }
-}
-
-impl PartialEq for abi::char {
-    fn eq(&self, other: &Self) -> bool {
-        char::from_u32(self.0).is_some() && self.0 == other.0
-    }
-}
-impl PartialEq for abi::bool {
-    fn eq(&self, other: &Self) -> bool {
-        self.0 <= 1 && self.0 == other.0
-    }
-}
-unsafe impl crate::marker::Zeroable for abi::bool {}
-unsafe impl crate::marker::Zeroable for abi::char {}
-impl From<char> for abi::char {
-    fn from(value: char) -> Self {
-        Self(value.into())
-    }
-}
 impl TryFrom<abi::char> for char {
     type Error = <char as TryFrom<u32>>::Error;
     fn try_from(value: abi::char) -> Result<Self, Self::Error> {
         char::try_from(value.0)
     }
 }
-impl From<bool> for abi::bool {
-    fn from(value: bool) -> Self {
-        Self(value.into())
-    }
-}
+
 impl TryFrom<abi::bool> for bool {
     type Error = <bool as TryFrom<u8>>::Error;
     fn try_from(value: abi::bool) -> Result<Self, Self::Error> {
         bool::try_from(value.0)
     }
 }
-impl abi::bool {
-    pub const FALSE: Self = Self(0);
-    pub const TRUE: Self = Self(1);
-}
 
 macro_rules! primitive_derive {
     ( $primitive:ty ) => {
-        $crate::reference::impl_direct_mut!([] $primitive);
+        $crate::mutable::impl_direct_mut!([] $primitive);
         crate::borrow::__impl_borrowed_identity!([] $primitive);
 
         impl ReprC for $primitive {
@@ -248,7 +141,7 @@ macro_rules! primitive_derive {
 
         unsafe impl $crate::convert::AbiCompatibleValidate for $primitive {
             #[inline(always)]
-            unsafe fn is_valid(_: &Self::CType) -> bool {
+            unsafe fn is_valid(_: &Self::CType) -> core::primitive::bool {
                 true
             }
         }
@@ -263,7 +156,7 @@ macro_rules! primitive_derive {
 
 macro_rules! raw_pointer_derive {
     ( $mutability:tt ) => {
-        $crate::reference::impl_direct_mut!([R: ReprC + ?Sized] *$mutability R);
+        $crate::mutable::impl_direct_mut!([R: ReprC + ?Sized] *$mutability R);
         crate::borrow::__impl_borrowed_identity!([R: ?Sized] *$mutability R);
 
         impl<R: ReprC + ?Sized> ReprC for *$mutability R {
@@ -606,8 +499,6 @@ primitive_derive! { u128 }
 primitive_derive! { i128 }
 primitive_derive! { f32 }
 primitive_derive! { f64 }
-primitive_derive! { abi::bool }
-primitive_derive! { abi::char }
 
 raw_pointer_derive! { const }
 raw_pointer_derive! { mut }
@@ -655,6 +546,129 @@ fieldless_enum_derive! {
 pub(crate) use fieldless_enum_derive;
 pub(crate) use primitive_derive;
 
+#[doc(hidden)]
+pub mod abi {
+    use rust_spec::RustSpec;
+
+    use super::{
+        AbiCompatible, AbiCompatibleValidate, CFnArg, CFnReturn, CType, Decode, DecodeMove, Encode,
+        EncodeMove, EncodeMoveUnchecked, ReprC,
+    };
+
+    /// C-compatible byte region used as the representation of `str`.
+    ///
+    /// Every byte value is valid for this carrier; conversion to `str` accepts only valid `UTF-8`;
+    #[derive(RustSpec)]
+    #[allow(non_camel_case_types)]
+    #[repr(transparent)]
+    pub struct str(pub [u8]);
+
+    /// C-compatible carrier for [`prim@bool`].
+    ///
+    /// Every byte value is valid for this carrier; conversion to `bool` accepts only 0 and 1.
+    #[derive(Debug, Clone, Copy, Default, RustSpec)]
+    #[allow(non_camel_case_types)]
+    #[repr(transparent)]
+    pub struct bool(pub u8);
+
+    /// C-compatible carrier for a Unicode scalar value (`char`).
+    ///
+    /// Every `u32` value is valid for this carrier; conversion to `char` validates the scalar value.
+    #[derive(Debug, Clone, Copy, Default, RustSpec)]
+    #[allow(non_camel_case_types)]
+    #[repr(transparent)]
+    pub struct char(pub u32);
+
+    unsafe impl CType for str {}
+
+    impl ReprC for str {
+        type CType = Self;
+    }
+
+    unsafe impl AbiCompatibleValidate for str {
+        unsafe fn is_valid(_: &Self::CType) -> core::primitive::bool {
+            true
+        }
+    }
+    unsafe impl AbiCompatible for str {}
+
+    unsafe impl crate::wide::Wide for str {
+        type Header = [u8; 0];
+        type Metadata = usize;
+
+        fn metadata(ptr: *const Self) -> usize {
+            (ptr as *const [u8]).len()
+        }
+
+        fn as_ptr(ptr: *const Self) -> *const Self::Header {
+            ptr.cast()
+        }
+
+        fn as_mut_ptr(ptr: *mut Self) -> *mut Self::Header {
+            ptr.cast()
+        }
+
+        unsafe fn from_raw_parts<'a>(data: *const Self::Header, len: usize) -> &'a Self {
+            let bytes = unsafe { core::slice::from_raw_parts(data.cast(), len) };
+            unsafe { &*(bytes as *const [u8] as *const Self) }
+        }
+
+        unsafe fn from_raw_parts_mut<'a>(data: *mut Self::Header, len: usize) -> &'a mut Self {
+            let bytes = unsafe { core::slice::from_raw_parts_mut(data.cast(), len) };
+            unsafe { &mut *(bytes as *mut [u8] as *mut Self) }
+        }
+
+        #[cfg(feature = "alloc")]
+        fn into_non_null(self: alloc::boxed::Box<Self>) -> core::ptr::NonNull<Self::Header> {
+            alloc::boxed::Box::into_non_null(self).cast()
+        }
+
+        #[cfg(feature = "alloc")]
+        unsafe fn from_non_null(
+            data: core::ptr::NonNull<Self::Header>,
+            len: usize,
+        ) -> alloc::boxed::Box<Self> {
+            let ptr = core::ptr::slice_from_raw_parts_mut(data.as_ptr().cast::<u8>(), len);
+            unsafe { alloc::boxed::Box::from_raw(ptr as *mut Self) }
+        }
+    }
+
+    impl PartialEq for char {
+        fn eq(&self, other: &Self) -> core::primitive::bool {
+            core::primitive::char::from_u32(self.0).is_some() && self.0 == other.0
+        }
+    }
+
+    impl PartialEq for bool {
+        fn eq(&self, other: &Self) -> core::primitive::bool {
+            self.0 <= 1 && self.0 == other.0
+        }
+    }
+
+    unsafe impl crate::marker::Zeroable for bool {}
+    unsafe impl crate::marker::Zeroable for char {}
+
+    impl From<core::primitive::char> for char {
+        fn from(value: core::primitive::char) -> Self {
+            Self(value.into())
+        }
+    }
+
+    impl From<core::primitive::bool> for bool {
+        fn from(value: core::primitive::bool) -> Self {
+            Self(value.into())
+        }
+    }
+
+    impl bool {
+        pub const FALSE: Self = Self(0);
+        pub const TRUE: Self = Self(1);
+    }
+
+    primitive_derive! { bool }
+    primitive_derive! { char }
+}
+
 #[cfg(test)]
 mod tests {
     #[cfg(feature = "alloc")]
@@ -668,7 +682,7 @@ mod tests {
     use crate::{boxed::abi::Box as AbiBox, wide::abi::WideBox as AbiWideBox};
     use crate::{
         cmp::abi::Ordering as COrdering, convert::Encode, option::abi::Option as AbiOption,
-        reference::Ref,
+        reference::abi::Ref,
     };
 
     #[test]
@@ -797,7 +811,7 @@ mod tests {
             Encode,
         );
         assert_impl_all!(&mut u8:
-            Niche<CType = crate::reference::RefMut<'static, u8>>,
+            Niche<CType = crate::reference::abi::RefMut<'static, u8>>,
             Decode<'static>,
             Encode,
         );

@@ -1,7 +1,7 @@
 //! Logic related to the conversion of [`Option<T>`] to and from FFI-compatible representation
 
 #[cfg(feature = "alloc")]
-use alloc::{boxed::Box, vec::Vec};
+use alloc::boxed::Box;
 
 use disjoint_impls::disjoint_impls;
 use rust_spec::{
@@ -13,8 +13,7 @@ use rust_spec::{
 use crate::{
     CType, ReprC,
     option::abi::{Option as AbiOption, OptionSome as AbiOptionSome},
-    reference::{Ref, RefMut, SoftRef, SoftRefMut},
-    result::abi::Result as AbiResult,
+    reference::abi::{Ref, RefMut, SoftRef, SoftRefMut},
     tuple::abi::Tuple2 as AbiTuple2,
     wide::{
         Wide, WideHeader, WideRef, WideRefMut,
@@ -272,31 +271,6 @@ disjoint_impls! {
     }
 }
 
-#[cfg(feature = "alloc")]
-impl<R: ReprC<CType: CType + Sized>> Niche for Vec<R> {
-    const NICHE: Self::CType = crate::vec::abi::Vec::null();
-
-    fn is_niche(value: &Self::CType) -> bool {
-        value.as_ptr().is_null()
-    }
-}
-
-impl<T: ReprC<CType: Copy>> Niche for crate::option::Option<T> {
-    const NICHE: Self::CType = crate::marker::Stable(AbiOption::niche());
-
-    fn is_niche(value: &Self::CType) -> bool {
-        value.is_niche()
-    }
-}
-
-impl<T: ReprC<CType: Copy>, E: ReprC<CType: Copy>> Niche for crate::result::Result<T, E> {
-    const NICHE: Self::CType = crate::marker::Stable(AbiResult::niche());
-
-    fn is_niche(value: &Self::CType) -> bool {
-        value.is_niche()
-    }
-}
-
 impl<R: Niche, const N: usize> Niche for [R; N] {
     const NICHE: Self::CType = {
         assert!(N != 0, "an empty array has no niche");
@@ -305,17 +279,6 @@ impl<R: Niche, const N: usize> Niche for [R; N] {
 
     fn is_niche(value: &Self::CType) -> bool {
         N != 0 && value.iter().all(R::is_niche)
-    }
-}
-
-impl<R: ReprC<CType: Copy>, E: ReprC<CType: Copy>> Niche for Result<R, E>
-where
-    Self: ReprC<CType = AbiResult<<R as ReprC>::CType, <E as ReprC>::CType>>,
-{
-    const NICHE: Self::CType = AbiResult::niche();
-
-    fn is_niche(value: &Self::CType) -> bool {
-        value.is_niche()
     }
 }
 

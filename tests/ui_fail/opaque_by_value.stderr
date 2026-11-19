@@ -26,7 +26,7 @@ note: required for `Kita5` to implement `SoftDecodeMut<'_>`
    |                           ----- type parameter would need to implement `SoftDecodeMut<'_>`
  8 | struct Kita5(u32, Opaque);
    |        ^^^^^
-   = note: required for `&mut Kita5` to implement `co3::stored::_::DecodeMove_cfg1<'_, co3::reference::SoftRefMut<Kita5CType>, Unstable, Unstable, rust_spec::size::Sized<Gt<rust_spec::Zero>>>`
+   = note: required for `&mut Kita5` to implement `co3::stored::_::DecodeMove_cfg1<'_, co3::reference::abi::SoftRefMut<Kita5CType>, Unstable, Unstable, rust_spec::size::Sized<Gt<rust_spec::Zero>>>`
    = note: required for `&mut Kita5` to implement `DecodeMove<'_>`
    = note: required for `&mut Kita5` to implement `BorrowedDecode<'_>`
 

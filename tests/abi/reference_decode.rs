@@ -1,6 +1,6 @@
 use co3::{
     ReprC,
-    reference::{Ref, SoftRef, SoftRefMut},
+    reference::abi::{SoftRef, SoftRefMut},
     rust_spec::RustSpec,
 };
 use static_assertions::assert_not_impl_any;
@@ -10,15 +10,13 @@ fn stable_references_keep_the_direct_decoding_path() {
     assert_not_impl_any!(u8: co3::convert::SoftDecodeRef<'static>, co3::convert::SoftDecodeMut<'static>);
     let source = 7u8;
     let mut store = ();
-    let value = unsafe { co3::soft_decode::<&u8>(Ref::from_ref(&source), &mut store) }.unwrap();
+    let value = unsafe { co3::soft_decode::<&u8>(co3::encode(&source), &mut store) }.unwrap();
     assert!(core::ptr::eq(value, &source));
     let mut source = 7u8;
     let original = core::ptr::from_mut(&mut source);
     let mut store = ();
-    let value = unsafe {
-        co3::soft_decode::<&mut u8>(co3::reference::RefMut::from_mut(&mut source), &mut store)
-    }
-    .unwrap();
+    let value =
+        unsafe { co3::soft_decode::<&mut u8>(co3::encode(&mut source), &mut store) }.unwrap();
     assert_eq!(core::ptr::from_mut(value), original);
     *value = 9;
     assert_eq!(source, 9);
@@ -683,7 +681,7 @@ fn mutable_aggregates_accept_noncopy_nonclone_fields() {
 fn mutable_aggregate_fields_can_be_exclusive_references() {
     let mut target = 3u32;
     let pointer = core::ptr::from_mut(&mut target);
-    let mut carrier = co3::tuple::abi::Tuple1(co3::reference::RefMut::from_mut(&mut target));
+    let mut carrier = co3::tuple::abi::Tuple1(co3::reference::abi::RefMut::from_mut(&mut target));
     let mut store = Default::default();
     let value = unsafe {
         co3::soft_decode::<&mut (&mut u32,)>(SoftRefMut::from_mut(&mut carrier), &mut store)

@@ -1,4 +1,6 @@
 //! Referent-specific encoding for mutable-reference paths.
+#[cfg(feature = "alloc")]
+use alloc::{string::String, vec::Vec};
 use core::{
     cell::{Cell, UnsafeCell},
     mem::ManuallyDrop,
@@ -13,7 +15,8 @@ use crate::{
     CType, ReprC,
     convert::AbiCompatibleValidate,
     convert::{EncodeMove, EncodeMoveUnchecked, Store},
-    reference::{SoftRef, SoftRefMut},
+    option::Option as StableOption,
+    reference::abi::{SoftRef, SoftRefMut},
     wide::{
         Wide, WideHeader,
         abi::{SoftWideRef as AbiSoftWideRef, SoftWideRefMut as AbiSoftWideRefMut},
@@ -22,9 +25,10 @@ use crate::{
 #[cfg(feature = "alloc")]
 use crate::{
     boxed::abi::Box as AbiBox,
-    reference::MutRefCarrier,
+    reference::RefMutCarrier,
+    string::String as StableString,
     sync::{RefMutDstEncodeStore, RefMutReferenceEncodeStore, RefMutWideEncodeStore},
-    vec::abi::Vec as AbiVec,
+    vec::{Vec as StableVec, abi::Vec as AbiVec},
     wide::abi::WideBox as AbiWideBox,
 };
 
@@ -144,7 +148,7 @@ where
     T: ReprC<CType: CType + Copy + Sized> + 'a,
     V: ReprC<CType: Copy + PartialEq + From<AbiVec<<T as ReprC>::CType>>>,
     S: Store + Default,
-    P: MutRefCarrier<T>,
+    P: RefMutCarrier<T>,
 {
     store.value = None;
     store.original = None;
@@ -165,7 +169,7 @@ where
         },
         |values, pointers| {
             for (value, pointer) in values.iter().zip(pointers.iter()) {
-                unsafe { *MutRefCarrier::<T>::as_ptr(pointer) = *value };
+                unsafe { *RefMutCarrier::<T>::as_ptr(pointer) = *value };
             }
         },
     );
@@ -235,7 +239,7 @@ macro_rules! define_mutable_encoders {
                         + Copy
                         + '_mut,
                     &'_mut mut Self:
-                        $crate::ReprC<CType = $crate::reference::SoftRefMut<<Self as $crate::ReprC>::CType>>,
+                        $crate::ReprC<CType = $crate::reference::abi::SoftRefMut<<Self as $crate::ReprC>::CType>>,
                 {
                     type SoftStore = $crate::sync::RefMutSizedEncodeStore<
                         '_mut,
@@ -286,7 +290,7 @@ macro_rules! define_mutable_encoders {
                         + Default
                         + '_mut,
                     &'_mut mut Self:
-                        $crate::ReprC<CType = $crate::reference::SoftRefMut<<Self as $crate::ReprC>::CType>>,
+                        $crate::ReprC<CType = $crate::reference::abi::SoftRefMut<<Self as $crate::ReprC>::CType>>,
                 {
                     type SoftStore = $crate::sync::RefMutSizedEncodeStore<
                         '_mut,
@@ -335,7 +339,7 @@ macro_rules! define_mutable_encoders {
                         + Copy
                         + '_mut,
                     &'_mut mut Self:
-                        $crate::ReprC<CType = $crate::reference::SoftRefMut<<Self as $crate::ReprC>::CType>>,
+                        $crate::ReprC<CType = $crate::reference::abi::SoftRefMut<<Self as $crate::ReprC>::CType>>,
                 {
                     type SoftStore = $crate::sync::RefMutSizedEncodeStore<
                         '_mut,
@@ -359,7 +363,7 @@ macro_rules! define_mutable_encoders {
                     for $vec
                 where
                     Self: RustSpec<Layout = rust_spec::Unstable>,
-                    &'a mut T: EncodeMoveUnchecked + ReprC<CType: crate::CType + MutRefCarrier<T>>,
+                    &'a mut T: EncodeMoveUnchecked + ReprC<CType: crate::CType + RefMutCarrier<T>>,
                     &'a mut Self: ReprC<CType = SoftRefMut<<Self as ReprC>::CType>>,
                 {
                     type SoftStore = RefMutReferenceEncodeStore<
@@ -433,7 +437,7 @@ macro_rules! define_mutable_encoders {
                             Layout = $crate::rust_spec::Stable,
                             Trap = $crate::rust_spec::layout::Robust,
                         > + $crate::convert::SoftEncodeMutUnchecked<'_mut>,
-                    &'_mut mut Self: $crate::ReprC<CType = $crate::reference::RefMut<'_mut, <Self as $crate::ReprC>::CType>>
+                    &'_mut mut Self: $crate::ReprC<CType = $crate::reference::abi::RefMut<'_mut, <Self as $crate::ReprC>::CType>>
                         + $crate::convert::EncodeMove<Store = ()>,
                 {
                     type Store = ();
@@ -456,7 +460,7 @@ macro_rules! define_mutable_encoders {
                         + Copy
                         + '_mut,
                     &'_mut mut Self:
-                        $crate::ReprC<CType = $crate::reference::SoftRefMut<<Self as $crate::ReprC>::CType>>,
+                        $crate::ReprC<CType = $crate::reference::abi::SoftRefMut<<Self as $crate::ReprC>::CType>>,
                 {
                     type Store = $crate::sync::RefMutSizedEncodeStore<
                         '_mut,
@@ -483,7 +487,7 @@ macro_rules! define_mutable_encoders {
                             Layout = $crate::rust_spec::Stable,
                             Trap = $crate::rust_spec::layout::Robust,
                         > + $crate::convert::SoftEncodeMutUnchecked<'_mut>,
-                    &'_mut mut Self: $crate::ReprC<CType = $crate::reference::RefMut<'_mut, <Self as $crate::ReprC>::CType>>
+                    &'_mut mut Self: $crate::ReprC<CType = $crate::reference::abi::RefMut<'_mut, <Self as $crate::ReprC>::CType>>
                         + $crate::convert::EncodeMove<Store = ()>,
                 {
                     type Store = ();
@@ -507,7 +511,7 @@ macro_rules! define_mutable_encoders {
                         + Default
                         + '_mut,
                     &'_mut mut Self:
-                        $crate::ReprC<CType = $crate::reference::SoftRefMut<<Self as $crate::ReprC>::CType>>,
+                        $crate::ReprC<CType = $crate::reference::abi::SoftRefMut<<Self as $crate::ReprC>::CType>>,
                 {
                     type Store = $crate::sync::RefMutSizedEncodeStore<
                         '_mut,
@@ -533,7 +537,7 @@ macro_rules! define_mutable_encoders {
                             Layout = $crate::rust_spec::Stable,
                             Trap = $crate::rust_spec::layout::Robust,
                         > + $crate::convert::SoftEncodeMutUnchecked<'_mut>,
-                    &'_mut mut Self: $crate::ReprC<CType = $crate::reference::RefMut<'_mut, <Self as $crate::ReprC>::CType>>
+                    &'_mut mut Self: $crate::ReprC<CType = $crate::reference::abi::RefMut<'_mut, <Self as $crate::ReprC>::CType>>
                         + $crate::convert::EncodeMove<Store = ()>,
                 {
                     type Store = ();
@@ -556,7 +560,7 @@ macro_rules! define_mutable_encoders {
                         + Copy
                         + '_mut,
                     &'_mut mut Self:
-                        $crate::ReprC<CType = $crate::reference::SoftRefMut<<Self as $crate::ReprC>::CType>>,
+                        $crate::ReprC<CType = $crate::reference::abi::SoftRefMut<<Self as $crate::ReprC>::CType>>,
                 {
                     type Store = $crate::sync::RefMutSizedEncodeStore<
                         '_mut,
@@ -578,7 +582,7 @@ macro_rules! define_mutable_encoders {
                 unsafe impl<'a, T: ReprC<CType: CType + Copy + Sized> + 'a> SoftEncodeMut<'a> for $vec
                 where
                     Self: crate::convert::SoftEncodeMutUnchecked<'a> + ReprC<CType: Copy + PartialEq + From<AbiVec<<T as ReprC>::CType>>>,
-                    &'a mut T: EncodeMove + ReprC<CType: crate::CType + MutRefCarrier<T>>,
+                    &'a mut T: EncodeMove + ReprC<CType: crate::CType + RefMutCarrier<T>>,
                     &'a mut Self: ReprC<CType = SoftRefMut<<Self as ReprC>::CType>>,
                 {
                     type Store = RefMutReferenceEncodeStore<
@@ -653,16 +657,16 @@ crate::primitive::with_fn_types! { define_mutable_encoders, {
         #[cfg(feature = "alloc")]
         [] [for<'_dummy>] [core::ffi::CStr: RustSpec<Size = rust_spec::size::NulTerminated>,] alloc::boxed::Box<core::ffi::CStr>;
         [T: CType] [] [ Self: Default,] crate::option::abi::Option<T>;
-        [T] [] [] crate::option::Option<T>;
+        [T] [] [] StableOption<T>;
 
         #[cfg(feature = "alloc")]
-        [] [for<'_dummy>] [] alloc::string::String;
+        [] [for<'_dummy>] [] String;
         #[cfg(feature = "alloc")]
-        [] [for<'_dummy>] [] crate::string::String;
+        [] [for<'_dummy>] [] StableString;
         #[cfg(feature = "alloc")]
         [] [for<'_dummy>] [] alloc::ffi::CString;
     ]
-    vectors [alloc::vec::Vec<T>; crate::vec::Vec<T>;]
+    vectors [Vec<T>; StableVec<T>;]
     unchecked {
         unsafe impl<
             'a,
@@ -688,7 +692,7 @@ crate::primitive::with_fn_types! { define_mutable_encoders, {
         unsafe impl<'a, T: ReprC<CType: CType + Copy + Sized> + 'a> SoftEncodeMutUnchecked<'a> for [T]
         where
             T: rust_spec::RustSpec<Layout = rust_spec::Unstable, Trap = rust_spec::layout::NonRobust>,
-            &'a mut T: EncodeMoveUnchecked + ReprC<CType: crate::CType + MutRefCarrier<T>>,
+            &'a mut T: EncodeMoveUnchecked + ReprC<CType: crate::CType + RefMutCarrier<T>>,
             &'a mut Self: ReprC<CType = AbiSoftWideRefMut<<Self as ReprC>::CType>>,
         {
             type SoftStore = RefMutWideEncodeStore<
@@ -721,7 +725,7 @@ crate::primitive::with_fn_types! { define_mutable_encoders, {
                     },
                     |values, pointers| {
                         for (value, pointer) in values.iter().zip(pointers.iter()) {
-                            unsafe { *MutRefCarrier::<T>::as_ptr(pointer) = *value };
+                            unsafe { *RefMutCarrier::<T>::as_ptr(pointer) = *value };
                         }
                     },
                 )
@@ -731,7 +735,7 @@ crate::primitive::with_fn_types! { define_mutable_encoders, {
         unsafe impl<'a, T: ReprC<CType: CType + Copy + Sized> + 'a> SoftEncodeMutUnchecked<'a> for [T]
         where
             T: rust_spec::RustSpec<Layout = rust_spec::Unstable, Trap = rust_spec::layout::Robust>,
-            &'a mut T: EncodeMoveUnchecked + ReprC<CType: crate::CType + MutRefCarrier<T>>,
+            &'a mut T: EncodeMoveUnchecked + ReprC<CType: crate::CType + RefMutCarrier<T>>,
             &'a mut Self: ReprC<CType = AbiSoftWideRefMut<<Self as ReprC>::CType>>,
         {
             type SoftStore = RefMutWideEncodeStore<
@@ -764,7 +768,7 @@ crate::primitive::with_fn_types! { define_mutable_encoders, {
                     },
                     |values, pointers| {
                         for (value, pointer) in values.iter().zip(pointers.iter()) {
-                            unsafe { *MutRefCarrier::<T>::as_ptr(pointer) = *value };
+                            unsafe { *RefMutCarrier::<T>::as_ptr(pointer) = *value };
                         }
                     },
                 )
@@ -785,7 +789,7 @@ crate::primitive::with_fn_types! { define_mutable_encoders, {
         > SoftEncodeMutUnchecked<'a> for &'b mut R
         where
             Self: RustSpec<Size: crate::Thin>,
-            &'a mut Self: ReprC<CType = SoftRefMut<crate::reference::RefMut<'b, <R as ReprC>::CType>>> + EncodeMoveUnchecked<SoftStore = ()>,
+            &'a mut Self: ReprC<CType = SoftRefMut<crate::reference::abi::RefMut<'b, <R as ReprC>::CType>>> + EncodeMoveUnchecked<SoftStore = ()>,
         {
             type SoftStore = ();
 
@@ -849,7 +853,7 @@ crate::primitive::with_fn_types! { define_mutable_encoders, {
                 'a: 'itm,
             {
                 let value = unsafe { R::soft_encode_mut_unchecked(&mut **self, &mut store.inner) };
-                let value = unsafe { SoftRefMut::<R::CType>::from_raw(MutRefCarrier::<R>::as_ptr(&value)) };
+                let value = unsafe { SoftRefMut::<R::CType>::from_raw(RefMutCarrier::<R>::as_ptr(&value)) };
                 store.original = Some(value);
                 // Both inner carriers have the same raw pointer ABI. The outer carrier is soft.
                 unsafe { SoftRefMut::from_raw(core::ptr::from_mut(store.value.insert(value)).cast()) }
@@ -860,7 +864,7 @@ crate::primitive::with_fn_types! { define_mutable_encoders, {
             SoftEncodeMutUnchecked<'a> for [T; N]
         where
             Self: RustSpec<Layout = rust_spec::Unstable>,
-            &'a mut T: EncodeMoveUnchecked + ReprC<CType: crate::CType + MutRefCarrier<T>>,
+            &'a mut T: EncodeMoveUnchecked + ReprC<CType: crate::CType + RefMutCarrier<T>>,
             &'a mut Self: ReprC<CType = SoftRefMut<<Self as ReprC>::CType>>,
         {
             type SoftStore = RefMutWideEncodeStore<
@@ -891,7 +895,7 @@ crate::primitive::with_fn_types! { define_mutable_encoders, {
                     },
                     |values, pointers| {
                         for (value, pointer) in values.iter().zip(pointers.iter()) {
-                            unsafe { *MutRefCarrier::<T>::as_ptr(pointer) = *value };
+                            unsafe { *RefMutCarrier::<T>::as_ptr(pointer) = *value };
                         }
                     },
                 );
@@ -957,7 +961,7 @@ crate::primitive::with_fn_types! { define_mutable_encoders, {
         where
             T: rust_spec::RustSpec<Trap = rust_spec::layout::NonRobust>,
             Self: crate::convert::SoftEncodeMutUnchecked<'a> + ReprC<CType = [<T as ReprC>::CType]>,
-            &'a mut T: EncodeMove + ReprC<CType: crate::CType + MutRefCarrier<T>>,
+            &'a mut T: EncodeMove + ReprC<CType: crate::CType + RefMutCarrier<T>>,
             &'a mut Self: ReprC<CType = AbiSoftWideRefMut<<Self as ReprC>::CType>>,
         {
             type Store = RefMutWideEncodeStore<
@@ -990,7 +994,7 @@ crate::primitive::with_fn_types! { define_mutable_encoders, {
                     },
                     |values, pointers| {
                         for (value, pointer) in values.iter().zip(pointers.iter()) {
-                            unsafe { *MutRefCarrier::<T>::as_ptr(pointer) = *value };
+                            unsafe { *RefMutCarrier::<T>::as_ptr(pointer) = *value };
                         }
                     },
                 )
@@ -1000,7 +1004,7 @@ crate::primitive::with_fn_types! { define_mutable_encoders, {
         unsafe impl<'a, T: ReprC<CType: CType + Copy + Sized> + 'a> SoftEncodeMut<'a> for [T]
         where
             T: rust_spec::RustSpec<Layout = rust_spec::Unstable, Trap = rust_spec::layout::Robust>,
-            &'a mut T: EncodeMove + ReprC<CType: crate::CType + MutRefCarrier<T>>,
+            &'a mut T: EncodeMove + ReprC<CType: crate::CType + RefMutCarrier<T>>,
             &'a mut Self: ReprC<CType = AbiSoftWideRefMut<<Self as ReprC>::CType>>,
         {
             type Store = RefMutWideEncodeStore<
@@ -1033,7 +1037,7 @@ crate::primitive::with_fn_types! { define_mutable_encoders, {
                     },
                     |values, pointers| {
                         for (value, pointer) in values.iter().zip(pointers.iter()) {
-                            unsafe { *MutRefCarrier::<T>::as_ptr(pointer) = *value };
+                            unsafe { *RefMutCarrier::<T>::as_ptr(pointer) = *value };
                         }
                     },
                 )
@@ -1055,7 +1059,7 @@ crate::primitive::with_fn_types! { define_mutable_encoders, {
         where
             R: SoftEncodeMut<'a>,
             Self: RustSpec<Size: crate::Thin>,
-            &'a mut Self: ReprC<CType = SoftRefMut<crate::reference::RefMut<'b, <R as ReprC>::CType>>> + EncodeMoveUnchecked<SoftStore = ()>,
+            &'a mut Self: ReprC<CType = SoftRefMut<crate::reference::abi::RefMut<'b, <R as ReprC>::CType>>> + EncodeMoveUnchecked<SoftStore = ()>,
         {
             type Store = RefMutReferenceEncodeStore<SoftRefMut<R::CType>, R::Store>;
 
@@ -1067,7 +1071,7 @@ crate::primitive::with_fn_types! { define_mutable_encoders, {
                 'a: 'itm,
             {
                 let value = R::soft_encode_mut(&mut **self, &mut store.inner);
-                let value = unsafe { SoftRefMut::<R::CType>::from_raw(MutRefCarrier::<R>::as_ptr(&value)) };
+                let value = unsafe { SoftRefMut::<R::CType>::from_raw(RefMutCarrier::<R>::as_ptr(&value)) };
                 store.original = Some(value);
                 // Both inner carriers have the same raw pointer ABI. The outer carrier is soft.
                 unsafe { SoftRefMut::from_raw(core::ptr::from_mut(store.value.insert(value)).cast()) }
@@ -1100,7 +1104,7 @@ crate::primitive::with_fn_types! { define_mutable_encoders, {
                 'a: 'itm,
             {
                 let value = R::soft_encode_mut(&mut **self, &mut store.inner);
-                let value = unsafe { SoftRefMut::<R::CType>::from_raw(MutRefCarrier::<R>::as_ptr(&value)) };
+                let value = unsafe { SoftRefMut::<R::CType>::from_raw(RefMutCarrier::<R>::as_ptr(&value)) };
                 store.original = Some(value);
                 // Both inner carriers have the same raw pointer ABI. The outer carrier is soft.
                 unsafe { SoftRefMut::from_raw(core::ptr::from_mut(store.value.insert(value)).cast()) }
@@ -1128,7 +1132,7 @@ crate::primitive::with_fn_types! { define_mutable_encoders, {
                 'a: 'itm,
             {
                 let value = R::soft_encode_mut(&mut **self, &mut store.inner);
-                let value = unsafe { SoftRefMut::<R::CType>::from_raw(MutRefCarrier::<R>::as_ptr(&value)) };
+                let value = unsafe { SoftRefMut::<R::CType>::from_raw(RefMutCarrier::<R>::as_ptr(&value)) };
                 store.original = Some(value);
                 // Both inner carriers have the same raw pointer ABI. The outer carrier is soft.
                 unsafe { SoftRefMut::from_raw(core::ptr::from_mut(store.value.insert(value)).cast()) }
@@ -1139,7 +1143,7 @@ crate::primitive::with_fn_types! { define_mutable_encoders, {
             for [T; N]
         where
             Self: RustSpec<Layout = rust_spec::Unstable>,
-            &'a mut T: EncodeMove + ReprC<CType: crate::CType + MutRefCarrier<T>>,
+            &'a mut T: EncodeMove + ReprC<CType: crate::CType + RefMutCarrier<T>>,
             &'a mut Self: ReprC<CType = SoftRefMut<<Self as ReprC>::CType>>,
         {
             type Store = RefMutWideEncodeStore<
@@ -1170,7 +1174,7 @@ crate::primitive::with_fn_types! { define_mutable_encoders, {
                     },
                     |values, pointers| {
                         for (value, pointer) in values.iter().zip(pointers.iter()) {
-                            unsafe { *MutRefCarrier::<T>::as_ptr(pointer) = *value };
+                            unsafe { *RefMutCarrier::<T>::as_ptr(pointer) = *value };
                         }
                     },
                 );
@@ -1184,7 +1188,7 @@ crate::primitive::with_fn_types! { define_mutable_encoders, {
             Self: RustSpec<Layout = rust_spec::Stable, Trap = rust_spec::layout::NonRobust>
                 + SoftEncodeMutUnchecked<'a>
                 + ReprC<CType = [<T as ReprC>::CType; N]>,
-            &'a mut T: EncodeMove + ReprC<CType: crate::CType + MutRefCarrier<T>>,
+            &'a mut T: EncodeMove + ReprC<CType: crate::CType + RefMutCarrier<T>>,
             &'a mut Self: ReprC<CType = SoftRefMut<<Self as ReprC>::CType>>,
         {
             type Store = RefMutWideEncodeStore<
@@ -1215,7 +1219,7 @@ crate::primitive::with_fn_types! { define_mutable_encoders, {
                     },
                     |values, pointers| {
                         for (value, pointer) in values.iter().zip(pointers.iter()) {
-                            unsafe { *MutRefCarrier::<T>::as_ptr(pointer) = *value };
+                            unsafe { *RefMutCarrier::<T>::as_ptr(pointer) = *value };
                         }
                     },
                 );
@@ -1227,7 +1231,7 @@ crate::primitive::with_fn_types! { define_mutable_encoders, {
             Self: crate::convert::AbiCompatibleValidate
                 + RustSpec<Layout = rust_spec::Stable, Trap = rust_spec::layout::Robust>
                 + 'a,
-            &'a mut Self: ReprC<CType = crate::reference::RefMut<'a, <Self as ReprC>::CType>>
+            &'a mut Self: ReprC<CType = crate::reference::abi::RefMut<'a, <Self as ReprC>::CType>>
                 + EncodeMove<Store = ()>
                 + EncodeMoveUnchecked<SoftStore = ()>,
         {
@@ -1417,8 +1421,8 @@ impl_cell_mut!(Cell, Cell::get_mut);
 impl_cell_mut!(UnsafeCell, UnsafeCell::get_mut);
 
 impl_direct_mut!([T] core::mem::MaybeUninit<T>);
-impl_direct_mut!(['r, C: CType + ?Sized] crate::reference::Ref<'r, C>);
-impl_direct_mut!(['r, C: CType + ?Sized] crate::reference::RefMut<'r, C>);
+impl_direct_mut!(['r, C: CType + ?Sized] crate::reference::abi::Ref<'r, C>);
+impl_direct_mut!(['r, C: CType + ?Sized] crate::reference::abi::RefMut<'r, C>);
 impl_direct_mut!(['r, P: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized] crate::wide::abi::WideRef<'r, P>);
 impl_direct_mut!(['r, P: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized] crate::wide::abi::WideRefMut<'r, P>);
 impl_direct_mut!([C: CType + ?Sized] SoftRef<C>);
@@ -1496,7 +1500,7 @@ mod tests {
         where
             'a: 'itm,
         {
-            co3::reference::SoftRefMut::from_mut(&mut self.0)
+            co3::reference::abi::SoftRefMut::from_mut(&mut self.0)
         }
     }
     unsafe impl<'a> SoftEncodeMut<'a> for Explicit {
@@ -1508,7 +1512,7 @@ mod tests {
         where
             'a: 'itm,
         {
-            co3::reference::SoftRefMut::from_mut(&mut self.0)
+            co3::reference::abi::SoftRefMut::from_mut(&mut self.0)
         }
     }
 

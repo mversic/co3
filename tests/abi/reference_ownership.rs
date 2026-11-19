@@ -1,12 +1,6 @@
 use core::cell::UnsafeCell;
 
-use co3::{
-    ReprC, ffi,
-    marker::Borrowed,
-    ops::CFn1,
-    raw,
-    reference::{Ref, SoftRef},
-};
+use co3::{ReprC, ffi, marker::Borrowed, ops::CFn1, raw};
 use static_assertions::assert_type_eq_all;
 
 type Text = String;
@@ -23,13 +17,11 @@ ffi! {
 
 assert_type_eq_all!(
     Shared<'static>,
-    unsafe extern "C" fn(Ref<'static, u32>) -> Ref<'static, u32>
+    unsafe extern "C" fn(<&'static u32 as ReprC>::CType) -> <&'static u32 as ReprC>::CType
 );
 assert_type_eq_all!(
     SharedString<'static>,
-    unsafe extern "C" fn(
-        SoftRef<<String as co3::ReprC>::CType>,
-    ) -> SoftRef<<String as co3::ReprC>::CType>
+    unsafe extern "C" fn(<&'static String as ReprC>::CType) -> <&'static String as ReprC>::CType
 );
 assert_type_eq_all!(
     ExclusiveBox<'static>,

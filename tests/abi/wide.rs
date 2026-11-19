@@ -2,9 +2,10 @@ use std::{
     cell::{Cell, UnsafeCell},
     marker::PhantomData,
     num::NonZeroU8,
+    ptr::NonNull,
 };
 
-use co3::{ReprC, ffi, pack::Unpack2, rust_spec::RustSpec, wide::Wide};
+use co3::{ReprC, ffi, rust_spec::RustSpec, wide::Wide};
 use static_assertions::assert_impl_all;
 
 #[repr(C)]
@@ -99,21 +100,6 @@ fn cell_wrappers_reconstruct_borrowed_wide_references() {
 }
 
 #[test]
-fn exclusive_unsafe_cell_wide_uses_mutable_carrier() {
-    let mut cell = UnsafeCell::new([1u8, 2, 3]);
-    let original: &mut UnsafeCell<[u8]> = &mut cell;
-
-    let carrier: co3::wide::abi::WideRef<'_, <UnsafeCell<[u8]> as co3::ReprC>::CType> =
-        co3::encode(original);
-    let (data, len) = <&mut UnsafeCell<[u8]> as Unpack2<*mut u8, usize>>::unpack(carrier).unwrap();
-    assert_eq!(data, cell.get().cast());
-    assert_eq!(len, 3);
-    unsafe { data.add(1).write(9) };
-
-    assert_eq!(unsafe { &*cell.get() }, &[1, 9, 3]);
-}
-
-#[test]
 fn boxed_cell_wrappers_keep_their_allocation() {
     let original: Box<UnsafeCell<[u8]>> = Box::new(UnsafeCell::new([1, 2, 3]));
     let ptr = <UnsafeCell<[u8]> as Wide>::as_ptr(core::ptr::from_ref(&*original));
@@ -165,6 +151,12 @@ ffi! {
 
     #[symbol_name = "unpack_receiver_fill"]
     fn unpack_raw_mut(#[unpack(_, _)] bytes: *mut RawBytes) -> usize;
+
+    #[symbol_name = "unpack_receiver_sum"]
+    unsafe fn unpack_nonnull_const(#[unpack(*const u8, usize)] bytes: NonNull<[u8]>) -> usize;
+
+    #[symbol_name = "unpack_receiver_fill"]
+    unsafe fn unpack_nonnull_mut(#[unpack(_, _)] bytes: NonNull<RawBytes>) -> usize;
 }
 
 #[test]
@@ -174,6 +166,16 @@ fn raw_wide_pointer_placeholders_infer_data_and_metadata() {
         core::ptr::slice_from_raw_parts_mut(values.as_mut_ptr(), values.len()) as *mut RawBytes;
     assert_eq!(unpack_raw_const(bytes), 6);
     assert_eq!(unpack_raw_mut(bytes), 3);
+    assert_eq!(values, [4, 5, 6]);
+}
+
+#[test]
+fn nonnull_wide_pointers_pass_data_and_length() {
+    let mut values = [1u8, 2, 3];
+    let slice = NonNull::from(&mut values[..]);
+    let bytes = NonNull::new(slice.as_ptr() as *mut RawBytes).unwrap();
+    assert_eq!(unsafe { unpack_nonnull_const(slice) }, 6);
+    assert_eq!(unsafe { unpack_nonnull_mut(bytes) }, 3);
     assert_eq!(values, [4, 5, 6]);
 }
 

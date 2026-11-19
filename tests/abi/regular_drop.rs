@@ -5,10 +5,9 @@ use std::{
 };
 
 use co3::{
-    CType, ReprC,
+    ReprC,
     boxed::{Box, abi::Box as AbiBox},
     ffi,
-    marker::Owned,
     ops::CFn1,
     rust_spec::{self, RustSpec},
 };
@@ -89,7 +88,7 @@ impl Drop for MovableDrop {
 #[repr(transparent)]
 struct MovableTransparentDrop(u32);
 
-// The ownership marker follows this classification even without a derive attribute.
+// Custom drop classification also works without a derive attribute.
 unsafe impl RustSpec for MovableTransparentDrop {
     type Layout = <u32 as RustSpec>::Layout;
     type Size = <u32 as RustSpec>::Size;
@@ -135,13 +134,11 @@ impl Drop for MovableTransparentFieldlessDrop {
 }
 
 #[test]
-fn custom_drop_types_use_owned_carriers() {
+fn custom_drop_types_transfer_ownership_through_their_companions() {
     let before = MOVABLE_DROPS.load(Ordering::Relaxed);
 
-    fn assert_owned<T: CType>(_: &Owned<T>) {}
-
     let carrier = co3::encode(MovableDrop(7));
-    assert_owned(&carrier);
+    assert_eq!(carrier.0, 7);
     assert_eq!(MOVABLE_DROPS.load(Ordering::Relaxed), before);
     let decoded: MovableDrop = unsafe { co3::decode(carrier) }.unwrap();
     assert_eq!(decoded.0, 7);
@@ -154,13 +151,13 @@ fn custom_drop_types_use_owned_carriers() {
     drop(decoded);
 
     let carrier = co3::encode(MovableFieldlessDrop::Value);
-    assert_owned(&carrier);
+    assert_eq!(carrier.tag(), 3);
     assert_eq!(MOVABLE_DROPS.load(Ordering::Relaxed), before + 2);
     let decoded: MovableFieldlessDrop = unsafe { co3::decode(carrier) }.unwrap();
     drop(decoded);
 
     let carrier = co3::encode(MovableTransparentDrop(11));
-    assert_owned(&carrier);
+    assert_eq!(carrier.0, 11);
     assert_eq!(MOVABLE_DROPS.load(Ordering::Relaxed), before + 3);
     let decoded: MovableTransparentDrop = unsafe { co3::decode(carrier) }.unwrap();
     assert_eq!(decoded.0, 11);

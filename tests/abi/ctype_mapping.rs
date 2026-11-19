@@ -183,7 +183,7 @@ fn result_niche_carriers_distinguish_arms() {
     );
     assert_eq!(
         align_of::<AbiResultErr<(), <&u32 as co3::ReprC>::CType>>(),
-        align_of::<co3::reference::SoftRef<u32>>()
+        align_of::<co3::reference::abi::SoftRef<u32>>()
     );
     assert_impl_all!(AbiResultOk<<Box<u32> as co3::ReprC>::CType, ()>: CType, CFnArg, CFnReturn);
     assert_impl_all!(AbiResultErr<(), <&u32 as co3::ReprC>::CType>: CType, CFnArg, CFnReturn);

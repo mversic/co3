@@ -74,10 +74,12 @@ help: the following other types implement trait `BorrowedDecode<'d>`
     | |     /// # Safety
 ...   |
     | | }
-    | | ^
-    | | |
-    | |_`Box<_TŠČ0>`
-    |   `Box<str>`
+    | |_^ `Box<_TŠČ0>`
+    |
+   ::: src/string.rs
+    |
+    |   unsafe impl<'d> BorrowedDecode<'d> for Box<str> {
+    |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Box<str>`
     = note: required for `Box<provider::OpaqueZst>` to implement `co3::borrow::_::BorrowedDecode_cfg0<'_, co3::boxed::abi::Box<provider::OpaqueZst>>`
     = note: required for `Box<provider::OpaqueZst>` to implement `BorrowedDecode<'_>`
 note: required by a bound in `co3::borrow::decode`

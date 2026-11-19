@@ -61,7 +61,6 @@ mod interior_decode;
 mod mutable_ref_encode;
 mod niche_payload;
 mod niche_value;
-mod option_decode_store;
 mod raw_pointer;
 mod raw_selected;
 mod raw_tagged_dispatch;

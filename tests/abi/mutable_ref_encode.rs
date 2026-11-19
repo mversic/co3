@@ -4,8 +4,12 @@ use co3::{
     rust_spec::RustSpec,
 };
 
-extern "C" fn first_callback() {}
-extern "C" fn second_callback() {}
+extern "C" fn first_callback() -> u8 {
+    1
+}
+extern "C" fn second_callback() -> u8 {
+    2
+}
 
 #[test]
 fn mutable_non_robust_wrappers_validate_writeback() {
@@ -29,6 +33,7 @@ fn mutable_non_robust_wrappers_validate_writeback() {
     let _encoded = co3::soft_encode(&mut manual_string, &mut store);
     assert_eq!(co3::convert::Store::sync(store), Some(()));
     assert_eq!(&*manual_string, "held");
+    drop(ManuallyDrop::into_inner(manual_string));
 
     let mut cell = Cell::new(true);
     let mut store = Default::default();
@@ -54,24 +59,18 @@ fn mutable_non_robust_wrappers_validate_writeback() {
 
 #[test]
 fn mutable_function_pointer_rejects_null_writeback() {
-    let mut callback: extern "C" fn() = first_callback;
+    let mut callback: extern "C" fn() -> u8 = first_callback;
     let mut store = Default::default();
     let encoded = co3::soft_encode(&mut callback, &mut store);
     unsafe { *encoded.as_ptr() = None };
     assert_eq!(co3::convert::Store::sync(store), None);
-    assert!(core::ptr::fn_addr_eq(
-        callback,
-        first_callback as extern "C" fn()
-    ));
+    assert_eq!(callback(), 1);
 
     let mut store = Default::default();
     let encoded = co3::soft_encode(&mut callback, &mut store);
     unsafe { *encoded.as_ptr() = Some(second_callback) };
     assert_eq!(co3::convert::Store::sync(store), Some(()));
-    assert!(core::ptr::fn_addr_eq(
-        callback,
-        second_callback as extern "C" fn()
-    ));
+    assert_eq!(callback(), 2);
 }
 
 #[test]
@@ -345,7 +344,7 @@ fn nested_mutable_reference_rejects_pointer_replacement() {
     let mut reference = &mut values;
     let mut store = Default::default();
     let encoded = co3::soft_encode(&mut reference, &mut store);
-    unsafe { *encoded.as_ptr() = co3::reference::SoftRefMut::null() };
+    unsafe { *encoded.as_ptr() = co3::reference::abi::SoftRefMut::null() };
     assert_eq!(co3::convert::Store::sync(store), None);
     assert_eq!(*reference, [1, 2]);
 }

@@ -5,7 +5,7 @@ use alloc::{boxed::Box, ffi::CString};
 #[cfg(feature = "alloc")]
 use core::ptr::NonNull;
 use core::{
-    ffi::{CStr as RustCStr, c_void},
+    ffi::{CStr, c_void},
     mem::ManuallyDrop,
 };
 
@@ -210,23 +210,33 @@ macro_rules! c_integer_conversions {
             }
         )*
 
+        impl PartialEq<$alias> for $name {
+            fn eq(&self, other: &$alias) -> bool {
+                self.0.eq(other)
+            }
+        }
+
+        impl PartialEq<$name> for $alias {
+            fn eq(&self, other: &$name) -> bool {
+                self.eq(&other.0)
+            }
+        }
+
+        impl PartialOrd<$alias> for $name {
+            fn partial_cmp(&self, other: &$alias) -> Option<core::cmp::Ordering> {
+                self.0.partial_cmp(other)
+            }
+        }
+
+        impl PartialOrd<$name> for $alias {
+            fn partial_cmp(&self, other: &$name) -> Option<core::cmp::Ordering> {
+                self.partial_cmp(&other.0)
+            }
+        }
+
         c_integer_ops! { $name }
     };
 }
-
-c_alias_carrier! { c_char, core::ffi::c_char }
-c_alias_carrier! { c_schar, core::ffi::c_schar }
-c_alias_carrier! { c_uchar, core::ffi::c_uchar }
-c_alias_carrier! { c_short, core::ffi::c_short }
-c_alias_carrier! { c_ushort, core::ffi::c_ushort }
-c_alias_carrier! { c_int, core::ffi::c_int }
-c_alias_carrier! { c_uint, core::ffi::c_uint }
-c_alias_carrier! { c_long, core::ffi::c_long }
-c_alias_carrier! { c_ulong, core::ffi::c_ulong }
-c_alias_carrier! { c_longlong, core::ffi::c_longlong }
-c_alias_carrier! { c_ulonglong, core::ffi::c_ulonglong }
-c_alias_carrier! { c_float, core::ffi::c_float }
-c_alias_carrier! { c_double, core::ffi::c_double }
 
 macro_rules! c_integer_conversions_i8 {
     ($name:ident, $alias:ty) => {
@@ -303,59 +313,6 @@ macro_rules! c_integer_conversions_u64 {
     };
 }
 
-c_integer_conversions_i8! { c_schar, core::ffi::c_schar }
-c_integer_conversions_u8! { c_uchar, core::ffi::c_uchar }
-c_integer_conversions_i16! { c_short, core::ffi::c_short }
-c_integer_conversions_u16! { c_ushort, core::ffi::c_ushort }
-c_integer_conversions_i64! { c_longlong, core::ffi::c_longlong }
-c_integer_conversions_u64! { c_ulonglong, core::ffi::c_ulonglong }
-
-// `c_int` and `c_uint` are 16 bits on AVR and MSP430, and 32 bits elsewhere.
-c_integer_conversions! {
-    c_int, core::ffi::c_int;
-    from: [i8, u8, i16, bool];
-    try_from: [u16, i32, u32, i64, u64, i128, u128, isize, usize];
-    into: [i32, i64, i128, f64];
-    try_into: [i8, u8, i16, u16, u32, u64, u128, isize, usize, bool]
-}
-c_signed_ops! { c_int }
-
-c_integer_conversions! {
-    c_uint, core::ffi::c_uint;
-    from: [u8, u16, bool];
-    try_from: [i8, i16, i32, u32, i64, u64, i128, u128, isize, usize];
-    into: [u32, i64, u64, i128, u128, f64];
-    try_into: [i8, u8, i16, u16, i32, isize, usize, bool]
-}
-
-// `c_long` may be i32 or i64, so expose the same conversions on both targets.
-c_integer_conversions! {
-    c_long, core::ffi::c_long;
-    from: [i8, u8, i16, u16, i32, bool];
-    try_from: [u32, i64, u64, i128, u128, isize, usize];
-    into: [i64, i128];
-    try_into: [i8, u8, i16, u16, i32, u32, u64, u128, isize, usize, bool]
-}
-c_signed_ops! { c_long }
-
-// `c_ulong` may be u32 or u64.
-c_integer_conversions! {
-    c_ulong, core::ffi::c_ulong;
-    from: [u8, u16, u32, bool];
-    try_from: [i8, i16, i32, i64, u64, i128, u128, isize, usize];
-    into: [u64, i128, u128];
-    try_into: [i8, u8, i16, u16, i32, u32, i64, isize, usize, bool]
-}
-
-// `c_char` may be i8 or u8. Neither signedness is assumed by its API.
-c_integer_conversions! {
-    c_char, core::ffi::c_char;
-    from: [bool];
-    try_from: [i8, u8, i16, u16, i32, u32, i64, u64, i128, u128, isize, usize];
-    into: [i16, i32, i64, i128, isize, f32, f64];
-    try_into: [u8, u16, u32, u64, u128, usize, bool]
-}
-
 macro_rules! c_float_from {
     ($name:ident, $alias:ty; $($from:ty),* $(,)?) => {$ (
         impl From<$from> for $name {
@@ -366,8 +323,77 @@ macro_rules! c_float_from {
     )*};
 }
 
+c_alias_carrier! { c_char, core::ffi::c_char }
+// `c_char` may be i8 or u8. Neither signedness is assumed by its API.
+c_integer_conversions! {
+    c_char, core::ffi::c_char;
+    from: [bool];
+    try_from: [i8, u8, i16, u16, i32, u32, i64, u64, i128, u128, isize, usize];
+    into: [i16, i32, i64, i128, isize, f32, f64];
+    try_into: [u8, u16, u32, u64, u128, usize, bool]
+}
+
+c_alias_carrier! { c_schar, core::ffi::c_schar }
+c_integer_conversions_i8! { c_schar, core::ffi::c_schar }
+
+c_alias_carrier! { c_uchar, core::ffi::c_uchar }
+c_integer_conversions_u8! { c_uchar, core::ffi::c_uchar }
+
+c_alias_carrier! { c_short, core::ffi::c_short }
+c_integer_conversions_i16! { c_short, core::ffi::c_short }
+
+c_alias_carrier! { c_ushort, core::ffi::c_ushort }
+c_integer_conversions_u16! { c_ushort, core::ffi::c_ushort }
+
+c_alias_carrier! { c_int, core::ffi::c_int }
+// `c_int` and `c_uint` are 16 bits on AVR and MSP430, and 32 bits elsewhere.
+c_integer_conversions! {
+    c_int, core::ffi::c_int;
+    from: [i8, u8, i16, bool];
+    try_from: [u16, i32, u32, i64, u64, i128, u128, isize, usize];
+    into: [i32, i64, i128, f64];
+    try_into: [i8, u8, i16, u16, u32, u64, u128, isize, usize, bool]
+}
+c_signed_ops! { c_int }
+
+c_alias_carrier! { c_uint, core::ffi::c_uint }
+c_integer_conversions! {
+    c_uint, core::ffi::c_uint;
+    from: [u8, u16, bool];
+    try_from: [i8, i16, i32, u32, i64, u64, i128, u128, isize, usize];
+    into: [u32, i64, u64, i128, u128, f64];
+    try_into: [i8, u8, i16, u16, i32, isize, usize, bool]
+}
+
+c_alias_carrier! { c_long, core::ffi::c_long }
+// `c_long` may be i32 or i64, so expose the same conversions on both targets.
+c_integer_conversions! {
+    c_long, core::ffi::c_long;
+    from: [i8, u8, i16, u16, i32, bool];
+    try_from: [u32, i64, u64, i128, u128, isize, usize];
+    into: [i64, i128];
+    try_into: [i8, u8, i16, u16, i32, u32, u64, u128, isize, usize, bool]
+}
+c_signed_ops! { c_long }
+
+c_alias_carrier! { c_ulong, core::ffi::c_ulong }
+// `c_ulong` may be u32 or u64.
+c_integer_conversions! {
+    c_ulong, core::ffi::c_ulong;
+    from: [u8, u16, u32, bool];
+    try_from: [i8, i16, i32, i64, u64, i128, u128, isize, usize];
+    into: [u64, i128, u128];
+    try_into: [i8, u8, i16, u16, i32, u32, i64, isize, usize, bool]
+}
+
+c_alias_carrier! { c_longlong, core::ffi::c_longlong }
+c_integer_conversions_i64! { c_longlong, core::ffi::c_longlong }
+
+c_alias_carrier! { c_ulonglong, core::ffi::c_ulonglong }
+c_integer_conversions_u64! { c_ulonglong, core::ffi::c_ulonglong }
+
+c_alias_carrier! { c_float, core::ffi::c_float }
 c_float_from! { c_float, core::ffi::c_float; bool, i8, u8, i16, u16 }
-c_float_from! { c_double, core::ffi::c_double; bool, i8, u8, i16, u16, f32 }
 
 impl From<f32> for c_float {
     fn from(value: f32) -> Self {
@@ -381,13 +407,6 @@ impl From<c_float> for f32 {
     }
 }
 
-impl From<c_double> for f64 {
-    #[allow(clippy::useless_conversion)]
-    fn from(value: c_double) -> Self {
-        Self::from(value.0)
-    }
-}
-
 c_binary_ops! {
     c_float;
     Add::add, AddAssign::add_assign,
@@ -396,16 +415,8 @@ c_binary_ops! {
     Div::div, DivAssign::div_assign,
     Rem::rem, RemAssign::rem_assign
 }
-c_binary_ops! {
-    c_double;
-    Add::add, AddAssign::add_assign,
-    Sub::sub, SubAssign::sub_assign,
-    Mul::mul, MulAssign::mul_assign,
-    Div::div, DivAssign::div_assign,
-    Rem::rem, RemAssign::rem_assign
-}
+
 c_signed_ops! { c_float }
-c_signed_ops! { c_double }
 
 impl core::fmt::LowerExp for c_float {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -419,6 +430,33 @@ impl core::fmt::UpperExp for c_float {
     }
 }
 
+impl From<c_float> for f64 {
+    fn from(value: c_float) -> Self {
+        Self::from(value.0)
+    }
+}
+
+c_alias_carrier! { c_double, core::ffi::c_double }
+c_float_from! { c_double, core::ffi::c_double; bool, i8, u8, i16, u16, f32 }
+
+impl From<c_double> for f64 {
+    #[allow(clippy::useless_conversion)]
+    fn from(value: c_double) -> Self {
+        Self::from(value.0)
+    }
+}
+
+c_binary_ops! {
+    c_double;
+    Add::add, AddAssign::add_assign,
+    Sub::sub, SubAssign::sub_assign,
+    Mul::mul, MulAssign::mul_assign,
+    Div::div, DivAssign::div_assign,
+    Rem::rem, RemAssign::rem_assign
+}
+
+c_signed_ops! { c_double }
+
 impl core::fmt::LowerExp for c_double {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         core::fmt::LowerExp::fmt(&self.0, f)
@@ -428,12 +466,6 @@ impl core::fmt::LowerExp for c_double {
 impl core::fmt::UpperExp for c_double {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         core::fmt::UpperExp::fmt(&self.0, f)
-    }
-}
-
-impl From<c_float> for f64 {
-    fn from(value: c_float) -> Self {
-        Self::from(value.0)
     }
 }
 
@@ -498,11 +530,11 @@ unsafe impl<R: NulTerminatedBuf + ?Sized> NulTerminatedBuf for ManuallyDrop<R> {
     }
 }
 
-impl ReprC for RustCStr {
+impl ReprC for CStr {
     type CType = c_char;
 }
 
-unsafe impl NulTerminatedBuf for RustCStr {
+unsafe impl NulTerminatedBuf for CStr {
     type Header = c_char;
 
     fn as_ptr(value: &Self) -> *const Self::Header {
@@ -527,7 +559,7 @@ unsafe impl NulTerminatedBuf for RustCStr {
 
 #[cfg(feature = "alloc")]
 impl ReprC for CString {
-    type CType = AbiBox<<RustCStr as crate::ReprC>::CType>;
+    type CType = AbiBox<<CStr as crate::ReprC>::CType>;
 }
 #[cfg(feature = "alloc")]
 unsafe impl EncodeMove for CString {
@@ -557,7 +589,7 @@ unsafe impl<'d> DecodeMove<'d> for CString {
     type Store = ();
 
     unsafe fn soft_decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
-        unsafe { Box::<RustCStr>::soft_decode(source, &mut ()) }.map(Into::into)
+        unsafe { Box::<CStr>::soft_decode(source, &mut ()) }.map(Into::into)
     }
 }
 
@@ -590,21 +622,21 @@ unsafe impl<'d> borrow::BorrowedDecode<'d> for alloc::ffi::CString {
 
     unsafe fn soft_decode<'itm: 'd>(source: Self::CType, _: &'itm mut Self::Store) -> Option<Self> {
         let ptr = core::ptr::NonNull::new(source.as_ptr())?;
-        Some(unsafe { core::ffi::CStr::from_ptr(ptr.as_ptr().cast()) }.to_owned())
+        Some(unsafe { CStr::from_ptr(ptr.as_ptr().cast()) }.to_owned())
     }
 
     unsafe fn soft_decode_unchecked<'itm: 'd>(
         source: Self::CType,
         _: &'itm mut Self::Store,
     ) -> Self {
-        unsafe { core::ffi::CStr::from_ptr(source.as_ptr().cast()) }.to_owned()
+        unsafe { CStr::from_ptr(source.as_ptr().cast()) }.to_owned()
     }
 }
 
 #[cfg(feature = "alloc")]
 unsafe impl borrow::BorrowedEncodeUnchecked for alloc::ffi::CString {
-    type Owner = <Box<core::ffi::CStr> as borrow::BorrowedEncodeUnchecked>::Owner;
-    type SoftStore = <Box<core::ffi::CStr> as borrow::BorrowedEncodeUnchecked>::SoftStore;
+    type Owner = <Box<CStr> as borrow::BorrowedEncodeUnchecked>::Owner;
+    type SoftStore = <Box<CStr> as borrow::BorrowedEncodeUnchecked>::SoftStore;
 
     unsafe fn soft_encode_unchecked<'itm>(
         self,
@@ -615,7 +647,7 @@ unsafe impl borrow::BorrowedEncodeUnchecked for alloc::ffi::CString {
         Self: 'itm,
     {
         unsafe {
-            <Box<core::ffi::CStr> as borrow::BorrowedEncodeUnchecked>::soft_encode_unchecked(
+            <Box<CStr> as borrow::BorrowedEncodeUnchecked>::soft_encode_unchecked(
                 self.into_boxed_c_str(),
                 store,
                 owner,
@@ -626,7 +658,7 @@ unsafe impl borrow::BorrowedEncodeUnchecked for alloc::ffi::CString {
 
 #[cfg(feature = "alloc")]
 unsafe impl borrow::BorrowedEncode for alloc::ffi::CString {
-    type Store = <Box<core::ffi::CStr> as borrow::BorrowedEncode>::Store;
+    type Store = <Box<CStr> as borrow::BorrowedEncode>::Store;
 
     fn soft_encode<'itm>(
         self,
@@ -636,11 +668,7 @@ unsafe impl borrow::BorrowedEncode for alloc::ffi::CString {
     where
         Self: 'itm,
     {
-        <Box<core::ffi::CStr> as borrow::BorrowedEncode>::soft_encode(
-            self.into_boxed_c_str(),
-            store,
-            owner,
-        )
+        <Box<CStr> as borrow::BorrowedEncode>::soft_encode(self.into_boxed_c_str(), store, owner)
     }
 }
 
@@ -654,7 +682,6 @@ mod tests {
     use core::cell::{Cell, UnsafeCell};
     #[cfg(all(feature = "alloc", feature = "derive"))]
     use core::{
-        ffi::CStr,
         num::NonZeroU8,
         sync::atomic::{AtomicUsize, Ordering},
     };
@@ -670,7 +697,7 @@ mod tests {
         ops::{CFn0, CFn1, CFn2, CFn12},
         option::abi::Option as AbiOption,
         raw,
-        reference::{Ref, SoftRef, SoftRefMut},
+        reference::abi::{Ref, SoftRef, SoftRefMut},
         string::abi::String as AbiString,
         tuple::abi::Tuple3 as AbiTuple3,
     };
@@ -679,6 +706,16 @@ mod tests {
     fn c_int_checked_length_conversion() {
         assert_eq!(c_int::try_from(42_usize), Ok(c_int::new(42)));
         assert!(c_int::try_from(usize::MAX).is_err());
+    }
+
+    #[test]
+    fn c_integer_carriers_compare_with_rust_integers() {
+        let zero = c_int::new(0);
+        assert!(zero >= 0);
+        assert_eq!(0, zero);
+        assert!(c_int::new(-1) < 0);
+        assert!(0 > c_int::new(-1));
+        static_assertions::assert_not_impl_any!(c_int: PartialOrd<u128>, PartialEq<u128>);
     }
 
     #[test]
@@ -721,16 +758,16 @@ mod tests {
 
     #[test]
     fn nul_terminated_buf_wrapper_impls() {
-        assert_impl_all!(RustCStr: NulTerminatedBuf);
-        assert_not_impl_any!(UnsafeCell<RustCStr>: NulTerminatedBuf);
-        assert_not_impl_any!(Cell<RustCStr>: NulTerminatedBuf);
-        assert_impl_all!(ManuallyDrop<RustCStr>: NulTerminatedBuf);
-        assert_impl_all!(&ManuallyDrop<RustCStr>: Encode, Decode<'static>);
-        assert_not_impl_any!(&mut RustCStr: ReprC);
-        assert_not_impl_any!(&mut RustCStr: Encode, Decode<'static>);
+        assert_impl_all!(CStr: NulTerminatedBuf);
+        assert_not_impl_any!(UnsafeCell<CStr>: NulTerminatedBuf);
+        assert_not_impl_any!(Cell<CStr>: NulTerminatedBuf);
+        assert_impl_all!(ManuallyDrop<CStr>: NulTerminatedBuf);
+        assert_impl_all!(&ManuallyDrop<CStr>: Encode, Decode<'static>);
+        assert_not_impl_any!(&mut CStr: ReprC);
+        assert_not_impl_any!(&mut CStr: Encode, Decode<'static>);
         #[cfg(feature = "alloc")]
         {
-            assert_impl_all!(Box<ManuallyDrop<RustCStr>>: EncodeMove, crate::convert::DecodeMove<'static>);
+            assert_impl_all!(Box<ManuallyDrop<CStr>>: EncodeMove, crate::convert::DecodeMove<'static>);
             assert_impl_all!(CString: Encode);
         }
     }
@@ -741,11 +778,10 @@ mod tests {
         let encoded = crate::encode(original);
         assert_eq!(encoded.as_ptr().cast(), original.as_ptr());
 
-        let decoded: &RustCStr = unsafe { crate::decode(encoded) }.unwrap();
+        let decoded: &CStr = unsafe { crate::decode(encoded) }.unwrap();
         assert_eq!(decoded, original);
 
-        let none: Option<&RustCStr> =
-            unsafe { crate::decode(crate::encode(None::<&RustCStr>)) }.unwrap();
+        let none: Option<&CStr> = unsafe { crate::decode(crate::encode(None::<&CStr>)) }.unwrap();
         assert!(none.is_none());
     }
 
@@ -756,7 +792,7 @@ mod tests {
         let ptr = original.as_ptr();
         let encoded = crate::convert::encode_move(original);
         assert_eq!(encoded.as_ptr().cast_const().cast(), ptr);
-        let decoded: Box<RustCStr> = unsafe { crate::convert::decode_move(encoded) }.unwrap();
+        let decoded: Box<CStr> = unsafe { crate::convert::decode_move(encoded) }.unwrap();
         assert_eq!(decoded.as_ptr(), ptr);
         assert_eq!(&*decoded, c"owned");
     }
@@ -848,7 +884,7 @@ mod tests {
     #[cfg(all(feature = "alloc", feature = "derive"))]
     #[test]
     fn raw_import_uses_plain_reference_carrier_without_ownership() {
-        use co3::reference::Ref;
+        use co3::reference::abi::Ref;
         fn check<'a>(_: &'a u8) {
             let _: unsafe extern "C" fn(Ref<'a, u8>) -> Ref<'a, u8> = borrowed_import;
         }

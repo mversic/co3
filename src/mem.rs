@@ -18,69 +18,6 @@ impl<R: ReprC + ?Sized> ReprC for ManuallyDrop<R> {
     type CType = core::mem::ManuallyDrop<R::CType>;
 }
 
-crate::borrow::__impl_borrowed_identity!([T] MaybeUninit<T>);
-
-impl<T: AbiCompatible<CType: Sized>> ReprC for MaybeUninit<T> {
-    type CType = core::mem::MaybeUninit<T::CType>;
-}
-unsafe impl<T: AbiCompatible<CType: Sized> + EncodeMove<Store: EmptyStore>> EncodeMove
-    for MaybeUninit<T>
-{
-    type Store = ();
-
-    #[inline(always)]
-    fn soft_encode<'itm>(self, (): &mut ()) -> Self::CType
-    where
-        Self: 'itm,
-    {
-        unsafe { self.soft_encode_unchecked(&mut ()) }
-    }
-}
-unsafe impl<T: AbiCompatible<CType: Sized>> EncodeMoveUnchecked for MaybeUninit<T> {
-    type SoftStore = ();
-
-    unsafe fn soft_encode_unchecked<'itm>(self, (): &'itm mut ()) -> Self::CType
-    where
-        Self: 'itm,
-    {
-        unsafe { core::mem::transmute_copy(&self) }
-    }
-}
-unsafe impl<'d, T: AbiCompatible<CType: Sized>> DecodeMove<'d> for MaybeUninit<T> {
-    type Store = ();
-
-    #[inline(always)]
-    unsafe fn soft_decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
-        Some(unsafe { core::mem::transmute_copy(&source) })
-    }
-}
-
-// TODO: Weird bounds here
-impl<'d, T: AbiCompatible<CType: Sized>> Decode<'d> for MaybeUninit<T> {}
-impl<T: AbiCompatible<CType: Sized>> EncodeUnchecked for MaybeUninit<T> {}
-impl<T: AbiCompatible<CType: Sized> + EncodeMove<Store: EmptyStore>> Encode for MaybeUninit<T> {}
-
-// TODO: Technically all bits are valid, but using T: CType feels safer
-unsafe impl<T: AbiCompatible<CType: Sized>> AbiCompatibleValidate for MaybeUninit<T> {
-    #[inline(always)]
-    unsafe fn is_valid(_: &Self::CType) -> bool {
-        true
-    }
-}
-unsafe impl<T: AbiCompatible<CType: Sized>> AbiCompatible for MaybeUninit<T> {}
-
-unsafe impl<T: CType> CType for MaybeUninit<T> {}
-unsafe impl<T: CFnArg> CFnArg for MaybeUninit<T> where
-    Self: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>
-{
-}
-unsafe impl<T: CFnReturn> CFnReturn for MaybeUninit<T> where
-    Self: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>
-{
-}
-
-unsafe impl<T: EmptyStore> EmptyStore for MaybeUninit<T> {}
-
 const _: () = {
     use crate::borrow::{BorrowedDecode, BorrowedEncode, BorrowedEncodeUnchecked};
 
@@ -243,6 +180,69 @@ macro_rules! impl_wide_for_transparent_wrapper {
 
 impl_wide_for_transparent_wrapper!(ManuallyDrop);
 
+crate::borrow::__impl_borrowed_identity!([T] MaybeUninit<T>);
+
+impl<T: AbiCompatible<CType: Sized>> ReprC for MaybeUninit<T> {
+    type CType = core::mem::MaybeUninit<T::CType>;
+}
+unsafe impl<T: AbiCompatible<CType: Sized> + EncodeMove<Store: EmptyStore>> EncodeMove
+    for MaybeUninit<T>
+{
+    type Store = ();
+
+    #[inline(always)]
+    fn soft_encode<'itm>(self, (): &mut ()) -> Self::CType
+    where
+        Self: 'itm,
+    {
+        unsafe { self.soft_encode_unchecked(&mut ()) }
+    }
+}
+unsafe impl<T: AbiCompatible<CType: Sized>> EncodeMoveUnchecked for MaybeUninit<T> {
+    type SoftStore = ();
+
+    unsafe fn soft_encode_unchecked<'itm>(self, (): &'itm mut ()) -> Self::CType
+    where
+        Self: 'itm,
+    {
+        unsafe { core::mem::transmute_copy(&self) }
+    }
+}
+unsafe impl<'d, T: AbiCompatible<CType: Sized>> DecodeMove<'d> for MaybeUninit<T> {
+    type Store = ();
+
+    #[inline(always)]
+    unsafe fn soft_decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
+        Some(unsafe { core::mem::transmute_copy(&source) })
+    }
+}
+
+// TODO: Weird bounds here
+impl<'d, T: AbiCompatible<CType: Sized>> Decode<'d> for MaybeUninit<T> {}
+impl<T: AbiCompatible<CType: Sized>> EncodeUnchecked for MaybeUninit<T> {}
+impl<T: AbiCompatible<CType: Sized> + EncodeMove<Store: EmptyStore>> Encode for MaybeUninit<T> {}
+
+// TODO: Technically all bits are valid, but using T: CType feels safer
+unsafe impl<T: AbiCompatible<CType: Sized>> AbiCompatibleValidate for MaybeUninit<T> {
+    #[inline(always)]
+    unsafe fn is_valid(_: &Self::CType) -> bool {
+        true
+    }
+}
+unsafe impl<T: AbiCompatible<CType: Sized>> AbiCompatible for MaybeUninit<T> {}
+
+unsafe impl<T: CType> CType for MaybeUninit<T> {}
+unsafe impl<T: CFnArg> CFnArg for MaybeUninit<T> where
+    Self: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>
+{
+}
+unsafe impl<T: CFnReturn> CFnReturn for MaybeUninit<T> where
+    Self: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>
+{
+}
+
+unsafe impl<T: EmptyStore> EmptyStore for MaybeUninit<T> {}
+
 #[cfg(test)]
 mod tests {
     #[cfg(feature = "alloc")]
@@ -258,7 +258,7 @@ mod tests {
     use super::*;
     #[cfg(feature = "alloc")]
     use crate::{boxed::abi::Box as AbiBox, wide::abi::WideBox as AbiWideBox};
-    use crate::{option::abi::Option as AbiOption, reference::Ref};
+    use crate::{option::abi::Option as AbiOption, reference::abi::Ref};
 
     #[test]
     #[cfg(feature = "alloc")]
@@ -294,7 +294,7 @@ mod tests {
             assert_ne!(core::ptr::from_ref(&**decoded), original);
             drop(ManuallyDrop::into_inner(decoded));
             // The retained encode owner still owns the original allocation.
-            assert_eq!(unsafe { *original }, 42);
+            assert_eq!(unsafe { *encoded.as_ptr() }, 42);
         }
     }
 
@@ -366,7 +366,7 @@ mod tests {
         );
         assert_impl_all!(&mut ManuallyDrop<u8>:
             RustSpec<Niche = WithNiche<rust_spec::Stable>>,
-            Niche<CType = crate::reference::RefMut<'static, <ManuallyDrop<u8> as crate::ReprC>::CType>>,
+            Niche<CType = crate::reference::abi::RefMut<'static, <ManuallyDrop<u8> as crate::ReprC>::CType>>,
             Decode<'static>,
             Encode,
         );
@@ -429,7 +429,7 @@ mod tests {
             Niche<CType = Ref<'static, <ManuallyDrop<Box<u8>> as crate::ReprC>::CType>>,
         );
         assert_impl_all!(&mut ManuallyDrop<Box<u8>>:
-            Niche<CType = crate::reference::SoftRefMut<<ManuallyDrop<Box<u8>> as crate::ReprC>::CType>>,
+            Niche<CType = crate::reference::abi::SoftRefMut<<ManuallyDrop<Box<u8>> as crate::ReprC>::CType>>,
         );
         assert_impl_all!(Box<ManuallyDrop<Box<u8>>>:
             RustSpec<Niche = WithNiche<rust_spec::Stable>>,

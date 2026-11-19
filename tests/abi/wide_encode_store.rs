@@ -54,6 +54,7 @@ fn mutable_reuse_only_writes_back_the_latest_value() {
 }
 
 #[test]
+#[cfg(panic = "unwind")]
 fn builder_panic_cancels_pending_mutable_writeback() {
     let mut source = 1;
     let mut store = RefMutWideEncodeStore::<[u32], (), &mut u32>::default();
@@ -117,11 +118,9 @@ fn one_field_wide_tuples_are_unsupported() {
     static_assertions::assert_not_impl_any!(Tuple2<u32, [u8]>: co3::convert::SoftEncodeMut<'static>, co3::convert::SoftEncodeMutUnchecked<'static>);
     static_assertions::assert_impl_all!(&'static Tuple1<u8>: co3::convert::Encode, co3::convert::EncodeUnchecked);
     let tuple = Tuple1(7_u8);
-    let carrier: co3::reference::Ref<'_, <Tuple1<u8> as co3::ReprC>::CType> = co3::encode(&tuple);
-    assert_eq!(
-        carrier.as_ptr().cast::<()>(),
-        core::ptr::from_ref(&tuple).cast::<()>()
-    );
+    let carrier = co3::encode(&tuple);
+    let decoded = unsafe { co3::decode::<&Tuple1<u8>>(carrier) }.unwrap();
+    assert!(core::ptr::eq(decoded, &tuple));
     assert_not_shared_encoder!(Tuple1<core::ffi::CStr>: co3::convert::SoftEncodeRef<'static>, co3::convert::SoftEncodeRefUnchecked<'static>);
     assert_not_shared_encoder!(Tuple2<u32, core::ffi::CStr>: co3::convert::SoftEncodeRef<'static>, co3::convert::SoftEncodeRefUnchecked<'static>);
     assert_not_shared_encoder!((u32, core::ffi::CStr): co3::convert::SoftEncodeRef<'static>, co3::convert::SoftEncodeRefUnchecked<'static>);

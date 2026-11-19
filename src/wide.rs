@@ -93,6 +93,50 @@ pub unsafe trait Wide {
     unsafe fn from_non_null(data: NonNull<Self::Header>, metadata: Self::Metadata) -> Box<Self>;
 }
 
+/// Raw parts shared by ordinary and soft wide reference carriers.
+///
+/// # Safety
+/// Implementations must preserve the wide pointer ABI and their access contract.
+pub(crate) unsafe trait WideRefCarrier<R: ReprC<CType: Wide> + ?Sized>:
+    CType + Copy
+{
+    type Pointer: CType + Copy;
+    fn as_ptr(&self) -> Self::Pointer;
+    fn metadata(&self) -> <R::CType as Wide>::Metadata;
+    /// Read the data pointer without granting mutable access to the pointee.
+    fn data(&self) -> *const PointeeData<R::CType>;
+    /// # Safety
+    /// The parts must satisfy the destination carrier's lifetime and aliasing contract,
+    /// including exclusive access when required, regardless of the pointer's constness.
+    unsafe fn from_const_parts(
+        data: *const PointeeData<R::CType>,
+        metadata: <R::CType as Wide>::Metadata,
+    ) -> Self;
+    /// # Safety
+    /// The parts must satisfy the destination carrier's lifetime and aliasing contract.
+    unsafe fn from_parts(data: Self::Pointer, metadata: <R::CType as Wide>::Metadata) -> Self;
+}
+
+/// Operations shared by ordinary and soft mutable wide carriers.
+///
+/// # Safety
+/// Implementations must preserve the wide pointer ABI and exclusive access contract.
+pub(crate) unsafe trait WideRefMutCarrier<R: ReprC<CType: Wide> + ?Sized>:
+    CType + Copy
+{
+    fn data(&self) -> *mut PointeeData<R::CType>;
+    fn metadata(&self) -> <R::CType as Wide>::Metadata;
+    fn is_null(&self) -> bool {
+        self.data().is_null()
+    }
+    /// # Safety
+    /// The parts must satisfy the destination carrier's lifetime and aliasing contract.
+    unsafe fn from_raw_parts_mut(
+        data: *mut PointeeData<R::CType>,
+        metadata: <R::CType as Wide>::Metadata,
+    ) -> Self;
+}
+
 macro_rules! impl_wide_for_cell {
     ($($wrapper:ident),+ $(,)?) => {$(
         unsafe impl<R: Wide<Metadata = usize> + ?Sized> Wide for $wrapper<R>
@@ -221,275 +265,6 @@ impl<T> WideHeader for [T; 0] {
     type Data = T;
 }
 
-/// A shared wide reference represented as a non-null data pointer and metadata.
-///
-/// The layout of the pointee is determined by its [`Wide`] implementation.
-#[derive(RustSpec)]
-#[repr(C)]
-pub struct WideRef<'a, R: Wide + ?Sized> {
-    data: NonNull<PointeeData<R>>,
-    metadata: R::Metadata,
-    lifetime: PhantomData<&'a ()>,
-}
-
-impl<'a, R: Wide + ?Sized> WideRef<'a, R> {
-    /// Wrap a wide reference without changing its pointee or metadata.
-    pub fn from_ref(source: &'a R) -> Self {
-        let data = NonNull::new(R::as_ptr(source).cast_mut().cast())
-            .expect("Wide::as_ptr returned null for a reference");
-        unsafe { Self::from_raw_parts(data, R::metadata(source)) }
-    }
-
-    /// Construct a wide reference from its raw parts.
-    ///
-    /// # Safety
-    /// The parts must describe a valid `R` that can be shared for `'a`.
-    pub const unsafe fn from_raw_parts(
-        data: NonNull<PointeeData<R>>,
-        metadata: R::Metadata,
-    ) -> Self {
-        Self {
-            data,
-            metadata,
-            lifetime: PhantomData,
-        }
-    }
-
-    pub const fn as_ptr(&self) -> *const PointeeData<R> {
-        self.data.as_ptr()
-    }
-
-    pub const fn metadata(&self) -> R::Metadata {
-        self.metadata
-    }
-
-    /// Recover the shared reference.
-    ///
-    /// # Safety
-    /// The parts must describe a valid `R` that can be shared for `'a`.
-    pub unsafe fn into_ref(self) -> &'a R {
-        unsafe { R::from_raw_parts(self.data.as_ptr().cast(), self.metadata) }
-    }
-}
-
-impl<R: Wide + ?Sized> Copy for WideRef<'_, R> {}
-impl<R: Wide + ?Sized> Clone for WideRef<'_, R> {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-
-/// An exclusive wide reference represented as a data pointer and metadata.
-///
-/// The data pointer is non-null.
-#[derive(RustSpec)]
-#[repr(C)]
-pub struct WideRefMut<'a, R: Wide + ?Sized> {
-    data: NonNull<PointeeData<R>>,
-    metadata: R::Metadata,
-    lifetime: PhantomData<&'a mut ()>,
-}
-
-impl<'a, R: Wide + ?Sized> WideRefMut<'a, R> {
-    /// Wrap an exclusive wide reference without changing its pointee or metadata.
-    pub fn from_mut(source: &'a mut R) -> Self {
-        let source = core::ptr::from_mut(source);
-        let data = NonNull::new(R::as_mut_ptr(source).cast())
-            .expect("Wide::as_mut_ptr returned null for a reference");
-        unsafe { Self::from_raw_parts_mut(data, R::metadata(source)) }
-    }
-
-    /// Construct an exclusive wide reference from its raw parts.
-    ///
-    /// # Safety
-    /// The parts must describe a valid `R` that can be exclusively borrowed for `'a`.
-    pub const unsafe fn from_raw_parts_mut(
-        data: NonNull<PointeeData<R>>,
-        metadata: R::Metadata,
-    ) -> Self {
-        Self {
-            data,
-            metadata,
-            lifetime: PhantomData,
-        }
-    }
-
-    pub const fn as_ptr(&self) -> *mut PointeeData<R> {
-        self.data.as_ptr()
-    }
-
-    pub const fn metadata(&self) -> R::Metadata {
-        self.metadata
-    }
-
-    /// Recover the exclusive reference.
-    ///
-    /// # Safety
-    /// The parts must describe a valid `R` that can be exclusively borrowed for `'a`.
-    pub unsafe fn into_mut(self) -> &'a mut R {
-        unsafe { R::from_raw_parts_mut(self.data.cast().as_ptr(), self.metadata) }
-    }
-}
-
-/// An owned wide pointer represented as a data pointer and metadata.
-///
-/// The data pointer is non-null. Dropping this value drops the owned allocation.
-/// Decoding a non-null carrier requires the caller to transfer unique ownership
-/// of an allocation that can be recovered with [`Wide::from_non_null`].
-#[cfg(feature = "alloc")]
-#[repr(C)]
-pub struct WideBox<R: Wide + ?Sized> {
-    data: NonNull<PointeeData<R>>,
-    metadata: R::Metadata,
-}
-
-// The header fields determine alignment, but the full pointee determines
-// the properties reachable through the data pointer.
-#[cfg(feature = "alloc")]
-unsafe impl<R> RustSpec for WideBox<R>
-where
-    R: Wide + RustSpec<Mutability: rust_spec::mutability::PointerMutability> + ?Sized,
-    R::Metadata: RustSpec,
-    R::Layout: core::ops::Add<<R::Metadata as RustSpec>::Layout>,
-    <usize as RustSpec>::__Alignment: rust_spec::Max<<R::Metadata as RustSpec>::__Alignment>,
-    <R::Mutability as rust_spec::mutability::PointerMutability>::Output:
-        core::ops::Add<<R::Metadata as RustSpec>::Mutability>,
-    R::Trap: core::ops::Add<<R::Metadata as RustSpec>::__IndirectTrap>,
-{
-    type Layout = <R::Layout as core::ops::Add<<R::Metadata as RustSpec>::Layout>>::Output;
-    type Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>;
-    type __Alignment = rust_spec::Maximum<
-        <usize as RustSpec>::__Alignment,
-        <R::Metadata as RustSpec>::__Alignment,
-    >;
-    type Trap = rust_spec::layout::NonRobust;
-    type Niche = rust_spec::niche::WithNiche<rust_spec::Unstable>;
-    type Drop = rust_spec::drop::CustomDrop<rust_spec::drop::AutoDrop>;
-    type Mutability =
-        <<R::Mutability as rust_spec::mutability::PointerMutability>::Output as core::ops::Add<
-            <R::Metadata as RustSpec>::Mutability,
-        >>::Output;
-    type Opacity = rust_spec::NonOpaque;
-    type __IndirectTrap =
-        <R::Trap as core::ops::Add<<R::Metadata as RustSpec>::__IndirectTrap>>::Output;
-}
-
-#[cfg(feature = "alloc")]
-impl<R: Wide + ?Sized> WideBox<R> {
-    /// Transfer a box without reallocating it or changing its metadata.
-    pub fn from_box(source: Box<R>) -> Self {
-        let metadata = R::metadata(&*source);
-        let data = R::into_non_null(source).cast();
-        unsafe { Self::from_raw_parts(data, metadata) }
-    }
-
-    /// Construct an owned wide pointer from its raw parts.
-    ///
-    /// # Safety
-    /// The parts must represent unique ownership of a live allocation that
-    /// can be recovered with [`Wide::from_non_null`].
-    pub const unsafe fn from_raw_parts(
-        data: NonNull<PointeeData<R>>,
-        metadata: R::Metadata,
-    ) -> Self {
-        Self { data, metadata }
-    }
-
-    pub const fn as_ptr(&self) -> *mut PointeeData<R> {
-        self.data.as_ptr()
-    }
-
-    pub const fn metadata(&self) -> R::Metadata {
-        self.metadata
-    }
-
-    /// Recover the box.
-    ///
-    /// # Safety
-    /// The parts must represent unique ownership of a live allocation that
-    /// can be recovered with [`Wide::from_non_null`].
-    pub unsafe fn into_box(self) -> Box<R> {
-        let value = core::mem::ManuallyDrop::new(self);
-        unsafe { R::from_non_null(value.data.cast(), value.metadata) }
-    }
-}
-
-#[cfg(feature = "alloc")]
-impl<R: Wide + ?Sized> Drop for WideBox<R> {
-    fn drop(&mut self) {
-        // The handle owns the allocation until it is consumed or dropped.
-        drop(unsafe { R::from_non_null(self.data.cast(), self.metadata) });
-    }
-}
-
-#[cfg(feature = "alloc")]
-impl<R: Wide + ToOwned<Owned: Into<Box<R>>> + ?Sized> ToOwned for WideBox<R> {
-    type Owned = Self;
-
-    fn to_owned(&self) -> Self::Owned {
-        // The owned allocation remains live and shared for the duration of the copy.
-        let pointee = unsafe { R::from_raw_parts(self.data.cast().as_ptr(), self.metadata) };
-        Self::from_box(pointee.to_owned().into())
-    }
-}
-
-macro_rules! impl_identity_carrier {
-    ($ty:ident, [$($params:tt)*], [$($args:tt)*]) => {
-        impl<$($params)*> ReprC for $ty<$($args)*> {
-            type CType = Self;
-        }
-        unsafe impl<$($params)*> EncodeMove for $ty<$($args)*> {
-            type Store = ();
-
-            #[inline(always)]
-            fn soft_encode<'itm>(self, (): &mut ()) -> Self::CType
-            where
-                Self: 'itm,
-            {
-                self
-            }
-        }
-        unsafe impl<$($params)*> EncodeMoveUnchecked for $ty<$($args)*> {
-            type SoftStore = ();
-
-            unsafe fn soft_encode_unchecked<'itm>(self, (): &'itm mut ()) -> Self::CType where Self: 'itm {
-                self
-            }
-        }
-        unsafe impl<'d, $($params)*> DecodeMove<'d> for $ty<$($args)*> {
-            type Store = ();
-
-            #[inline(always)]
-            unsafe fn soft_decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> core::option::Option<Self> {
-                Some(source)
-            }
-        }
-
-        impl<$($params)*> Encode for $ty<$($args)*> {}
-        impl<$($params)*> crate::convert::EncodeUnchecked for $ty<$($args)*> {}
-        impl<'d, $($params)*> Decode<'d> for $ty<$($args)*> {}
-
-
-        unsafe impl<$($params)*> $crate::convert::AbiCompatibleValidate for $ty<$($args)*> {
-            #[inline(always)]
-            unsafe fn is_valid(_: &Self::CType) -> bool {
-                true
-            }
-        }
-
-        unsafe impl<$($params)*> AbiCompatible for $ty<$($args)*> {}
-        unsafe impl<$($params)*> CType for $ty<$($args)*> {}
-        unsafe impl<$($params)*> CFnArg for $ty<$($args)*> {}
-        unsafe impl<$($params)*> CFnReturn for $ty<$($args)*> {}
-    };
-}
-
-macro_rules! impl_carrier_borrow {
-    ($ty:ident, [$($params:tt)*], [$($args:tt)*]) => {
-        $crate::borrow::__impl_borrowed_identity!([$($params)*] $ty<$($args)*>);
-    };
-}
-
 macro_rules! impl_non_null_wide {
     ([$($lifetime:lifetime $($mutability:ident)?,)?] $direct:ident => $carrier:ident [$($flags:tt)*]) => {
         impl<$($lifetime,)? R> ReprC for $direct<$($lifetime,)? R>
@@ -576,193 +351,881 @@ macro_rules! impl_non_null_wide {
     };
 }
 
+/// A shared wide reference represented as a non-null data pointer and metadata.
+///
+/// The layout of the pointee is determined by its [`Wide`] implementation.
+#[derive(RustSpec)]
+#[repr(C)]
+pub struct WideRef<'a, R: Wide + ?Sized> {
+    data: NonNull<PointeeData<R>>,
+    metadata: R::Metadata,
+    lifetime: PhantomData<&'a ()>,
+}
+
+impl<'a, R: Wide + ?Sized> WideRef<'a, R> {
+    /// Wrap a wide reference without changing its pointee or metadata.
+    pub fn from_ref(source: &'a R) -> Self {
+        let data = NonNull::new(R::as_ptr(source).cast_mut().cast())
+            .expect("Wide::as_ptr returned null for a reference");
+        unsafe { Self::from_raw_parts(data, R::metadata(source)) }
+    }
+
+    /// Construct a wide reference from its raw parts.
+    ///
+    /// # Safety
+    /// The parts must describe a valid `R` that can be shared for `'a`.
+    pub const unsafe fn from_raw_parts(
+        data: NonNull<PointeeData<R>>,
+        metadata: R::Metadata,
+    ) -> Self {
+        Self {
+            data,
+            metadata,
+            lifetime: PhantomData,
+        }
+    }
+
+    pub const fn as_ptr(&self) -> *const PointeeData<R> {
+        self.data.as_ptr()
+    }
+
+    pub const fn metadata(&self) -> R::Metadata {
+        self.metadata
+    }
+
+    /// Recover the shared reference.
+    ///
+    /// # Safety
+    /// The parts must describe a valid `R` that can be shared for `'a`.
+    pub unsafe fn into_ref(self) -> &'a R {
+        unsafe { R::from_raw_parts(self.data.as_ptr().cast(), self.metadata) }
+    }
+}
+
+impl<R: Wide + ?Sized> Copy for WideRef<'_, R> {}
+impl<R: Wide + ?Sized> Clone for WideRef<'_, R> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
 crate::borrow::__impl_borrowed_identity!(['a, R: Wide + ?Sized] WideRef<'a, R>);
-crate::borrow::__impl_borrowed_identity!(['a, R: Wide + ?Sized] WideRefMut<'a, R>);
 
 impl_non_null_wide! { @codecs ['a,] WideRef => WideRef [] }
+
+/// An exclusive wide reference represented as a data pointer and metadata.
+///
+/// The data pointer is non-null.
+#[derive(RustSpec)]
+#[repr(C)]
+pub struct WideRefMut<'a, R: Wide + ?Sized> {
+    data: NonNull<PointeeData<R>>,
+    metadata: R::Metadata,
+    lifetime: PhantomData<&'a mut ()>,
+}
+
+impl<'a, R: Wide + ?Sized> WideRefMut<'a, R> {
+    /// Wrap an exclusive wide reference without changing its pointee or metadata.
+    pub fn from_mut(source: &'a mut R) -> Self {
+        let source = core::ptr::from_mut(source);
+        let data = NonNull::new(R::as_mut_ptr(source).cast())
+            .expect("Wide::as_mut_ptr returned null for a reference");
+        unsafe { Self::from_raw_parts_mut(data, R::metadata(source)) }
+    }
+
+    /// Construct an exclusive wide reference from its raw parts.
+    ///
+    /// # Safety
+    /// The parts must describe a valid `R` that can be exclusively borrowed for `'a`.
+    pub const unsafe fn from_raw_parts_mut(
+        data: NonNull<PointeeData<R>>,
+        metadata: R::Metadata,
+    ) -> Self {
+        Self {
+            data,
+            metadata,
+            lifetime: PhantomData,
+        }
+    }
+
+    pub const fn as_ptr(&self) -> *mut PointeeData<R> {
+        self.data.as_ptr()
+    }
+
+    pub const fn metadata(&self) -> R::Metadata {
+        self.metadata
+    }
+
+    /// Recover the exclusive reference.
+    ///
+    /// # Safety
+    /// The parts must describe a valid `R` that can be exclusively borrowed for `'a`.
+    pub unsafe fn into_mut(self) -> &'a mut R {
+        unsafe { R::from_raw_parts_mut(self.data.cast().as_ptr(), self.metadata) }
+    }
+}
+
+crate::borrow::__impl_borrowed_identity!(['a, R: Wide + ?Sized] WideRefMut<'a, R>);
+
 impl_non_null_wide! { @codecs ['a mut,] WideRefMut => WideRefMut [] }
+
+/// An owned wide pointer represented as a data pointer and metadata.
+///
+/// The data pointer is non-null. Dropping this value drops the owned allocation.
+/// Decoding a non-null carrier requires the caller to transfer unique ownership
+/// of an allocation that can be recovered with [`Wide::from_non_null`].
+#[cfg(feature = "alloc")]
+#[repr(C)]
+pub struct WideBox<R: Wide + ?Sized> {
+    data: NonNull<PointeeData<R>>,
+    metadata: R::Metadata,
+}
+
+#[cfg(feature = "alloc")]
+impl<R: Wide + ?Sized> WideBox<R> {
+    /// Transfer a box without reallocating it or changing its metadata.
+    pub fn from_box(source: Box<R>) -> Self {
+        let metadata = R::metadata(&*source);
+        let data = R::into_non_null(source).cast();
+        unsafe { Self::from_raw_parts(data, metadata) }
+    }
+
+    /// Construct an owned wide pointer from its raw parts.
+    ///
+    /// # Safety
+    /// The parts must represent unique ownership of a live allocation that
+    /// can be recovered with [`Wide::from_non_null`].
+    pub const unsafe fn from_raw_parts(
+        data: NonNull<PointeeData<R>>,
+        metadata: R::Metadata,
+    ) -> Self {
+        Self { data, metadata }
+    }
+
+    pub const fn as_ptr(&self) -> *mut PointeeData<R> {
+        self.data.as_ptr()
+    }
+
+    pub const fn metadata(&self) -> R::Metadata {
+        self.metadata
+    }
+
+    /// Recover the box.
+    ///
+    /// # Safety
+    /// The parts must represent unique ownership of a live allocation that
+    /// can be recovered with [`Wide::from_non_null`].
+    pub unsafe fn into_box(self) -> Box<R> {
+        let value = core::mem::ManuallyDrop::new(self);
+        unsafe { R::from_non_null(value.data.cast(), value.metadata) }
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl<R: Wide + ?Sized> Drop for WideBox<R> {
+    fn drop(&mut self) {
+        // The handle owns the allocation until it is consumed or dropped.
+        drop(unsafe { R::from_non_null(self.data.cast(), self.metadata) });
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl<R: Wide + ToOwned<Owned: Into<Box<R>>> + ?Sized> ToOwned for WideBox<R> {
+    type Owned = Self;
+
+    fn to_owned(&self) -> Self::Owned {
+        // The owned allocation remains live and shared for the duration of the copy.
+        let pointee = unsafe { R::from_raw_parts(self.data.cast().as_ptr(), self.metadata) };
+        Self::from_box(pointee.to_owned().into())
+    }
+}
+
+// The header fields determine alignment, but the full pointee determines
+// the properties reachable through the data pointer.
+#[cfg(feature = "alloc")]
+unsafe impl<R> RustSpec for WideBox<R>
+where
+    R: Wide + RustSpec<Mutability: rust_spec::mutability::PointerMutability> + ?Sized,
+    R::Metadata: RustSpec,
+    R::Layout: core::ops::Add<<R::Metadata as RustSpec>::Layout>,
+    <usize as RustSpec>::__Alignment: rust_spec::Max<<R::Metadata as RustSpec>::__Alignment>,
+    <R::Mutability as rust_spec::mutability::PointerMutability>::Output:
+        core::ops::Add<<R::Metadata as RustSpec>::Mutability>,
+    R::Trap: core::ops::Add<<R::Metadata as RustSpec>::__IndirectTrap>,
+{
+    type Layout = <R::Layout as core::ops::Add<<R::Metadata as RustSpec>::Layout>>::Output;
+    type Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>;
+    type __Alignment = rust_spec::Maximum<
+        <usize as RustSpec>::__Alignment,
+        <R::Metadata as RustSpec>::__Alignment,
+    >;
+    type Trap = rust_spec::layout::NonRobust;
+    type Niche = rust_spec::niche::WithNiche<rust_spec::Unstable>;
+    type Drop = rust_spec::drop::CustomDrop<rust_spec::drop::AutoDrop>;
+    type Mutability =
+        <<R::Mutability as rust_spec::mutability::PointerMutability>::Output as core::ops::Add<
+            <R::Metadata as RustSpec>::Mutability,
+        >>::Output;
+    type Opacity = rust_spec::NonOpaque;
+    type __IndirectTrap =
+        <R::Trap as core::ops::Add<<R::Metadata as RustSpec>::__IndirectTrap>>::Output;
+}
+
 #[cfg(feature = "alloc")]
 impl_non_null_wide! { [] WideBox => WideBox [] }
+
+macro_rules! impl_identity_carrier {
+    ($ty:ident, [$($params:tt)*], [$($args:tt)*]) => {
+        impl<$($params)*> ReprC for $ty<$($args)*> {
+            type CType = Self;
+        }
+        unsafe impl<$($params)*> EncodeMove for $ty<$($args)*> {
+            type Store = ();
+
+            #[inline(always)]
+            fn soft_encode<'itm>(self, (): &mut ()) -> Self::CType
+            where
+                Self: 'itm,
+            {
+                self
+            }
+        }
+        unsafe impl<$($params)*> EncodeMoveUnchecked for $ty<$($args)*> {
+            type SoftStore = ();
+
+            unsafe fn soft_encode_unchecked<'itm>(self, (): &'itm mut ()) -> Self::CType where Self: 'itm {
+                self
+            }
+        }
+        unsafe impl<'d, $($params)*> DecodeMove<'d> for $ty<$($args)*> {
+            type Store = ();
+
+            #[inline(always)]
+            unsafe fn soft_decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> core::option::Option<Self> {
+                Some(source)
+            }
+        }
+
+        impl<$($params)*> Encode for $ty<$($args)*> {}
+        impl<$($params)*> crate::convert::EncodeUnchecked for $ty<$($args)*> {}
+        impl<'d, $($params)*> Decode<'d> for $ty<$($args)*> {}
+
+
+        unsafe impl<$($params)*> $crate::convert::AbiCompatibleValidate for $ty<$($args)*> {
+            #[inline(always)]
+            unsafe fn is_valid(_: &Self::CType) -> bool {
+                true
+            }
+        }
+
+        unsafe impl<$($params)*> AbiCompatible for $ty<$($args)*> {}
+        unsafe impl<$($params)*> CType for $ty<$($args)*> {}
+        unsafe impl<$($params)*> CFnArg for $ty<$($args)*> {}
+        unsafe impl<$($params)*> CFnReturn for $ty<$($args)*> {}
+    };
+}
+
+macro_rules! impl_carrier_borrow {
+    ($ty:ident, [$($params:tt)*], [$($args:tt)*]) => {
+        $crate::borrow::__impl_borrowed_identity!([$($params)*] $ty<$($args)*>);
+    };
+}
 
 #[cfg(feature = "alloc")]
 pub(crate) use impl_carrier_borrow;
 pub(crate) use impl_identity_carrier;
 
-/// Raw parts shared by ordinary and soft wide reference carriers.
-///
-/// # Safety
-/// Implementations must preserve the wide pointer ABI and their access contract.
-pub(crate) unsafe trait WideRefCarrier<R: ReprC<CType: Wide> + ?Sized>:
-    CType + Copy
-{
-    type Pointer: CType + Copy;
-    fn as_ptr(&self) -> Self::Pointer;
-    fn metadata(&self) -> <R::CType as Wide>::Metadata;
-    /// Read the data pointer without granting mutable access to the pointee.
-    fn data(&self) -> *const PointeeData<R::CType>;
-    /// # Safety
-    /// The parts must satisfy the destination carrier's lifetime and aliasing contract,
-    /// including exclusive access when required, regardless of the pointer's constness.
-    unsafe fn from_const_parts(
-        data: *const PointeeData<R::CType>,
-        metadata: <R::CType as Wide>::Metadata,
-    ) -> Self;
-    /// # Safety
-    /// The parts must satisfy the destination carrier's lifetime and aliasing contract.
-    unsafe fn from_parts(data: Self::Pointer, metadata: <R::CType as Wide>::Metadata) -> Self;
-}
-unsafe impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized> WideRefCarrier<R>
-    for abi::SoftWideRef<R::CType>
-{
-    type Pointer = *const PointeeData<R::CType>;
-    fn as_ptr(&self) -> Self::Pointer {
-        self.data
-    }
-    fn metadata(&self) -> <R::CType as Wide>::Metadata {
-        self.metadata
-    }
-    fn data(&self) -> *const PointeeData<R::CType> {
-        self.data as *const _
-    }
-    unsafe fn from_const_parts(
-        data: *const PointeeData<R::CType>,
-        metadata: <R::CType as Wide>::Metadata,
-    ) -> Self {
-        unsafe { <Self as WideRefCarrier<R>>::from_parts(data, metadata) }
+#[doc(hidden)]
+pub mod abi {
+    use super::*;
+
+    /// Shared reference to a C-compatible wide pointee.
+    ///
+    /// A null data pointer represents an absent reference.
+    #[derive(RustSpec)]
+    #[repr(C)]
+    #[doc(hidden)]
+    pub struct SoftWideRef<R: CType + Wide + ?Sized> {
+        pub(super) data: *const PointeeData<R>,
+        pub(super) metadata: <R as Wide>::Metadata,
     }
 
-    unsafe fn from_parts(data: Self::Pointer, metadata: <R::CType as Wide>::Metadata) -> Self {
-        unsafe { Self::from_raw_parts(data, metadata) }
-    }
-}
-unsafe impl<'a, R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized> WideRefCarrier<R>
-    for abi::WideRef<'a, R::CType>
-{
-    type Pointer = *const PointeeData<R::CType>;
-    fn as_ptr(&self) -> Self::Pointer {
-        self.data
-    }
-    fn metadata(&self) -> <R::CType as Wide>::Metadata {
-        self.metadata
-    }
-    fn data(&self) -> *const PointeeData<R::CType> {
-        self.data as *const _
-    }
-    unsafe fn from_const_parts(
-        data: *const PointeeData<R::CType>,
-        metadata: <R::CType as Wide>::Metadata,
-    ) -> Self {
-        unsafe { <Self as WideRefCarrier<R>>::from_parts(data, metadata) }
+    /// Mutable wide-reference carrier with a defined C ABI layout.
+    ///
+    /// Represents exclusive access that comes from `&mut T`.
+    #[derive(RustSpec)]
+    #[repr(C)]
+    #[doc(hidden)]
+    pub struct SoftWideRefMut<R: CType + Wide + ?Sized> {
+        pub(super) data: *mut PointeeData<R>,
+        pub(super) metadata: <R as Wide>::Metadata,
     }
 
-    unsafe fn from_parts(data: Self::Pointer, metadata: <R::CType as Wide>::Metadata) -> Self {
-        unsafe { Self::from_raw_parts(data, metadata) }
-    }
-}
-unsafe impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized> WideRefCarrier<R>
-    for abi::SoftWideRefMut<R::CType>
-{
-    type Pointer = *mut PointeeData<R::CType>;
-    fn as_ptr(&self) -> Self::Pointer {
-        self.data
-    }
-    fn metadata(&self) -> <R::CType as Wide>::Metadata {
-        self.metadata
-    }
-    fn data(&self) -> *const PointeeData<R::CType> {
-        self.data as *const _
-    }
-    unsafe fn from_const_parts(
-        data: *const PointeeData<R::CType>,
-        metadata: <R::CType as Wide>::Metadata,
-    ) -> Self {
-        unsafe { <Self as WideRefCarrier<R>>::from_parts(data.cast_mut(), metadata) }
+    impl<R: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized> SoftWideRef<R> {
+        /// Construct an absent carrier with initialized metadata.
+        pub const fn null() -> Self {
+            Self {
+                data: core::ptr::null(),
+                // CType requires every bit pattern to be valid.
+                metadata: unsafe { core::mem::zeroed() },
+            }
+        }
+
+        /// Create a carrier from a data pointer and metadata.
+        ///
+        /// # Safety
+        /// A non-null pointer and metadata must describe a valid P for any access.
+        pub const unsafe fn from_raw_parts(
+            data: *const PointeeData<R>,
+            metadata: <R as Wide>::Metadata,
+        ) -> Self {
+            Self { data, metadata }
+        }
+
+        /// Wrap an existing wide reference.
+        pub fn from_ref(source: &R) -> Self {
+            Self {
+                data: R::as_ptr(source).cast(),
+                metadata: R::metadata(source),
+            }
+        }
     }
 
-    unsafe fn from_parts(data: Self::Pointer, metadata: <R::CType as Wide>::Metadata) -> Self {
-        unsafe { Self::from_raw_parts_mut(data, metadata) }
+    impl<R: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized> SoftWideRefMut<R> {
+        /// Construct an absent carrier with initialized metadata.
+        pub const fn null() -> Self {
+            Self {
+                data: core::ptr::null_mut(),
+                // CType requires every bit pattern to be valid.
+                metadata: unsafe { core::mem::zeroed() },
+            }
+        }
+
+        /// Create a mutable carrier from a data pointer and metadata.
+        ///
+        /// # Safety
+        /// The pointer and metadata must describe a valid, exclusively accessible P.
+        pub const unsafe fn from_raw_parts_mut(
+            data: *mut PointeeData<R>,
+            metadata: <R as Wide>::Metadata,
+        ) -> Self {
+            Self { data, metadata }
+        }
+
+        /// Wrap an existing mutable wide reference.
+        pub fn from_mut(source: &mut R) -> Self {
+            Self {
+                data: R::as_mut_ptr(source).cast(),
+                metadata: R::metadata(source),
+            }
+        }
     }
+
+    impl<R: CType + Wide + ?Sized> SoftWideRef<R> {
+        /// Recover a shared wide reference, returning `None` for a null pointer.
+        ///
+        /// # Safety
+        ///
+        /// The pointer and metadata must describe a valid `P` for the returned lifetime.
+        pub unsafe fn into_ref<'a>(self) -> Option<&'a R> {
+            if self.data.is_null() {
+                return None;
+            }
+
+            let metadata = self.metadata;
+            let data = self.data.cast();
+
+            Some(unsafe { R::from_raw_parts(data, metadata) })
+        }
+    }
+
+    impl<R: CType + Wide + ?Sized> SoftWideRefMut<R> {
+        /// Recover a mutable wide reference, returning `None` for a null pointer.
+        ///
+        /// # Safety
+        ///
+        /// The pointer and metadata must describe a valid, exclusively accessible `P`
+        /// for the returned lifetime.
+        pub unsafe fn into_mut<'a>(self) -> Option<&'a mut R> {
+            if self.data.is_null() {
+                return None;
+            }
+
+            let metadata = self.metadata;
+            let data = self.data.cast();
+
+            Some(unsafe { R::from_raw_parts_mut(data, metadata) })
+        }
+    }
+
+    /// Shared reference to a C-compatible wide pointee.
+    ///
+    /// A null data pointer is the niche. Co3 sources wrap this carrier in [`crate::marker::Stable`].
+    #[derive(RustSpec)]
+    #[repr(C)]
+    #[doc(hidden)]
+    pub struct WideRef<'a, R: CType + Wide + ?Sized> {
+        pub(super) data: *const PointeeData<R>,
+        pub(super) metadata: <R as Wide>::Metadata,
+        pub(super) lifetime: PhantomData<&'a ()>,
+    }
+
+    /// Wide carrier with a writable data pointer.
+    ///
+    /// Co3 exclusive wide references wrap this carrier in [`crate::marker::Stable`].
+    /// Native exclusive wide references use the bare `WideRef` carrier.
+    #[derive(RustSpec)]
+    #[repr(C)]
+    #[doc(hidden)]
+    pub struct WideRefMut<'a, R: CType + Wide + ?Sized> {
+        pub(super) data: *mut PointeeData<R>,
+        pub(super) metadata: <R as Wide>::Metadata,
+        pub(super) lifetime: PhantomData<&'a ()>,
+    }
+
+    impl<'a, R: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized> WideRefMut<'a, R> {
+        /// Construct an absent carrier with initialized metadata.
+        pub const fn null() -> Self {
+            Self {
+                data: core::ptr::null_mut(),
+                metadata: unsafe { core::mem::zeroed() },
+                lifetime: PhantomData,
+            }
+        }
+
+        /// Construct the carrier from raw parts.
+        ///
+        /// # Safety
+        /// Non-null parts must describe a valid pointee for `'a`. For co3 exclusive references,
+        /// access must be exclusive. Otherwise, writes must obey the pointee's
+        /// interior-mutability and synchronization rules.
+        pub const unsafe fn from_raw_parts_mut(
+            data: *mut PointeeData<R>,
+            metadata: <R as Wide>::Metadata,
+        ) -> Self {
+            Self {
+                data,
+                metadata,
+                lifetime: PhantomData,
+            }
+        }
+
+        /// Wrap an existing mutable wide reference.
+        pub fn from_mut(source: &'a mut R) -> Self {
+            let source = core::ptr::from_mut(source);
+            Self {
+                data: R::as_mut_ptr(source).cast(),
+                metadata: R::metadata(source),
+                lifetime: PhantomData,
+            }
+        }
+    }
+
+    impl<R: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized> Default for WideRefMut<'_, R> {
+        fn default() -> Self {
+            Self::null()
+        }
+    }
+
+    impl<'a, R: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized> WideRef<'a, R> {
+        /// Construct an absent carrier with initialized metadata.
+        pub const fn null() -> Self {
+            Self {
+                data: core::ptr::null(),
+                // CType requires every bit pattern to be valid.
+                metadata: unsafe { core::mem::zeroed() },
+                lifetime: PhantomData,
+            }
+        }
+
+        /// Create a carrier from a data pointer and metadata.
+        ///
+        /// # Safety
+        /// A non-null pointer and metadata must describe a valid pointee that can be shared for `'a`.
+        pub const unsafe fn from_raw_parts(
+            data: *const PointeeData<R>,
+            metadata: <R as Wide>::Metadata,
+        ) -> Self {
+            Self {
+                data,
+                metadata,
+                lifetime: PhantomData,
+            }
+        }
+
+        /// Wrap an existing wide reference.
+        pub fn from_ref(source: &'a R) -> Self {
+            Self {
+                data: R::as_ptr(source).cast(),
+                metadata: R::metadata(source),
+                lifetime: PhantomData,
+            }
+        }
+    }
+
+    impl<'a, R: CType + Wide + ?Sized> WideRef<'a, R> {
+        #[allow(dead_code)]
+        pub(crate) const fn data(&self) -> *const PointeeData<R> {
+            self.data
+        }
+    }
+
+    impl<'a, R: CType + Wide + ?Sized> WideRef<'a, R> {
+        /// Recover a shared wide reference, returning `None` for a null pointer.
+        ///
+        /// # Safety
+        ///
+        /// The pointer and metadata must describe a valid `P` for the returned lifetime.
+        pub unsafe fn into_ref(self) -> Option<&'a R> {
+            if self.data.is_null() {
+                return None;
+            }
+
+            let metadata = self.metadata;
+            let data = self.data.cast();
+
+            Some(unsafe { R::from_raw_parts(data, metadata) })
+        }
+    }
+
+    // All wide reference carriers preserve the same raw pointer and metadata.
+    macro_rules! impl_wide_ref_pointer_methods {
+    ($ty:ident, [$($params:tt)*], [$($args:tt)*], [$($target:tt)*], [$($suffix:tt)*], $ptr:ident, [$($marker:tt)*]) => {
+        impl<$($params)*> $ty<$($args)*> {
+            /// Cast the pointee while preserving its address and metadata.
+            ///
+            /// # Safety
+            /// The result must satisfy the destination's raw constructor contract.
+            #[allow(dead_code)]
+            pub(crate) const unsafe fn cast<U>(self) -> $ty<$($target)* U $($suffix)*>
+            where U: CType + Wide<Metadata = <R as Wide>::Metadata> + ?Sized {
+                $ty { data: self.data.cast(), metadata: self.metadata, $($marker)* }
+            }
+            /// Return the stored data pointer.
+            pub const fn as_ptr(&self) -> *$ptr PointeeData<R> { self.data }
+            /// Return the unchanged metadata.
+            pub const fn metadata(&self) -> <R as Wide>::Metadata { self.metadata }
+        }
+    };
 }
 
-unsafe impl<'a, R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized> WideRefCarrier<R>
-    for abi::WideRefMut<'a, R::CType>
-where
-    Self: CType,
-{
-    type Pointer = *mut PointeeData<R::CType>;
-    fn as_ptr(&self) -> Self::Pointer {
-        self.data
+    unsafe impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized> WideRefCarrier<R>
+        for SoftWideRef<R::CType>
+    {
+        type Pointer = *const PointeeData<R::CType>;
+        fn as_ptr(&self) -> Self::Pointer {
+            self.data
+        }
+        fn metadata(&self) -> <R::CType as Wide>::Metadata {
+            self.metadata
+        }
+        fn data(&self) -> *const PointeeData<R::CType> {
+            self.data as *const _
+        }
+        unsafe fn from_const_parts(
+            data: *const PointeeData<R::CType>,
+            metadata: <R::CType as Wide>::Metadata,
+        ) -> Self {
+            unsafe { <Self as WideRefCarrier<R>>::from_parts(data, metadata) }
+        }
+
+        unsafe fn from_parts(data: Self::Pointer, metadata: <R::CType as Wide>::Metadata) -> Self {
+            unsafe { Self::from_raw_parts(data, metadata) }
+        }
     }
-    fn metadata(&self) -> <R::CType as Wide>::Metadata {
-        self.metadata
+    unsafe impl<'a, R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized>
+        WideRefCarrier<R> for WideRef<'a, R::CType>
+    {
+        type Pointer = *const PointeeData<R::CType>;
+        fn as_ptr(&self) -> Self::Pointer {
+            self.data
+        }
+        fn metadata(&self) -> <R::CType as Wide>::Metadata {
+            self.metadata
+        }
+        fn data(&self) -> *const PointeeData<R::CType> {
+            self.data as *const _
+        }
+        unsafe fn from_const_parts(
+            data: *const PointeeData<R::CType>,
+            metadata: <R::CType as Wide>::Metadata,
+        ) -> Self {
+            unsafe { <Self as WideRefCarrier<R>>::from_parts(data, metadata) }
+        }
+
+        unsafe fn from_parts(data: Self::Pointer, metadata: <R::CType as Wide>::Metadata) -> Self {
+            unsafe { Self::from_raw_parts(data, metadata) }
+        }
     }
-    fn data(&self) -> *const PointeeData<R::CType> {
-        self.data as *const _
-    }
-    unsafe fn from_const_parts(
-        data: *const PointeeData<R::CType>,
-        metadata: <R::CType as Wide>::Metadata,
-    ) -> Self {
-        unsafe { <Self as WideRefCarrier<R>>::from_parts(data.cast_mut(), metadata) }
+    unsafe impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized> WideRefCarrier<R>
+        for SoftWideRefMut<R::CType>
+    {
+        type Pointer = *mut PointeeData<R::CType>;
+        fn as_ptr(&self) -> Self::Pointer {
+            self.data
+        }
+        fn metadata(&self) -> <R::CType as Wide>::Metadata {
+            self.metadata
+        }
+        fn data(&self) -> *const PointeeData<R::CType> {
+            self.data as *const _
+        }
+        unsafe fn from_const_parts(
+            data: *const PointeeData<R::CType>,
+            metadata: <R::CType as Wide>::Metadata,
+        ) -> Self {
+            unsafe { <Self as WideRefCarrier<R>>::from_parts(data.cast_mut(), metadata) }
+        }
+
+        unsafe fn from_parts(data: Self::Pointer, metadata: <R::CType as Wide>::Metadata) -> Self {
+            unsafe { Self::from_raw_parts_mut(data, metadata) }
+        }
     }
 
-    unsafe fn from_parts(data: Self::Pointer, metadata: <R::CType as Wide>::Metadata) -> Self {
-        unsafe { Self::from_raw_parts_mut(data, metadata) }
+    unsafe impl<'a, R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized>
+        WideRefCarrier<R> for WideRefMut<'a, R::CType>
+    where
+        Self: CType,
+    {
+        type Pointer = *mut PointeeData<R::CType>;
+        fn as_ptr(&self) -> Self::Pointer {
+            self.data
+        }
+        fn metadata(&self) -> <R::CType as Wide>::Metadata {
+            self.metadata
+        }
+        fn data(&self) -> *const PointeeData<R::CType> {
+            self.data as *const _
+        }
+        unsafe fn from_const_parts(
+            data: *const PointeeData<R::CType>,
+            metadata: <R::CType as Wide>::Metadata,
+        ) -> Self {
+            unsafe { <Self as WideRefCarrier<R>>::from_parts(data.cast_mut(), metadata) }
+        }
+
+        unsafe fn from_parts(data: Self::Pointer, metadata: <R::CType as Wide>::Metadata) -> Self {
+            unsafe { Self::from_raw_parts_mut(data, metadata) }
+        }
     }
+
+    unsafe impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized>
+        WideRefMutCarrier<R> for SoftWideRefMut<R::CType>
+    {
+        fn data(&self) -> *mut PointeeData<R::CType> {
+            self.data
+        }
+        fn metadata(&self) -> <R::CType as Wide>::Metadata {
+            self.metadata
+        }
+        unsafe fn from_raw_parts_mut(
+            data: *mut PointeeData<R::CType>,
+            metadata: <R::CType as Wide>::Metadata,
+        ) -> Self {
+            unsafe { Self::from_raw_parts_mut(data, metadata) }
+        }
+    }
+    unsafe impl<'a, R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized>
+        WideRefMutCarrier<R> for WideRef<'a, R::CType>
+    where
+        Self: CType,
+    {
+        fn data(&self) -> *mut PointeeData<R::CType> {
+            self.data.cast_mut()
+        }
+        fn metadata(&self) -> <R::CType as Wide>::Metadata {
+            self.metadata
+        }
+        unsafe fn from_raw_parts_mut(
+            data: *mut PointeeData<R::CType>,
+            metadata: <R::CType as Wide>::Metadata,
+        ) -> Self {
+            unsafe { Self::from_raw_parts(data.cast_const(), metadata) }
+        }
+    }
+
+    impl_wide_ref_pointer_methods! { SoftWideRef, [R: CType + Wide + ?Sized], [R], [], [], const, [] }
+
+    impl_wide_ref_pointer_methods! { SoftWideRefMut, [R: CType + Wide + ?Sized], [R], [], [], mut, [] }
+
+    impl_wide_ref_pointer_methods! { WideRef, ['a, R: CType + Wide + ?Sized], ['a, R], ['a,], [], const, [lifetime: PhantomData,] }
+
+    impl_wide_ref_pointer_methods! { WideRefMut, ['a, R: CType + Wide + ?Sized], ['a, R], ['a,], [], mut, [lifetime: PhantomData,] }
+
+    macro_rules! impl_wide_raw_methods {
+    ($ty:ident, [$($params:tt)*], [$($args:tt)*]) => {
+        impl<$($params)*> core::fmt::Debug for $ty<$($args)*> {
+            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                f.debug_struct(stringify!($ty)).field("data", &self.data)
+                    .field("metadata", &self.metadata).finish()
+            }
+        }
+
+        impl<$($params)*> PartialEq for $ty<$($args)*> {
+            fn eq(&self, other: &Self) -> bool {
+                !self.data.is_null() && self.data == other.data && self.metadata == other.metadata
+            }
+        }
+
+        impl<$($params)*> PartialOrd for $ty<$($args)*> {
+            fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
+                if self.data.is_null() || other.data.is_null() {
+                    None
+                } else {
+                    Some(self.data.cmp(&other.data).then_with(|| self.metadata.cmp(&other.metadata)))
+                }
+            }
+        }
+
+        impl<$($params)*> Copy for $ty<$($args)*> {}
+        impl<$($params)*> Clone for $ty<$($args)*> {
+            fn clone(&self) -> Self { *self }
+        }
+    };
 }
 
-/// Operations shared by ordinary and soft mutable wide carriers.
-///
-/// # Safety
-/// Implementations must preserve the wide pointer ABI and exclusive access contract.
-pub(crate) unsafe trait WideRefMutCarrier<R: ReprC<CType: Wide> + ?Sized>:
-    CType + Copy
-{
-    fn data(&self) -> *mut PointeeData<R::CType>;
-    fn metadata(&self) -> <R::CType as Wide>::Metadata;
-    fn is_null(&self) -> bool {
-        self.data().is_null()
+    impl<'a, R: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized> Default for WideRef<'a, R> {
+        fn default() -> Self {
+            Self::null()
+        }
     }
-    /// # Safety
-    /// The parts must satisfy the destination carrier's lifetime and aliasing contract.
-    unsafe fn from_raw_parts_mut(
-        data: *mut PointeeData<R::CType>,
-        metadata: <R::CType as Wide>::Metadata,
-    ) -> Self;
-}
-unsafe impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized> WideRefMutCarrier<R>
-    for abi::SoftWideRefMut<R::CType>
-{
-    fn data(&self) -> *mut PointeeData<R::CType> {
-        self.data
+
+    unsafe impl<R: CType + Wide + ?Sized> Zeroable for WideRefMut<'_, R> {}
+
+    impl_wide_raw_methods! { WideRef, ['a, R: CType + Wide + ?Sized], ['a, R] }
+
+    impl_wide_raw_methods! { WideRefMut, ['a, R: CType + Wide + ?Sized], ['a, R] }
+
+    impl_carrier_borrow! { WideRef, ['a, R: CType + Wide + ?Sized], ['a, R] }
+
+    impl_carrier_borrow! { WideRefMut, ['a, R: CType + Wide + ?Sized], ['a, R] }
+
+    impl_identity_carrier! { WideRef, ['a, R: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized], ['a, R] }
+
+    impl_identity_carrier! { WideRefMut, ['a, R: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized], ['a, R] }
+
+    unsafe impl<'a, R: CType + Wide + ?Sized> Zeroable for WideRef<'a, R> {}
+
+    impl_wide_raw_methods! { SoftWideRef, [R: CType + Wide + ?Sized], [R] }
+
+    impl_wide_raw_methods! { SoftWideRefMut, [R: CType + Wide + ?Sized], [R] }
+
+    impl_carrier_borrow! { SoftWideRef, [R: CType + Wide + ?Sized], [R] }
+
+    impl_carrier_borrow! { SoftWideRefMut, [R: CType + Wide + ?Sized], [R] }
+
+    impl_identity_carrier! { SoftWideRef, [R: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized], [R] }
+
+    impl_identity_carrier! { SoftWideRefMut, [R: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized], [R] }
+
+    impl<R: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized> Default for SoftWideRef<R> {
+        fn default() -> Self {
+            Self::null()
+        }
     }
-    fn metadata(&self) -> <R::CType as Wide>::Metadata {
-        self.metadata
+
+    impl<R: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized> Default for SoftWideRefMut<R> {
+        fn default() -> Self {
+            Self::null()
+        }
     }
-    unsafe fn from_raw_parts_mut(
-        data: *mut PointeeData<R::CType>,
-        metadata: <R::CType as Wide>::Metadata,
-    ) -> Self {
-        unsafe { Self::from_raw_parts_mut(data, metadata) }
+
+    #[cfg(feature = "alloc")]
+    /// Owned wide pointee with a defined C ABI layout.
+    ///
+    /// If the data pointer is set to `null`, the struct represents an absent box.
+    /// The direct `WideBox` source wraps this carrier in [`crate::marker::Stable`].
+    #[derive(RustSpec)]
+    #[repr(C)]
+    #[doc(hidden)]
+    pub struct WideBox<R: CType + Wide + ?Sized> {
+        pub(super) data: *mut PointeeData<R>,
+        pub(super) metadata: <R as Wide>::Metadata,
     }
-}
-unsafe impl<'a, R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized>
-    WideRefMutCarrier<R> for abi::WideRef<'a, R::CType>
-where
-    Self: CType,
-{
-    fn data(&self) -> *mut PointeeData<R::CType> {
-        self.data.cast_mut()
+
+    #[cfg(feature = "alloc")]
+    impl<R: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized> Default for WideBox<R> {
+        fn default() -> Self {
+            Self::null()
+        }
     }
-    fn metadata(&self) -> <R::CType as Wide>::Metadata {
-        self.metadata
+
+    #[cfg(feature = "alloc")]
+    impl<R: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized> WideBox<R> {
+        /// Construct an absent carrier with initialized metadata.
+        pub const fn null() -> Self {
+            Self {
+                data: core::ptr::null_mut(),
+                metadata: unsafe { core::mem::zeroed() },
+            }
+        }
+        /// Create a carrier from owned raw parts.
+        ///
+        /// # Safety
+        ///
+        /// The parts must retain unique ownership of a live allocation compatible with `P`.
+        pub const unsafe fn from_raw_parts(
+            data: NonNull<PointeeData<R>>,
+            metadata: <R as Wide>::Metadata,
+        ) -> Self {
+            Self {
+                data: data.as_ptr(),
+                metadata,
+            }
+        }
+        /// Create a carrier from a boxed value.
+        pub fn from_box(source: Box<R>) -> Self {
+            let metadata = R::metadata(&*source);
+            let data = R::into_non_null(source).cast();
+            Self {
+                data: data.as_ptr(),
+                metadata,
+            }
+        }
+        /// Recover the owned value, or `None` for a null pointer.
+        ///
+        /// # Safety
+        ///
+        /// The parts must retain unique ownership of a live allocation compatible with `P`.
+        pub unsafe fn into_box(self) -> Option<Box<R>> {
+            let data = NonNull::<<R as Wide>::Header>::new(self.data.cast())?;
+            Some(unsafe { R::from_non_null(data, self.metadata) })
+        }
+
+        pub(crate) const unsafe fn from_raw_nullable(
+            data: *mut PointeeData<R>,
+            metadata: <R as Wide>::Metadata,
+        ) -> Self {
+            Self { data, metadata }
+        }
     }
-    unsafe fn from_raw_parts_mut(
-        data: *mut PointeeData<R::CType>,
-        metadata: <R::CType as Wide>::Metadata,
-    ) -> Self {
-        unsafe { Self::from_raw_parts(data.cast_const(), metadata) }
+
+    #[cfg(feature = "alloc")]
+    impl<R: CType + Wide + ?Sized> WideBox<R> {
+        pub const fn as_ptr(self) -> *mut PointeeData<R> {
+            self.data
+        }
+
+        pub const fn metadata(&self) -> <R as Wide>::Metadata {
+            self.metadata
+        }
     }
+
+    #[cfg(feature = "alloc")]
+    impl_wide_raw_methods! { WideBox, [R: CType + Wide + ?Sized], [R] }
+
+    #[cfg(feature = "alloc")]
+    impl_identity_carrier! { WideBox, [R: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized], [R] }
+
+    #[cfg(feature = "alloc")]
+    impl_carrier_borrow! { WideBox, [R: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized], [R] }
+
+    unsafe impl<R: CType + Wide + ?Sized> Zeroable for SoftWideRef<R> {}
+
+    unsafe impl<R: CType + Wide + ?Sized> Zeroable for SoftWideRefMut<R> {}
+
+    #[cfg(feature = "alloc")]
+    unsafe impl<R: CType + Wide + ?Sized> Zeroable for WideBox<R> {}
 }
 
 #[cfg(test)]
@@ -1264,462 +1727,4 @@ pub(crate) mod tests {
             assert_eq!(&*value, text);
         }
     }
-}
-
-#[doc(hidden)]
-pub mod abi {
-    use super::*;
-
-    /// Shared reference to a C-compatible wide pointee.
-    ///
-    /// A null data pointer represents an absent reference.
-    #[derive(RustSpec)]
-    #[repr(C)]
-    #[doc(hidden)]
-    pub struct SoftWideRef<R: CType + Wide + ?Sized> {
-        pub(super) data: *const PointeeData<R>,
-        pub(super) metadata: <R as Wide>::Metadata,
-    }
-
-    /// Mutable wide-reference carrier with a defined C ABI layout.
-    ///
-    /// Represents exclusive access that comes from `&mut T`.
-    #[derive(RustSpec)]
-    #[repr(C)]
-    #[doc(hidden)]
-    pub struct SoftWideRefMut<R: CType + Wide + ?Sized> {
-        pub(super) data: *mut PointeeData<R>,
-        pub(super) metadata: <R as Wide>::Metadata,
-    }
-
-    impl<R: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized> SoftWideRef<R> {
-        /// Construct an absent carrier with initialized metadata.
-        pub const fn null() -> Self {
-            Self {
-                data: core::ptr::null(),
-                // CType requires every bit pattern to be valid.
-                metadata: unsafe { core::mem::zeroed() },
-            }
-        }
-
-        /// Create a carrier from a data pointer and metadata.
-        ///
-        /// # Safety
-        /// A non-null pointer and metadata must describe a valid P for any access.
-        pub const unsafe fn from_raw_parts(
-            data: *const PointeeData<R>,
-            metadata: <R as Wide>::Metadata,
-        ) -> Self {
-            Self { data, metadata }
-        }
-
-        /// Wrap an existing wide reference.
-        pub fn from_ref(source: &R) -> Self {
-            Self {
-                data: R::as_ptr(source).cast(),
-                metadata: R::metadata(source),
-            }
-        }
-    }
-
-    impl<R: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized> SoftWideRefMut<R> {
-        /// Construct an absent carrier with initialized metadata.
-        pub const fn null() -> Self {
-            Self {
-                data: core::ptr::null_mut(),
-                // CType requires every bit pattern to be valid.
-                metadata: unsafe { core::mem::zeroed() },
-            }
-        }
-
-        /// Create a mutable carrier from a data pointer and metadata.
-        ///
-        /// # Safety
-        /// The pointer and metadata must describe a valid, exclusively accessible P.
-        pub const unsafe fn from_raw_parts_mut(
-            data: *mut PointeeData<R>,
-            metadata: <R as Wide>::Metadata,
-        ) -> Self {
-            Self { data, metadata }
-        }
-
-        /// Wrap an existing mutable wide reference.
-        pub fn from_mut(source: &mut R) -> Self {
-            Self {
-                data: R::as_mut_ptr(source).cast(),
-                metadata: R::metadata(source),
-            }
-        }
-    }
-
-    impl<R: CType + Wide + ?Sized> SoftWideRef<R> {
-        /// Recover a shared wide reference, returning `None` for a null pointer.
-        ///
-        /// # Safety
-        ///
-        /// The pointer and metadata must describe a valid `P` for the returned lifetime.
-        pub unsafe fn into_ref<'a>(self) -> Option<&'a R> {
-            if self.data.is_null() {
-                return None;
-            }
-
-            let metadata = self.metadata;
-            let data = self.data.cast();
-
-            Some(unsafe { R::from_raw_parts(data, metadata) })
-        }
-    }
-
-    impl<R: CType + Wide + ?Sized> SoftWideRefMut<R> {
-        /// Recover a mutable wide reference, returning `None` for a null pointer.
-        ///
-        /// # Safety
-        ///
-        /// The pointer and metadata must describe a valid, exclusively accessible `P`
-        /// for the returned lifetime.
-        pub unsafe fn into_mut<'a>(self) -> Option<&'a mut R> {
-            if self.data.is_null() {
-                return None;
-            }
-
-            let metadata = self.metadata;
-            let data = self.data.cast();
-
-            Some(unsafe { R::from_raw_parts_mut(data, metadata) })
-        }
-    }
-
-    /// Shared reference to a C-compatible wide pointee.
-    ///
-    /// A null data pointer is the niche. Co3 sources wrap this carrier in [`crate::marker::Stable`].
-    #[derive(RustSpec)]
-    #[repr(C)]
-    #[doc(hidden)]
-    pub struct WideRef<'a, R: CType + Wide + ?Sized> {
-        pub(super) data: *const PointeeData<R>,
-        pub(super) metadata: <R as Wide>::Metadata,
-        pub(super) lifetime: PhantomData<&'a ()>,
-    }
-
-    /// Wide carrier with a writable data pointer.
-    ///
-    /// Co3 exclusive wide references wrap this carrier in [`crate::marker::Stable`].
-    /// Native exclusive wide references use the bare `WideRef` carrier.
-    #[derive(RustSpec)]
-    #[repr(C)]
-    #[doc(hidden)]
-    pub struct WideRefMut<'a, R: CType + Wide + ?Sized> {
-        pub(super) data: *mut PointeeData<R>,
-        pub(super) metadata: <R as Wide>::Metadata,
-        pub(super) lifetime: PhantomData<&'a ()>,
-    }
-
-    impl<'a, R: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized> WideRefMut<'a, R> {
-        /// Construct an absent carrier with initialized metadata.
-        pub const fn null() -> Self {
-            Self {
-                data: core::ptr::null_mut(),
-                metadata: unsafe { core::mem::zeroed() },
-                lifetime: PhantomData,
-            }
-        }
-
-        /// Construct the carrier from raw parts.
-        ///
-        /// # Safety
-        /// Non-null parts must describe a valid pointee for `'a`. For co3 exclusive references,
-        /// access must be exclusive. Otherwise, writes must obey the pointee's
-        /// interior-mutability and synchronization rules.
-        pub const unsafe fn from_raw_parts_mut(
-            data: *mut PointeeData<R>,
-            metadata: <R as Wide>::Metadata,
-        ) -> Self {
-            Self {
-                data,
-                metadata,
-                lifetime: PhantomData,
-            }
-        }
-
-        /// Wrap an existing mutable wide reference.
-        pub fn from_mut(source: &'a mut R) -> Self {
-            let source = core::ptr::from_mut(source);
-            Self {
-                data: R::as_mut_ptr(source).cast(),
-                metadata: R::metadata(source),
-                lifetime: PhantomData,
-            }
-        }
-    }
-
-    impl<R: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized> Default for WideRefMut<'_, R> {
-        fn default() -> Self {
-            Self::null()
-        }
-    }
-
-    impl<'a, R: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized> WideRef<'a, R> {
-        /// Construct an absent carrier with initialized metadata.
-        pub const fn null() -> Self {
-            Self {
-                data: core::ptr::null(),
-                // CType requires every bit pattern to be valid.
-                metadata: unsafe { core::mem::zeroed() },
-                lifetime: PhantomData,
-            }
-        }
-
-        /// Create a carrier from a data pointer and metadata.
-        ///
-        /// # Safety
-        /// A non-null pointer and metadata must describe a valid pointee that can be shared for `'a`.
-        pub const unsafe fn from_raw_parts(
-            data: *const PointeeData<R>,
-            metadata: <R as Wide>::Metadata,
-        ) -> Self {
-            Self {
-                data,
-                metadata,
-                lifetime: PhantomData,
-            }
-        }
-
-        /// Wrap an existing wide reference.
-        pub fn from_ref(source: &'a R) -> Self {
-            Self {
-                data: R::as_ptr(source).cast(),
-                metadata: R::metadata(source),
-                lifetime: PhantomData,
-            }
-        }
-    }
-
-    impl<'a, R: CType + Wide + ?Sized> WideRef<'a, R> {
-        #[allow(dead_code)]
-        pub(crate) const fn data(&self) -> *const PointeeData<R> {
-            self.data
-        }
-    }
-
-    impl<'a, R: CType + Wide + ?Sized> WideRef<'a, R> {
-        /// Recover a shared wide reference, returning `None` for a null pointer.
-        ///
-        /// # Safety
-        ///
-        /// The pointer and metadata must describe a valid `P` for the returned lifetime.
-        pub unsafe fn into_ref(self) -> Option<&'a R> {
-            if self.data.is_null() {
-                return None;
-            }
-
-            let metadata = self.metadata;
-            let data = self.data.cast();
-
-            Some(unsafe { R::from_raw_parts(data, metadata) })
-        }
-    }
-
-    // All wide reference carriers preserve the same raw pointer and metadata.
-    macro_rules! impl_wide_ref_pointer_methods {
-    ($ty:ident, [$($params:tt)*], [$($args:tt)*], [$($target:tt)*], [$($suffix:tt)*], $ptr:ident, [$($marker:tt)*]) => {
-        impl<$($params)*> $ty<$($args)*> {
-            /// Cast the pointee while preserving its address and metadata.
-            ///
-            /// # Safety
-            /// The result must satisfy the destination's raw constructor contract.
-            #[allow(dead_code)]
-            pub(crate) const unsafe fn cast<U>(self) -> $ty<$($target)* U $($suffix)*>
-            where U: CType + Wide<Metadata = <R as Wide>::Metadata> + ?Sized {
-                $ty { data: self.data.cast(), metadata: self.metadata, $($marker)* }
-            }
-            /// Return the stored data pointer.
-            pub const fn as_ptr(&self) -> *$ptr PointeeData<R> { self.data }
-            /// Return the unchanged metadata.
-            pub const fn metadata(&self) -> <R as Wide>::Metadata { self.metadata }
-        }
-    };
-}
-
-    impl_wide_ref_pointer_methods! { SoftWideRef, [R: CType + Wide + ?Sized], [R], [], [], const, [] }
-
-    impl_wide_ref_pointer_methods! { SoftWideRefMut, [R: CType + Wide + ?Sized], [R], [], [], mut, [] }
-
-    impl_wide_ref_pointer_methods! { WideRef, ['a, R: CType + Wide + ?Sized], ['a, R], ['a,], [], const, [lifetime: PhantomData,] }
-
-    impl_wide_ref_pointer_methods! { WideRefMut, ['a, R: CType + Wide + ?Sized], ['a, R], ['a,], [], mut, [lifetime: PhantomData,] }
-
-    macro_rules! impl_wide_raw_methods {
-    ($ty:ident, [$($params:tt)*], [$($args:tt)*]) => {
-        impl<$($params)*> core::fmt::Debug for $ty<$($args)*> {
-            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-                f.debug_struct(stringify!($ty)).field("data", &self.data)
-                    .field("metadata", &self.metadata).finish()
-            }
-        }
-
-        impl<$($params)*> PartialEq for $ty<$($args)*> {
-            fn eq(&self, other: &Self) -> bool {
-                !self.data.is_null() && self.data == other.data && self.metadata == other.metadata
-            }
-        }
-
-        impl<$($params)*> PartialOrd for $ty<$($args)*> {
-            fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
-                if self.data.is_null() || other.data.is_null() {
-                    None
-                } else {
-                    Some(self.data.cmp(&other.data).then_with(|| self.metadata.cmp(&other.metadata)))
-                }
-            }
-        }
-
-        impl<$($params)*> Copy for $ty<$($args)*> {}
-        impl<$($params)*> Clone for $ty<$($args)*> {
-            fn clone(&self) -> Self { *self }
-        }
-    };
-}
-
-    impl<'a, R: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized> Default for WideRef<'a, R> {
-        fn default() -> Self {
-            Self::null()
-        }
-    }
-
-    unsafe impl<R: CType + Wide + ?Sized> Zeroable for WideRefMut<'_, R> {}
-
-    impl_wide_raw_methods! { WideRef, ['a, R: CType + Wide + ?Sized], ['a, R] }
-
-    impl_wide_raw_methods! { WideRefMut, ['a, R: CType + Wide + ?Sized], ['a, R] }
-
-    impl_carrier_borrow! { WideRef, ['a, R: CType + Wide + ?Sized], ['a, R] }
-
-    impl_carrier_borrow! { WideRefMut, ['a, R: CType + Wide + ?Sized], ['a, R] }
-
-    impl_identity_carrier! { WideRef, ['a, R: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized], ['a, R] }
-
-    impl_identity_carrier! { WideRefMut, ['a, R: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized], ['a, R] }
-
-    unsafe impl<'a, R: CType + Wide + ?Sized> Zeroable for WideRef<'a, R> {}
-
-    impl_wide_raw_methods! { SoftWideRef, [R: CType + Wide + ?Sized], [R] }
-
-    impl_wide_raw_methods! { SoftWideRefMut, [R: CType + Wide + ?Sized], [R] }
-
-    impl_carrier_borrow! { SoftWideRef, [R: CType + Wide + ?Sized], [R] }
-
-    impl_carrier_borrow! { SoftWideRefMut, [R: CType + Wide + ?Sized], [R] }
-
-    impl_identity_carrier! { SoftWideRef, [R: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized], [R] }
-
-    impl_identity_carrier! { SoftWideRefMut, [R: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized], [R] }
-
-    impl<R: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized> Default for SoftWideRef<R> {
-        fn default() -> Self {
-            Self::null()
-        }
-    }
-
-    impl<R: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized> Default for SoftWideRefMut<R> {
-        fn default() -> Self {
-            Self::null()
-        }
-    }
-
-    #[cfg(feature = "alloc")]
-    /// Owned wide pointee with a defined C ABI layout.
-    ///
-    /// If the data pointer is set to `null`, the struct represents an absent box.
-    /// The direct `WideBox` source wraps this carrier in [`crate::marker::Stable`].
-    #[derive(RustSpec)]
-    #[repr(C)]
-    #[doc(hidden)]
-    pub struct WideBox<R: CType + Wide + ?Sized> {
-        pub(super) data: *mut PointeeData<R>,
-        pub(super) metadata: <R as Wide>::Metadata,
-    }
-
-    #[cfg(feature = "alloc")]
-    impl<R: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized> Default for WideBox<R> {
-        fn default() -> Self {
-            Self::null()
-        }
-    }
-
-    #[cfg(feature = "alloc")]
-    impl<R: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized> WideBox<R> {
-        /// Construct an absent carrier with initialized metadata.
-        pub const fn null() -> Self {
-            Self {
-                data: core::ptr::null_mut(),
-                metadata: unsafe { core::mem::zeroed() },
-            }
-        }
-        /// Create a carrier from owned raw parts.
-        ///
-        /// # Safety
-        ///
-        /// The parts must retain unique ownership of a live allocation compatible with `P`.
-        pub const unsafe fn from_raw_parts(
-            data: NonNull<PointeeData<R>>,
-            metadata: <R as Wide>::Metadata,
-        ) -> Self {
-            Self {
-                data: data.as_ptr(),
-                metadata,
-            }
-        }
-        /// Create a carrier from a boxed value.
-        pub fn from_box(source: Box<R>) -> Self {
-            let metadata = R::metadata(&*source);
-            let data = R::into_non_null(source).cast();
-            Self {
-                data: data.as_ptr(),
-                metadata,
-            }
-        }
-        /// Recover the owned value, or `None` for a null pointer.
-        ///
-        /// # Safety
-        ///
-        /// The parts must retain unique ownership of a live allocation compatible with `P`.
-        pub unsafe fn into_box(self) -> Option<Box<R>> {
-            let data = NonNull::<<R as Wide>::Header>::new(self.data.cast())?;
-            Some(unsafe { R::from_non_null(data, self.metadata) })
-        }
-
-        pub(crate) const unsafe fn from_raw_nullable(
-            data: *mut PointeeData<R>,
-            metadata: <R as Wide>::Metadata,
-        ) -> Self {
-            Self { data, metadata }
-        }
-    }
-
-    #[cfg(feature = "alloc")]
-    impl<R: CType + Wide + ?Sized> WideBox<R> {
-        pub const fn as_ptr(self) -> *mut PointeeData<R> {
-            self.data
-        }
-
-        pub const fn metadata(&self) -> <R as Wide>::Metadata {
-            self.metadata
-        }
-    }
-
-    #[cfg(feature = "alloc")]
-    impl_wide_raw_methods! { WideBox, [R: CType + Wide + ?Sized], [R] }
-
-    #[cfg(feature = "alloc")]
-    impl_identity_carrier! { WideBox, [R: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized], [R] }
-
-    #[cfg(feature = "alloc")]
-    impl_carrier_borrow! { WideBox, [R: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized], [R] }
-
-    unsafe impl<R: CType + Wide + ?Sized> Zeroable for SoftWideRef<R> {}
-
-    unsafe impl<R: CType + Wide + ?Sized> Zeroable for SoftWideRefMut<R> {}
-
-    #[cfg(feature = "alloc")]
-    unsafe impl<R: CType + Wide + ?Sized> Zeroable for WideBox<R> {}
 }
