@@ -1,0 +1,212 @@
+[package]
+name = "co3-framework-comparisons"
+version = "0.0.0"
+edition = "2021"
+publish = false
+autoexamples = false
+
+[workspace]
+
+[features]
+default = []
+tracing = []
+co3 = ["dep:co3"]
+uniffi = ["dep:uniffi"]
+boltffi = ["dep:boltffi"]
+safer_ffi = ["dep:safer-ffi"]
+interoptopus = ["dep:interoptopus"]
+diplomat = ["dep:diplomat", "dep:diplomat-runtime"]
+
+[dependencies]
+comparison-types = { path = "support/types" }
+co3 = { path = "..", optional = true }
+uniffi = { git = "https://github.com/mozilla/uniffi-rs", rev = "2124d553b73444890fd913b90d8fdd98620def1d", default-features = false, features = ["macro-scaffolding"], optional = true }
+diplomat = { version = "=0.17.0", optional = true }
+diplomat-runtime = { version = "=0.16.1", optional = true }
+interoptopus = { version = "=0.16.6", optional = true }
+safer-ffi = { version = "=0.1.13", features = ["headers", "dyn-traits"], optional = true }
+boltffi = { version = "=0.32.1", default-features = false, optional = true }
+
+[[example]]
+name = "byte_alias"
+path = "cases/syntax/byte_alias.rs"
+
+[[example]]
+name = "qualified_byte"
+path = "cases/syntax/qualified_byte.rs"
+
+[[example]]
+name = "qualified_impl"
+path = "cases/syntax/qualified_impl.rs"
+
+[[example]]
+name = "mutable_scalar"
+path = "cases/borrowing/mutable_scalar.rs"
+
+[[example]]
+name = "mutable_record"
+path = "cases/borrowing/mutable_record.rs"
+
+[[example]]
+name = "mutable_slice"
+path = "cases/borrowing/mutable_slice.rs"
+
+[[example]]
+name = "mutable_receiver"
+path = "cases/borrowing/mutable_receiver.rs"
+
+[[example]]
+name = "borrowed_return"
+path = "cases/borrowing/borrowed_return.rs"
+
+[[example]]
+name = "borrowed_record"
+path = "cases/borrowing/borrowed_record.rs"
+
+[[example]]
+name = "optional_reference"
+path = "cases/borrowing/optional_reference.rs"
+
+[[example]]
+name = "nested_reference"
+path = "cases/borrowing/nested_reference.rs"
+
+[[example]]
+name = "generic_function"
+path = "cases/generics/generic_function.rs"
+
+[[example]]
+name = "const_generic"
+path = "cases/generics/const_generic.rs"
+
+[[example]]
+name = "array"
+path = "cases/types/array.rs"
+
+[[example]]
+name = "tuple"
+path = "cases/types/tuple.rs"
+
+[[example]]
+name = "pointer_sized"
+path = "cases/types/pointer_sized.rs"
+
+[[example]]
+name = "u128"
+path = "cases/types/u128.rs"
+
+[[example]]
+name = "character"
+path = "cases/types/character.rs"
+
+[[example]]
+name = "custom_dst"
+path = "cases/types/custom_dst.rs"
+
+[[example]]
+name = "function_pointer"
+path = "cases/types/function_pointer.rs"
+
+[[example]]
+name = "associated_type"
+path = "cases/traits/associated_type.rs"
+
+[[example]]
+name = "default_trait_method"
+path = "cases/traits/default_trait_method.rs"
+
+[[example]]
+name = "thread_confined"
+path = "cases/traits/thread_confined.rs"
+
+[[example]]
+name = "control_owned_alias"
+path = "cases/controls/control_owned_alias.rs"
+
+[[example]]
+name = "control_mutable_bytes"
+path = "cases/controls/control_mutable_bytes.rs"
+
+[[example]]
+name = "control_scalar"
+path = "cases/controls/control_scalar.rs"
+
+[[example]]
+name = "renamed_import"
+path = "cases/syntax/renamed_import.rs"
+
+[[example]]
+name = "reexport"
+path = "cases/syntax/reexport.rs"
+
+[[example]]
+name = "associated_projection"
+path = "cases/syntax/associated_projection.rs"
+
+[[example]]
+name = "generic_alias"
+path = "cases/syntax/generic_alias.rs"
+
+[[example]]
+name = "nested_alias"
+path = "cases/syntax/nested_alias.rs"
+
+[[example]]
+name = "external_alias"
+path = "cases/syntax/external_alias.rs"
+
+[[example]]
+name = "slice_alias"
+path = "cases/syntax/slice_alias.rs"
+
+[[example]]
+name = "slice_reference_alias"
+path = "cases/syntax/slice_reference_alias.rs"
+
+[[example]]
+name = "string_alias"
+path = "cases/syntax/string_alias.rs"
+
+[[example]]
+name = "async_export"
+path = "cases/capabilities/async_export.rs"
+
+[[example]]
+name = "mutable_nonzero_u8"
+path = "cases/validity/mutable_nonzero_u8.rs"
+
+[[example]]
+name = "nonzero_u8_array"
+path = "cases/borrowing/nonzero_u8_array.rs"
+
+[[example]]
+name = "exclusive_cell"
+path = "cases/interior_mutability/exclusive_cell.rs"
+
+[[example]]
+name = "type_macro"
+path = "cases/syntax/type_macro.rs"
+
+[[example]]
+name = "unit_return_alias"
+path = "cases/syntax/unit_return_alias.rs"
+
+[[example]]
+name = "borrowed_halves"
+path = "cases/borrowing/borrowed_halves.rs"
+
+[[example]]
+name = "projected_return"
+path = "cases/traits/projected_return.rs"
+
+[[example]]
+name = "conditional_parameter"
+path = "cases/syntax/conditional_parameter.rs"
+
+[[example]]
+name = "shared_cell"
+path = "cases/interior_mutability/shared_cell.rs"
+
+[[example]]
+name = "trait_object"
+path = "cases/traits/trait_object.rs"

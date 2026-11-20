@@ -171,7 +171,8 @@ To see what `CO3` is capable of and what using it looks like in practice, check 
 * [abi_stable](https://docs.rs/abi_stable/latest/abi_stable/)
 * [stabby](https://github.com/ZettaScaleLabs/stabby)
 
-Define stable interfaces between separately compiled Rust components, with ABI-stable types, dynamic library loading, and compatibility checks.
+Both crates let independently compiled Rust components share ABI-stable types and check compatibility when binding a library or symbol.
+`CO3` can also connect two Rust components: each side uses its ordinary Rust types, and `CO3` maps them to an agreed C ABI.
 
 ### Cross-language interface generators
 
@@ -181,11 +182,10 @@ Define stable interfaces between separately compiled Rust components, with ABI-s
 * [BoltFFI](https://github.com/boltffi/boltffi)
 * [UniFFI](https://github.com/mozilla/uniffi-rs)
 
-These projects primarily **expose Rust-defined interfaces to other languages**.
+These projects, like `CO3` primarily **expose Rust-defined interfaces to other languages**.
+However, unlike `CO3`, they generally **don't support importing existing C interfaces**.
 
-`Interoptopus` also provides plugin imports with dynamic library loading and interface compatibility checks, generating Rust wrappers for foreign implementations of a declared interface, though this feature remains experimental.
-
-`CO3` treats imports as interchangeable with exports, supporting both existing foreign APIs and Rust-defined interfaces.
+Check the [framework comparison](comparisons/README.md) for full feature comparison.
 
 ### Importing C APIs into Rust
 

@@ -1,0 +1,33 @@
+// An alias hides the complete unsized slice type.
+// Diplomat BUILD is not ABI parity: the alias wrapper retains &mut Bytes.
+// See the expansion audit in README.md.
+include!("../support/mod.rs");
+
+pub type Bytes = [u8];
+
+#[cfg_attr(feature = "uniffi", uniffi::export)]
+#[cfg_attr(feature = "boltffi", boltffi::export)]
+#[cfg_attr(feature = "interoptopus", interoptopus::ffi)]
+#[cfg_attr(feature = "safer_ffi", safer_ffi::ffi_export)]
+pub fn fill(buf: &mut Bytes) {
+    buf.fill(42);
+}
+
+#[cfg(feature = "diplomat")]
+#[diplomat::bridge]
+pub mod diplomat_case {
+    pub type Bytes = [u8];
+
+    pub fn fill(buf: &mut Bytes) {
+        buf.fill(42);
+    }
+}
+
+#[cfg(feature = "co3")]
+co3::ffi! {
+    #![unsafe(export("C"))]
+
+    fn fill(buf: &mut Bytes);
+}
+
+fn main() {}

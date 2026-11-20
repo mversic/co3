@@ -1,0 +1,1212 @@
+{
+  "frameworks": [
+    "co3",
+    "uniffi",
+    "diplomat",
+    "interoptopus",
+    "safer_ffi",
+    "boltffi"
+  ],
+  "cases": {
+    "byte_alias": {
+      "path": "cases/syntax/byte_alias.rs",
+      "expected": {
+        "co3": {
+          "status": "pass"
+        },
+        "uniffi": {
+          "status": "fail",
+          "diagnostic": "mismatched types"
+        },
+        "diplomat": {
+          "status": "pass"
+        },
+        "interoptopus": {
+          "status": "fail",
+          "diagnostic": "the trait bound `[u8]: TypeInfo` is not satisfied"
+        },
+        "safer_ffi": {
+          "status": "fail",
+          "diagnostic": "type mismatch resolving `<OpaqueLayout_<PhantomData<&mut [u8]>> as CType>::OPAQUE_KIND == Concrete`"
+        },
+        "boltffi": {
+          "status": "fail",
+          "diagnostic": "cannot find macro `Byte` in this scope"
+        }
+      }
+    },
+    "qualified_byte": {
+      "path": "cases/syntax/qualified_byte.rs",
+      "expected": {
+        "co3": {
+          "status": "pass"
+        },
+        "uniffi": {
+          "status": "fail",
+          "diagnostic": "mismatched types"
+        },
+        "diplomat": {
+          "status": "pass"
+        },
+        "interoptopus": {
+          "status": "fail",
+          "diagnostic": "the trait bound `[u8]: TypeInfo` is not satisfied"
+        },
+        "safer_ffi": {
+          "status": "fail",
+          "diagnostic": "type mismatch resolving `<OpaqueLayout_<PhantomData<&mut [u8]>> as CType>::OPAQUE_KIND == Concrete`"
+        },
+        "boltffi": {
+          "status": "fail",
+          "diagnostic": "cannot find `u8` in `primitive`"
+        }
+      }
+    },
+    "qualified_impl": {
+      "path": "cases/syntax/qualified_impl.rs",
+      "expected": {
+        "co3": {
+          "status": "pass"
+        },
+        "uniffi": {
+          "status": "fail",
+          "diagnostic": "qualified paths in self-types are not currently supported by uniffi::export"
+        },
+        "diplomat": {
+          "status": "skip",
+          "reason": "The nested module/qualified impl fixture needs a different Diplomat bridge layout; no adapter is provided."
+        },
+        "interoptopus": {
+          "status": "pass"
+        },
+        "safer_ffi": {
+          "status": "skip",
+          "reason": "safer_ffi exports free functions; this method-declaration fixture would need a free-function adapter."
+        },
+        "boltffi": {
+          "status": "pass"
+        }
+      }
+    },
+    "mutable_scalar": {
+      "path": "cases/borrowing/mutable_scalar.rs",
+      "expected": {
+        "co3": {
+          "status": "pass"
+        },
+        "uniffi": {
+          "status": "fail",
+          "diagnostic": "mismatched types"
+        },
+        "diplomat": {
+          "status": "pass"
+        },
+        "interoptopus": {
+          "status": "pass"
+        },
+        "safer_ffi": {
+          "status": "pass"
+        },
+        "boltffi": {
+          "status": "pass"
+        }
+      }
+    },
+    "mutable_record": {
+      "path": "cases/borrowing/mutable_record.rs",
+      "expected": {
+        "co3": {
+          "status": "pass"
+        },
+        "uniffi": {
+          "status": "fail",
+          "diagnostic": "mismatched types"
+        },
+        "diplomat": {
+          "status": "pass"
+        },
+        "interoptopus": {
+          "status": "pass"
+        },
+        "safer_ffi": {
+          "status": "pass"
+        },
+        "boltffi": {
+          "status": "pass"
+        }
+      }
+    },
+    "mutable_slice": {
+      "path": "cases/borrowing/mutable_slice.rs",
+      "expected": {
+        "co3": {
+          "status": "pass"
+        },
+        "uniffi": {
+          "status": "fail",
+          "diagnostic": "mismatched types"
+        },
+        "diplomat": {
+          "status": "pass"
+        },
+        "interoptopus": {
+          "status": "fail",
+          "diagnostic": "the trait bound `[u32]: TypeInfo` is not satisfied"
+        },
+        "safer_ffi": {
+          "status": "fail",
+          "diagnostic": "type mismatch resolving `<OpaqueLayout_<PhantomData<&mut [u32]>> as CType>::OPAQUE_KIND == Concrete`"
+        },
+        "boltffi": {
+          "status": "pass"
+        }
+      }
+    },
+    "mutable_receiver": {
+      "path": "cases/borrowing/mutable_receiver.rs",
+      "expected": {
+        "co3": {
+          "status": "pass"
+        },
+        "uniffi": {
+          "status": "fail",
+          "diagnostic": "cannot borrow data in an `Arc` as mutable"
+        },
+        "diplomat": {
+          "status": "pass"
+        },
+        "interoptopus": {
+          "status": "pass"
+        },
+        "safer_ffi": {
+          "status": "skip",
+          "reason": "safer_ffi exports free functions; this method-declaration fixture would need a free-function adapter."
+        },
+        "boltffi": {
+          "status": "pass",
+          "note": "Uses #[export(single_threaded)]; caller must guarantee single-threaded access."
+        }
+      }
+    },
+    "borrowed_return": {
+      "path": "cases/borrowing/borrowed_return.rs",
+      "expected": {
+        "co3": {
+          "status": "pass"
+        },
+        "uniffi": {
+          "status": "fail",
+          "diagnostic": "use of undeclared lifetime name `'a`"
+        },
+        "diplomat": {
+          "status": "pass"
+        },
+        "interoptopus": {
+          "status": "pass"
+        },
+        "safer_ffi": {
+          "status": "pass"
+        },
+        "boltffi": {
+          "status": "fail",
+          "diagnostic": "BoltFFI: `function borrow_first` cannot use generics"
+        }
+      }
+    },
+    "borrowed_record": {
+      "path": "cases/borrowing/borrowed_record.rs",
+      "expected": {
+        "co3": {
+          "status": "pass"
+        },
+        "uniffi": {
+          "status": "fail",
+          "diagnostic": "implicit elided lifetime not allowed here"
+        },
+        "diplomat": {
+          "status": "pass"
+        },
+        "interoptopus": {
+          "status": "pass"
+        },
+        "safer_ffi": {
+          "status": "pass"
+        },
+        "boltffi": {
+          "status": "fail",
+          "diagnostic": "BoltFFI: `record View` cannot use generics"
+        }
+      }
+    },
+    "optional_reference": {
+      "path": "cases/borrowing/optional_reference.rs",
+      "expected": {
+        "co3": {
+          "status": "pass"
+        },
+        "uniffi": {
+          "status": "fail",
+          "diagnostic": "the trait bound `&u32: Lift<UniFfiTag>` is not satisfied"
+        },
+        "diplomat": {
+          "status": "pass"
+        },
+        "interoptopus": {
+          "status": "pass"
+        },
+        "safer_ffi": {
+          "status": "pass"
+        },
+        "boltffi": {
+          "status": "fail",
+          "diagnostic": "BoltFFI: unsupported source type `&u32`"
+        }
+      }
+    },
+    "nested_reference": {
+      "path": "cases/borrowing/nested_reference.rs",
+      "expected": {
+        "co3": {
+          "status": "pass"
+        },
+        "uniffi": {
+          "status": "fail",
+          "diagnostic": "the trait bound `&u32: LiftRef<UniFfiTag>` is not satisfied"
+        },
+        "diplomat": {
+          "status": "pass"
+        },
+        "interoptopus": {
+          "status": "pass"
+        },
+        "safer_ffi": {
+          "status": "fail",
+          "diagnostic": "lifetime mismatch"
+        },
+        "boltffi": {
+          "status": "fail",
+          "diagnostic": "BoltFFI: unsupported source type `&u32`"
+        }
+      }
+    },
+    "generic_function": {
+      "path": "cases/generics/generic_function.rs",
+      "expected": {
+        "co3": {
+          "status": "pass"
+        },
+        "uniffi": {
+          "status": "fail",
+          "diagnostic": "cannot find type `T` in this scope"
+        },
+        "diplomat": {
+          "status": "fail",
+          "diagnostic": "custom attribute panicked\nmessage: Diplomat error: Generic type arguments are unsupported (check stderr for more)"
+        },
+        "interoptopus": {
+          "status": "fail",
+          "diagnostic": "Functions with type generics are not supported at FFI boundaries"
+        },
+        "safer_ffi": {
+          "status": "fail",
+          "diagnostic": "the trait bound `T: ReprC` is not satisfied"
+        },
+        "boltffi": {
+          "status": "fail",
+          "diagnostic": "BoltFFI: `function identity` cannot use generics"
+        }
+      }
+    },
+    "const_generic": {
+      "path": "cases/generics/const_generic.rs",
+      "expected": {
+        "co3": {
+          "status": "pass"
+        },
+        "uniffi": {
+          "status": "fail",
+          "diagnostic": "cannot find value `N` in this scope"
+        },
+        "diplomat": {
+          "status": "fail",
+          "diagnostic": "custom attribute panicked\nmessage: Diplomat error: Generic type arguments are unsupported (check stderr for more)"
+        },
+        "interoptopus": {
+          "status": "fail",
+          "diagnostic": "unexpected `const` parameter declaration"
+        },
+        "safer_ffi": {
+          "status": "fail",
+          "diagnostic": "the trait bound `[u8; N]: ReprC` is not satisfied"
+        },
+        "boltffi": {
+          "status": "fail",
+          "diagnostic": "BoltFFI: `function first` cannot use generics"
+        }
+      }
+    },
+    "array": {
+      "path": "cases/types/array.rs",
+      "expected": {
+        "co3": {
+          "status": "pass"
+        },
+        "uniffi": {
+          "status": "fail",
+          "diagnostic": "the trait bound `[u8; 4]: LiftRef<UniFfiTag>` is not satisfied"
+        },
+        "diplomat": {
+          "status": "fail",
+          "diagnostic": "custom attribute panicked\nmessage: Diplomat error: Found unsupported type (check stderr for more)"
+        },
+        "interoptopus": {
+          "status": "pass"
+        },
+        "safer_ffi": {
+          "status": "pass"
+        },
+        "boltffi": {
+          "status": "fail",
+          "diagnostic": "BoltFFI: unsupported source type `unrecognized type`"
+        }
+      }
+    },
+    "tuple": {
+      "path": "cases/types/tuple.rs",
+      "expected": {
+        "co3": {
+          "status": "pass"
+        },
+        "uniffi": {
+          "status": "fail",
+          "diagnostic": "the trait bound `(u32, u32): Lift<UniFfiTag>` is not satisfied"
+        },
+        "diplomat": {
+          "status": "fail",
+          "diagnostic": "custom attribute panicked\nmessage: Diplomat error: Tuples unsupported (check stderr for more)"
+        },
+        "interoptopus": {
+          "status": "fail",
+          "diagnostic": "the trait bound `(u32, u32): TypeInfo` is not satisfied"
+        },
+        "safer_ffi": {
+          "status": "fail",
+          "diagnostic": "the trait bound `(u32, u32): ReprC` is not satisfied"
+        },
+        "boltffi": {
+          "status": "pass"
+        }
+      }
+    },
+    "pointer_sized": {
+      "path": "cases/types/pointer_sized.rs",
+      "expected": {
+        "co3": {
+          "status": "pass"
+        },
+        "uniffi": {
+          "status": "fail",
+          "diagnostic": "the trait bound `usize: Lift<UniFfiTag>` is not satisfied"
+        },
+        "diplomat": {
+          "status": "pass"
+        },
+        "interoptopus": {
+          "status": "pass"
+        },
+        "safer_ffi": {
+          "status": "pass"
+        },
+        "boltffi": {
+          "status": "pass"
+        }
+      }
+    },
+    "u128": {
+      "path": "cases/types/u128.rs",
+      "expected": {
+        "co3": {
+          "status": "pass"
+        },
+        "uniffi": {
+          "status": "fail",
+          "diagnostic": "the trait bound `u128: Lift<UniFfiTag>` is not satisfied"
+        },
+        "diplomat": {
+          "status": "pass"
+        },
+        "interoptopus": {
+          "status": "fail",
+          "diagnostic": "the trait bound `u128: TypeInfo` is not satisfied"
+        },
+        "safer_ffi": {
+          "status": "fail",
+          "diagnostic": "the trait bound `u128: ReprC` is not satisfied"
+        },
+        "boltffi": {
+          "status": "fail",
+          "diagnostic": "cannot find macro `u128` in this scope"
+        }
+      }
+    },
+    "character": {
+      "path": "cases/types/character.rs",
+      "expected": {
+        "co3": {
+          "status": "pass"
+        },
+        "uniffi": {
+          "status": "fail",
+          "diagnostic": "the trait bound `char: Lift<UniFfiTag>` is not satisfied"
+        },
+        "diplomat": {
+          "status": "pass"
+        },
+        "interoptopus": {
+          "status": "fail",
+          "diagnostic": "the trait bound `char: TypeInfo` is not satisfied"
+        },
+        "safer_ffi": {
+          "status": "fail",
+          "diagnostic": "the trait bound `char: ReprC` is not satisfied"
+        },
+        "boltffi": {
+          "status": "fail",
+          "diagnostic": "cannot find macro `char` in this scope"
+        }
+      }
+    },
+    "custom_dst": {
+      "path": "cases/types/custom_dst.rs",
+      "expected": {
+        "co3": {
+          "status": "pass"
+        },
+        "uniffi": {
+          "status": "fail",
+          "diagnostic": "the size for values of type `[u8]` cannot be known at compilation time"
+        },
+        "diplomat": {
+          "status": "fail",
+          "diagnostic": "custom attribute panicked\nmessage: Diplomat error: Found unsupported type (check stderr for more)"
+        },
+        "interoptopus": {
+          "status": "fail",
+          "diagnostic": "the trait bound `[u8]: WireIO` is not satisfied"
+        },
+        "safer_ffi": {
+          "status": "fail",
+          "diagnostic": "the trait bound `[u8]: ReprC` is not satisfied"
+        },
+        "boltffi": {
+          "status": "fail",
+          "diagnostic": "the size for values of type `[u8]` cannot be known at compilation time"
+        }
+      }
+    },
+    "function_pointer": {
+      "path": "cases/types/function_pointer.rs",
+      "expected": {
+        "co3": {
+          "status": "pass"
+        },
+        "uniffi": {
+          "status": "fail",
+          "diagnostic": "the trait bound `extern \"C\" fn(u32) -> u32: Lift<UniFfiTag>` is not satisfied"
+        },
+        "diplomat": {
+          "status": "pass"
+        },
+        "interoptopus": {
+          "status": "pass"
+        },
+        "safer_ffi": {
+          "status": "pass"
+        },
+        "boltffi": {
+          "status": "fail",
+          "diagnostic": "cannot find macro `Callback` in this scope"
+        }
+      }
+    },
+    "associated_type": {
+      "path": "cases/traits/associated_type.rs",
+      "expected": {
+        "co3": {
+          "status": "pass"
+        },
+        "uniffi": {
+          "status": "fail",
+          "diagnostic": "only fn's are supported in traits annotated with uniffi::export"
+        },
+        "diplomat": {
+          "status": "skip",
+          "reason": "This fixture compares trait export declarations; no equivalent trait-export adapter is provided for this framework."
+        },
+        "interoptopus": {
+          "status": "skip",
+          "reason": "This fixture compares trait export declarations; no equivalent trait-export adapter is provided for this framework."
+        },
+        "safer_ffi": {
+          "status": "skip",
+          "reason": "This fixture compares trait export declarations; no equivalent trait-export adapter is provided for this framework."
+        },
+        "boltffi": {
+          "status": "fail",
+          "diagnostic": "BoltFFI: `trait Source::Item` is not supported in exported traits"
+        }
+      }
+    },
+    "default_trait_method": {
+      "path": "cases/traits/default_trait_method.rs",
+      "expected": {
+        "co3": {
+          "status": "pass"
+        },
+        "uniffi": {
+          "status": "fail",
+          "diagnostic": "uniffi::export'd trait methods can't have a default implementation."
+        },
+        "diplomat": {
+          "status": "skip",
+          "reason": "This fixture compares trait export declarations; no equivalent trait-export adapter is provided for this framework."
+        },
+        "interoptopus": {
+          "status": "skip",
+          "reason": "This fixture compares trait export declarations; no equivalent trait-export adapter is provided for this framework."
+        },
+        "safer_ffi": {
+          "status": "skip",
+          "reason": "This fixture compares trait export declarations; no equivalent trait-export adapter is provided for this framework."
+        },
+        "boltffi": {
+          "status": "fail",
+          "diagnostic": "BoltFFI: `trait Named::name` cannot define a default body"
+        }
+      }
+    },
+    "thread_confined": {
+      "path": "cases/traits/thread_confined.rs",
+      "expected": {
+        "co3": {
+          "status": "pass"
+        },
+        "uniffi": {
+          "status": "fail",
+          "diagnostic": "`Cell<u32>` cannot be shared between threads safely"
+        },
+        "diplomat": {
+          "status": "pass"
+        },
+        "interoptopus": {
+          "status": "pass"
+        },
+        "safer_ffi": {
+          "status": "skip",
+          "reason": "safer_ffi exports free functions; this method-declaration fixture would need a free-function adapter."
+        },
+        "boltffi": {
+          "status": "pass",
+          "note": "Uses #[export(single_threaded)]; caller must guarantee single-threaded access."
+        }
+      }
+    },
+    "control_owned_alias": {
+      "path": "cases/controls/control_owned_alias.rs",
+      "expected": {
+        "co3": {
+          "status": "pass"
+        },
+        "uniffi": {
+          "status": "pass"
+        },
+        "diplomat": {
+          "status": "pass"
+        },
+        "interoptopus": {
+          "status": "pass"
+        },
+        "safer_ffi": {
+          "status": "pass"
+        },
+        "boltffi": {
+          "status": "fail",
+          "diagnostic": "cannot find macro `Byte` in this scope"
+        }
+      }
+    },
+    "control_mutable_bytes": {
+      "path": "cases/controls/control_mutable_bytes.rs",
+      "expected": {
+        "co3": {
+          "status": "pass"
+        },
+        "uniffi": {
+          "status": "pass"
+        },
+        "diplomat": {
+          "status": "pass"
+        },
+        "interoptopus": {
+          "status": "fail",
+          "diagnostic": "the trait bound `[u8]: TypeInfo` is not satisfied"
+        },
+        "safer_ffi": {
+          "status": "fail",
+          "diagnostic": "type mismatch resolving `<OpaqueLayout_<PhantomData<&mut [u8]>> as CType>::OPAQUE_KIND == Concrete`"
+        },
+        "boltffi": {
+          "status": "pass"
+        }
+      }
+    },
+    "control_scalar": {
+      "path": "cases/controls/control_scalar.rs",
+      "expected": {
+        "co3": {
+          "status": "pass"
+        },
+        "uniffi": {
+          "status": "pass"
+        },
+        "diplomat": {
+          "status": "pass"
+        },
+        "interoptopus": {
+          "status": "pass"
+        },
+        "safer_ffi": {
+          "status": "pass"
+        },
+        "boltffi": {
+          "status": "pass"
+        }
+      }
+    },
+    "renamed_import": {
+      "path": "cases/syntax/renamed_import.rs",
+      "expected": {
+        "co3": {
+          "status": "pass"
+        },
+        "uniffi": {
+          "status": "pass"
+        },
+        "diplomat": {
+          "status": "pass"
+        },
+        "interoptopus": {
+          "status": "pass"
+        },
+        "safer_ffi": {
+          "status": "pass"
+        },
+        "boltffi": {
+          "status": "fail",
+          "diagnostic": "cannot find macro `Count` in this scope"
+        }
+      }
+    },
+    "reexport": {
+      "path": "cases/syntax/reexport.rs",
+      "expected": {
+        "co3": {
+          "status": "pass"
+        },
+        "uniffi": {
+          "status": "pass"
+        },
+        "diplomat": {
+          "status": "pass"
+        },
+        "interoptopus": {
+          "status": "pass"
+        },
+        "safer_ffi": {
+          "status": "pass"
+        },
+        "boltffi": {
+          "status": "fail",
+          "diagnostic": "cannot find macro `Count` in this scope"
+        }
+      }
+    },
+    "associated_projection": {
+      "path": "cases/syntax/associated_projection.rs",
+      "expected": {
+        "co3": {
+          "status": "pass"
+        },
+        "uniffi": {
+          "status": "pass"
+        },
+        "diplomat": {
+          "status": "fail",
+          "diagnostic": "ambiguous associated type"
+        },
+        "interoptopus": {
+          "status": "pass"
+        },
+        "safer_ffi": {
+          "status": "pass"
+        },
+        "boltffi": {
+          "status": "fail",
+          "diagnostic": "BoltFFI: unsupported source type `Element::Item`"
+        }
+      }
+    },
+    "generic_alias": {
+      "path": "cases/syntax/generic_alias.rs",
+      "expected": {
+        "co3": {
+          "status": "pass"
+        },
+        "uniffi": {
+          "status": "fail",
+          "diagnostic": "mismatched types"
+        },
+        "diplomat": {
+          "status": "fail",
+          "diagnostic": "custom attribute panicked\nmessage: Diplomat error: Generic type arguments are unsupported (check stderr for more)"
+        },
+        "interoptopus": {
+          "status": "fail",
+          "diagnostic": "the trait bound `[u8]: TypeInfo` is not satisfied"
+        },
+        "safer_ffi": {
+          "status": "fail",
+          "diagnostic": "type mismatch resolving `<OpaqueLayout_<PhantomData<&mut [u8]>> as CType>::OPAQUE_KIND == Concrete`"
+        },
+        "boltffi": {
+          "status": "fail",
+          "diagnostic": "cannot find macro `Buffer` in this scope"
+        }
+      }
+    },
+    "nested_alias": {
+      "path": "cases/syntax/nested_alias.rs",
+      "expected": {
+        "co3": {
+          "status": "pass"
+        },
+        "uniffi": {
+          "status": "fail",
+          "diagnostic": "the trait bound `&u32: Lift<UniFfiTag>` is not satisfied"
+        },
+        "diplomat": {
+          "status": "fail",
+          "diagnostic": "custom attribute panicked\nmessage: Diplomat error: Generic type arguments are unsupported (check stderr for more)"
+        },
+        "interoptopus": {
+          "status": "pass"
+        },
+        "safer_ffi": {
+          "status": "pass"
+        },
+        "boltffi": {
+          "status": "fail",
+          "diagnostic": "cannot find macro `Maybe` in this scope"
+        }
+      }
+    },
+    "external_alias": {
+      "path": "cases/syntax/external_alias.rs",
+      "expected": {
+        "co3": {
+          "status": "pass"
+        },
+        "uniffi": {
+          "status": "pass"
+        },
+        "diplomat": {
+          "status": "pass"
+        },
+        "interoptopus": {
+          "status": "pass"
+        },
+        "safer_ffi": {
+          "status": "pass"
+        },
+        "boltffi": {
+          "status": "fail",
+          "diagnostic": "cannot find macro `Count` in this scope"
+        }
+      }
+    },
+    "slice_alias": {
+      "path": "cases/syntax/slice_alias.rs",
+      "expected": {
+        "co3": {
+          "status": "pass"
+        },
+        "uniffi": {
+          "status": "fail",
+          "diagnostic": "mismatched types"
+        },
+        "diplomat": {
+          "status": "pass",
+          "abi_issue": "Inspected wrapper retains &mut Bytes (a Rust slice reference). The native slice fixture uses DiplomatSliceMut<u8>."
+        },
+        "interoptopus": {
+          "status": "fail",
+          "diagnostic": "the trait bound `[u8]: TypeInfo` is not satisfied"
+        },
+        "safer_ffi": {
+          "status": "fail",
+          "diagnostic": "type mismatch resolving `<OpaqueLayout_<PhantomData<&mut [u8]>> as CType>::OPAQUE_KIND == Concrete`"
+        },
+        "boltffi": {
+          "status": "fail",
+          "diagnostic": "cannot find macro `Bytes` in this scope"
+        }
+      }
+    },
+    "slice_reference_alias": {
+      "path": "cases/syntax/slice_reference_alias.rs",
+      "expected": {
+        "co3": {
+          "status": "pass"
+        },
+        "uniffi": {
+          "status": "fail",
+          "diagnostic": "the trait bound `&mut [u8]: Lift<UniFfiTag>` is not satisfied"
+        },
+        "diplomat": {
+          "status": "pass"
+        },
+        "interoptopus": {
+          "status": "fail",
+          "diagnostic": "the trait bound `[u8]: TypeInfo` is not satisfied"
+        },
+        "safer_ffi": {
+          "status": "fail",
+          "diagnostic": "type mismatch resolving `<OpaqueLayout_<PhantomData<&mut [u8]>> as CType>::OPAQUE_KIND == Concrete`"
+        },
+        "boltffi": {
+          "status": "fail",
+          "diagnostic": "cannot find macro `BytesMut` in this scope"
+        }
+      }
+    },
+    "string_alias": {
+      "path": "cases/syntax/string_alias.rs",
+      "expected": {
+        "co3": {
+          "status": "pass",
+          "note": "Uses move String / move Text in both declarations for explicit ownership transfer."
+        },
+        "uniffi": {
+          "status": "pass"
+        },
+        "diplomat": {
+          "status": "pass"
+        },
+        "interoptopus": {
+          "status": "fail",
+          "diagnostic": "evaluation panicked: This type cannot be safely passed over FFI boundaries."
+        },
+        "safer_ffi": {
+          "status": "fail",
+          "diagnostic": "type mismatch resolving `<OpaqueLayout_<PhantomData<String>> as CType>::OPAQUE_KIND == Concrete`"
+        },
+        "boltffi": {
+          "status": "fail",
+          "diagnostic": "cannot find macro `Text` in this scope"
+        }
+      }
+    },
+    "async_export": {
+      "path": "cases/capabilities/async_export.rs",
+      "expected": {
+        "co3": {
+          "status": "fail",
+          "diagnostic": "Async functions are not supported"
+        },
+        "uniffi": {
+          "status": "pass"
+        },
+        "diplomat": {
+          "status": "fail",
+          "diagnostic": "mismatched types"
+        },
+        "interoptopus": {
+          "status": "pass"
+        },
+        "safer_ffi": {
+          "status": "skip",
+          "reason": "Requires the async-fn feature, an executor, and an ffi_await! body adapter; this suite does not test that adapter."
+        },
+        "boltffi": {
+          "status": "pass"
+        }
+      }
+    },
+    "type_macro": {
+      "path": "cases/syntax/type_macro.rs",
+      "expected": {
+        "co3": {
+          "status": "pass"
+        },
+        "uniffi": {
+          "status": "pass"
+        },
+        "diplomat": {
+          "status": "fail",
+          "diagnostic": "message: Diplomat error: Found unsupported type (check stderr for more)"
+        },
+        "interoptopus": {
+          "status": "pass"
+        },
+        "safer_ffi": {
+          "status": "pass"
+        },
+        "boltffi": {
+          "status": "fail",
+          "diagnostic": "BoltFFI: unsupported source type `unrecognized type`"
+        }
+      }
+    },
+    "unit_return_alias": {
+      "path": "cases/syntax/unit_return_alias.rs",
+      "expected": {
+        "co3": {
+          "status": "pass"
+        },
+        "uniffi": {
+          "status": "pass"
+        },
+        "diplomat": {
+          "status": "pass"
+        },
+        "interoptopus": {
+          "status": "pass"
+        },
+        "safer_ffi": {
+          "status": "pass"
+        },
+        "boltffi": {
+          "status": "fail",
+          "diagnostic": "cannot find macro `Done` in this scope"
+        }
+      }
+    },
+    "borrowed_halves": {
+      "path": "cases/borrowing/borrowed_halves.rs",
+      "expected": {
+        "co3": {
+          "status": "pass"
+        },
+        "uniffi": {
+          "status": "fail",
+          "diagnostic": "the trait bound `(&[u8], &[u8]): LowerReturn<UniFfiTag>` is not satisfied"
+        },
+        "diplomat": {
+          "status": "fail",
+          "diagnostic": "message: Diplomat error: Tuples unsupported (check stderr for more)"
+        },
+        "interoptopus": {
+          "status": "fail",
+          "diagnostic": "the trait bound `[u8]: TypeInfo` is not satisfied"
+        },
+        "safer_ffi": {
+          "status": "fail",
+          "diagnostic": "type mismatch resolving `<OpaqueLayout_<PhantomData<&[u8]>> as CType>::OPAQUE_KIND == Concrete`"
+        },
+        "boltffi": {
+          "status": "fail",
+          "diagnostic": "BoltFFI: unsupported source type `&[u8]`"
+        }
+      }
+    },
+    "nonzero_u8_array": {
+      "path": "cases/borrowing/nonzero_u8_array.rs",
+      "expected": {
+        "co3": {
+          "status": "pass"
+        },
+        "uniffi": {
+          "status": "fail",
+          "diagnostic": "the trait bound `[NonZero<u8>; 4]: LiftRef<UniFfiTag>` is not satisfied"
+        },
+        "diplomat": {
+          "status": "fail",
+          "diagnostic": "message: Diplomat error: Found unsupported type (check stderr for more)"
+        },
+        "interoptopus": {
+          "status": "pass"
+        },
+        "safer_ffi": {
+          "status": "fail",
+          "diagnostic": "the trait bound `NonZero<u8>: ReprC` is not satisfied"
+        },
+        "boltffi": {
+          "status": "fail",
+          "diagnostic": "BoltFFI: unsupported source type `unrecognized type`"
+        }
+      }
+    },
+    "exclusive_cell": {
+      "path": "cases/interior_mutability/exclusive_cell.rs",
+      "expected": {
+        "co3": {
+          "status": "pass"
+        },
+        "uniffi": {
+          "status": "fail",
+          "diagnostic": "the trait bound `UnsafeCell<NonZero<u8>>: LiftRef<UniFfiTag>` is not satisfied"
+        },
+        "diplomat": {
+          "status": "fail",
+          "diagnostic": "message: Diplomat error: Generic type arguments are unsupported (check stderr for more)"
+        },
+        "interoptopus": {
+          "status": "fail",
+          "diagnostic": "the trait bound `UnsafeCell<NonZero<u8>>: TypeInfo` is not satisfied"
+        },
+        "safer_ffi": {
+          "status": "fail",
+          "diagnostic": "the trait bound `UnsafeCell<NonZero<u8>>: ReprC` is not satisfied"
+        },
+        "boltffi": {
+          "status": "fail",
+          "diagnostic": "cannot find `UnsafeCell` in `cell`"
+        }
+      }
+    },
+    "mutable_nonzero_u8": {
+      "path": "cases/validity/mutable_nonzero_u8.rs",
+      "expected": {
+        "co3": {
+          "status": "pass"
+        },
+        "uniffi": {
+          "status": "fail",
+          "diagnostic": "the trait bound `NonZero<u8>: LiftRef<UniFfiTag>` is not satisfied"
+        },
+        "diplomat": {
+          "status": "pass"
+        },
+        "interoptopus": {
+          "status": "pass"
+        },
+        "safer_ffi": {
+          "status": "fail",
+          "diagnostic": "the trait bound `NonZero<u8>: ReprC` is not satisfied"
+        },
+        "boltffi": {
+          "status": "fail",
+          "diagnostic": "cannot find macro `NonZeroU8` in this scope"
+        }
+      }
+    },
+    "projected_return": {
+      "path": "cases/traits/projected_return.rs",
+      "expected": {
+        "co3": {
+          "status": "pass"
+        },
+        "uniffi": {
+          "status": "fail",
+          "diagnostic": "cannot find type `T` in this scope"
+        },
+        "diplomat": {
+          "status": "fail",
+          "diagnostic": "message: Diplomat error: Generic type arguments are unsupported (check stderr for more)"
+        },
+        "interoptopus": {
+          "status": "fail",
+          "diagnostic": "Functions with type generics are not supported at FFI boundaries"
+        },
+        "safer_ffi": {
+          "status": "fail",
+          "diagnostic": "the trait bound `T: ReprC` is not satisfied"
+        },
+        "boltffi": {
+          "status": "fail",
+          "diagnostic": "BoltFFI: `function read` cannot use generics"
+        }
+      }
+    },
+    "conditional_parameter": {
+      "path": "cases/syntax/conditional_parameter.rs",
+      "expected": {
+        "co3": {
+          "status": "pass"
+        },
+        "uniffi": {
+          "status": "fail",
+          "diagnostic": "cannot find type `TraceId` in the crate root"
+        },
+        "diplomat": {
+          "status": "fail",
+          "diagnostic": "cannot find type `TraceId` in the crate root"
+        },
+        "interoptopus": {
+          "status": "fail",
+          "diagnostic": "cannot find type `TraceId` in the crate root"
+        },
+        "safer_ffi": {
+          "status": "fail",
+          "diagnostic": "cannot find type `TraceId` in the crate root"
+        },
+        "boltffi": {
+          "status": "fail",
+          "diagnostic": "does not support `#[cfg]` on parameters"
+        }
+      }
+    },
+    "shared_cell": {
+      "path": "cases/interior_mutability/shared_cell.rs",
+      "expected": {
+        "co3": {
+          "status": "pass"
+        },
+        "uniffi": {
+          "status": "fail",
+          "diagnostic": "the trait bound `UnsafeCell<u32>: LiftRef<UniFfiTag>` is not satisfied"
+        },
+        "diplomat": {
+          "status": "fail",
+          "diagnostic": "message: Diplomat error: Generic type arguments are unsupported (check stderr for more)"
+        },
+        "interoptopus": {
+          "status": "fail",
+          "diagnostic": "the trait bound `UnsafeCell<u32>: TypeInfo` is not satisfied"
+        },
+        "safer_ffi": {
+          "status": "fail",
+          "diagnostic": "the trait bound `UnsafeCell<u32>: ReprC` is not satisfied"
+        },
+        "boltffi": {
+          "status": "fail",
+          "diagnostic": "cannot find `UnsafeCell` in `cell`"
+        }
+      }
+    },
+    "trait_object": {
+      "path": "cases/traits/trait_object.rs",
+      "expected": {
+        "co3": {
+          "status": "fail",
+          "diagnostic": "(dyn Source + '__co3_0): ReprC"
+        },
+        "uniffi": {
+          "status": "pass"
+        },
+        "diplomat": {
+          "status": "pass"
+        },
+        "interoptopus": {
+          "status": "pass"
+        },
+        "safer_ffi": {
+          "status": "pass"
+        },
+        "boltffi": {
+          "status": "pass"
+        }
+      }
+    }
+  }
+}

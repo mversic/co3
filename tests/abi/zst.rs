@@ -59,8 +59,13 @@ struct IdentityUnit;
 #[unsafe(export_name = "zst__return_unit")]
 extern "C" fn return_void() {}
 
-#[unsafe(export_name = "zst__return_tuple")]
-extern "C" fn return_void_tuple() {}
+fn return_void_tuple() -> ((), ()) {
+    ((), ())
+}
+
+co3::raw! {
+    fn return_void_tuple() -> move ((), ());
+}
 
 co3::ffi! {
     #![unsafe(extern("C"))]
@@ -68,13 +73,14 @@ co3::ffi! {
 
     fn return_unit() -> Source<()>;
 
-    fn return_tuple() -> move ((), ());
 }
 
 #[test]
-fn unit_like_returns_import_void_functions() {
+fn unit_like_returns_import_matching_abi_functions() {
     let Source(()) = return_unit();
-    let ((), ()) = return_tuple();
+    use co3::ops::CFn0;
+    let callback: unsafe extern "C" fn() -> _ = return_void_tuple_raw;
+    let ((), ()) = unsafe { callback.call() }.unwrap();
 }
 
 #[derive(RustSpec, ReprC)]
