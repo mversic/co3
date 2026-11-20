@@ -468,6 +468,16 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
         } else {
             Ok(quote! {
                 const _: () = {
+                    co3::disjoint_impls! {
+                        trait __Co3CFnReturnLayout {}
+
+                        impl<T> __Co3CFnReturnLayout for T
+                        where T: co3::rust_spec::RustSpec<Size = co3::rust_spec::size::Sized<co3::rust_spec::Gt<co3::rust_spec::Zero>>>
+                        {}
+                        impl<T> __Co3CFnReturnLayout for T
+                        where T: co3::rust_spec::RustSpec<Size = co3::rust_spec::size::Sized<co3::rust_spec::Zero>, __Alignment = co3::rust_spec::One>
+                        {}
+                    }
                     #body
                 };
             })
@@ -523,9 +533,7 @@ fn gen_source_ctype_impl(input: &syn::DeriveInput, attrs: &ReprCAttrs) -> TokenS
             unsafe impl #impl_generics co3::CFnReturn for #name #ty_generics
             where
                 #last_field_sized_bound
-                #speculative Self: co3::CType + co3::rust_spec::RustSpec<
-                    Size = co3::rust_spec::size::Sized<co3::rust_spec::Gt<co3::rust_spec::Zero>>,
-                >,
+                #speculative Self: co3::CType + __Co3CFnReturnLayout,
                 #predicates
             {}
         }

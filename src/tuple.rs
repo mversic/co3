@@ -489,7 +489,7 @@ macro_rules! impl_tuple {
         {}
         unsafe impl<$($ty: CType),*> CFnReturn for $ffi_ty<$($ty),*>
         where
-            Self: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>,
+            Self: crate::abi::CFnReturnLayout,
         {}
 
         impl_tuple!(@split [] $($ty:$idx),+ -> $ffi_ty, $carrier);
@@ -761,7 +761,7 @@ pub mod abi {
         unsafe impl<$($ty: CType),*> CFnArg for $ffi_ty<$($ty),*>
         where Self: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>> {}
         unsafe impl<$($ty: CType),*> CFnReturn for $ffi_ty<$($ty),*>
-        where Self: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>> {}
+        where Self: crate::abi::CFnReturnLayout {}
 impl<$($head: CType,)* __Co3WideHeader: CType> crate::wide::WideHeader for $ffi_ty<$($head,)* __Co3WideHeader> {
     type Data = Self;
 }

@@ -433,7 +433,7 @@ unsafe impl<T, E> CFnArg for core::result::Result<T, E> where
 {
 }
 unsafe impl<T, E> CFnReturn for core::result::Result<T, E> where
-    Self: CType + RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>
+    Self: CType + crate::abi::CFnReturnLayout
 {
 }
 

@@ -52,6 +52,32 @@ pub enum TransparentEnum<T: ?Sized> {
 struct Source<T>(T);
 
 #[derive(RustSpec, ReprC)]
+#[repr(transparent)]
+#[repr_c(identity)]
+struct IdentityUnit;
+
+#[unsafe(export_name = "zst__return_unit")]
+extern "C" fn return_void() {}
+
+#[unsafe(export_name = "zst__return_tuple")]
+extern "C" fn return_void_tuple() {}
+
+co3::ffi! {
+    #![unsafe(extern("C"))]
+    #![symbol_prefix = "zst"]
+
+    fn return_unit() -> Source<()>;
+
+    fn return_tuple() -> move ((), ());
+}
+
+#[test]
+fn unit_like_returns_import_void_functions() {
+    let Source(()) = return_unit();
+    let ((), ()) = return_tuple();
+}
+
+#[derive(RustSpec, ReprC)]
 #[repr(C)]
 struct SourceZst;
 
@@ -99,11 +125,15 @@ fn boxed_zst_traits() {
 }
 
 #[test]
-fn zero_sized_wrappers_are_not_function_values() {
-    assert_not_impl_any!(UnsafeCell<()>: CFnArg, CFnReturn);
-    assert_not_impl_any!(Cell<()>: CFnArg, CFnReturn);
-    assert_not_impl_any!(MaybeUninit<()>: CFnArg, CFnReturn);
-    assert_not_impl_any!(ManuallyDrop<()>: CFnArg, CFnReturn);
+fn unit_wrappers_are_return_values() {
+    assert_not_impl_any!(UnsafeCell<()>: CFnArg);
+    assert_impl_all!(UnsafeCell<()>: CFnReturn);
+    assert_not_impl_any!(Cell<()>: CFnArg);
+    assert_impl_all!(Cell<()>: CFnReturn);
+    assert_not_impl_any!(MaybeUninit<()>: CFnArg);
+    assert_impl_all!(MaybeUninit<()>: CFnReturn);
+    assert_not_impl_any!(ManuallyDrop<()>: CFnArg);
+    assert_impl_all!(ManuallyDrop<()>: CFnReturn);
 
     assert_impl_all!((): CFnReturn);
     assert_impl_all!(UnsafeCell<u8>: CFnArg, CFnReturn);
@@ -113,13 +143,23 @@ fn zero_sized_wrappers_are_not_function_values() {
 }
 
 #[test]
-fn source_types_get_function_markers_only_when_nonzero() {
+fn unit_like_return_layout_requires_alignment_one() {
     assert_impl_all!(Source<u32>: CType, CFnArg, CFnReturn);
 
     assert_impl_all!(Source<()>: CType);
-    assert_not_impl_any!(Source<()>: CFnArg, CFnReturn);
+    assert_not_impl_any!(Source<()>: CFnArg);
+    assert_impl_all!(Source<()>: CFnReturn);
+    assert_impl_all!(IdentityUnit: CFnReturn);
+    assert_not_impl_any!(IdentityUnit: CFnArg);
+    assert_not_impl_any!(Source<[u32; 0]>: CFnReturn);
+    assert_impl_all!(Source<[u8; 0]>: CFnReturn);
+    assert_impl_all!([u8; 0]: CFnReturn);
+    assert_not_impl_any!([u32; 0]: CFnReturn);
+    assert_impl_all!(<((), ()) as ReprC>::CType: CFnReturn);
+    assert_not_impl_any!(<([u32; 0], ()) as ReprC>::CType: CFnReturn);
     assert_impl_all!(SourceZst: CType);
-    assert_not_impl_any!(SourceZst: CFnArg, CFnReturn);
+    assert_impl_all!(SourceZst: CFnReturn);
+    assert_not_impl_any!(SourceZst: CFnArg);
 }
 
 #[test]

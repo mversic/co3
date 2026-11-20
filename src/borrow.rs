@@ -2030,6 +2030,5 @@ mod tests {
             Result<NonZero<u8>, ()>, Result<(), NonZero<u8>>,
             Cell<u8>, ManuallyDrop<u8>, SoftRefMut<u8>);
         assert_not_impl_any!(Bytes: BorrowedEncode);
-        assert_not_impl_any!(crate::marker::Borrowed< <() as co3::ReprC>::CType >: crate::CFnArg, crate::CFnReturn);
     }
 }

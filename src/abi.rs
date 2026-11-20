@@ -28,6 +28,14 @@ use crate::{
     wide::Wide as _,
 };
 
+disjoint_impls! {
+    // A 1-ZST is ABI-compatible with (). Other aggregate returns need nonzero size.
+    pub(crate) trait CFnReturnLayout {}
+
+    impl<T: RustSpec<Size = RustSpecSized<Gt<Zero>>>> CFnReturnLayout for T {}
+    impl<T: RustSpec<Size = RustSpecSized<Zero>, __Alignment = rust_spec::One>> CFnReturnLayout for T {}
+}
+
 // The trait is public inside a private module so associated-type projections
 // in conversion impls are legal without exposing the helper to callers.
 mod interior {

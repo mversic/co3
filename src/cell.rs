@@ -25,10 +25,7 @@ unsafe impl<T: CFnArg> CFnArg for UnsafeCell<T> where
     Self: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>
 {
 }
-unsafe impl<T: CFnReturn> CFnReturn for UnsafeCell<T> where
-    Self: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>
-{
-}
+unsafe impl<T: CFnReturn> CFnReturn for UnsafeCell<T> {}
 
 impl<R: ReprC + ?Sized> ReprC for Cell<R> {
     type CType = core::cell::Cell<R::CType>;
@@ -45,10 +42,7 @@ unsafe impl<T: CFnArg> CFnArg for Cell<T> where
     Self: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>
 {
 }
-unsafe impl<T: CFnReturn> CFnReturn for Cell<T> where
-    Self: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>
-{
-}
+unsafe impl<T: CFnReturn> CFnReturn for Cell<T> {}
 
 #[cfg(test)]
 mod tests {

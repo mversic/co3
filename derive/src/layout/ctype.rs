@@ -1317,7 +1317,7 @@ fn gen_c_fn_impls(
         {}
         unsafe impl #impl_generics #co3::CFnReturn for #ident #ty_generics where
             #last_field_sized_bound
-            #size_bound
+            #speculative Self: __Co3CFnReturnLayout,
             #predicates
         {}
     }

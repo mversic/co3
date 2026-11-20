@@ -517,6 +517,13 @@ impl<R: ReprC<CType: Sized>, const N: usize> ReprC for [R; N] {
 }
 
 unsafe impl<R: CType, const N: usize> CType for [R; N] {}
+unsafe impl<R: CType, const N: usize> CFnReturn for [R; N] where
+    Self: rust_spec::RustSpec<
+            Size = rust_spec::size::Sized<rust_spec::Zero>,
+            __Alignment = rust_spec::One,
+        >
+{
+}
 
 unsafe impl<T: EmptyStore, const N: usize> EmptyStore for [T; N] {}
 // TODO: It's not possbile to implement for specific len yet: https://github.com/mversic/co3/issues/13

@@ -68,33 +68,24 @@ fn require_arg<T: CFnArg>() {}
 fn require_return<T: CFnReturn>() {}
 
 fn main() {
+    require_return::<<ParamReprCZst<[u32; 0]> as ReprC>::CType>();
     require_arg::<<ZeroLenArrayZst as ReprC>::CType>();
-    require_return::<<ZeroLenArrayZst as ReprC>::CType>();
 
     require_arg::<<ReprCZst as ReprC>::CType>();
-    require_return::<<ReprCZst as ReprC>::CType>();
 
     require_arg::<<TransparentZst as ReprC>::CType>();
-    require_return::<<TransparentZst as ReprC>::CType>();
 
     require_arg::<<NoReprZst as ReprC>::CType>();
-    require_return::<<NoReprZst as ReprC>::CType>();
 
     require_arg::<<ParamReprCZst<()> as ReprC>::CType>();
-    require_return::<<ParamReprCZst<()> as ReprC>::CType>();
 
     require_arg::<<ParamTransparentZst<()> as ReprC>::CType>();
-    require_return::<<ParamTransparentZst<()> as ReprC>::CType>();
 
     require_arg::<<ParamNoReprZst<()> as ReprC>::CType>();
-    require_return::<<ParamNoReprZst<()> as ReprC>::CType>();
 
     require_arg::<<ParamTransparentEnum<()> as ReprC>::CType>();
-    require_return::<<ParamTransparentEnum<()> as ReprC>::CType>();
 
     require_arg::<<ParamTransparentEnum<u32> as ReprC>::CType>();
-    require_return::<<ParamTransparentEnum<u32> as ReprC>::CType>();
 
     require_arg::<<ParamFieldlessEnum as ReprC>::CType>();
-    require_return::<<ParamFieldlessEnum as ReprC>::CType>();
 }

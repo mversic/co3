@@ -107,12 +107,8 @@ unsafe impl<T: CType> AbiCompatibleValidate for Borrowed<T> {
 }
 unsafe impl<T: CType> AbiCompatible for Borrowed<T> {}
 unsafe impl<T: CType> CFnArg for Borrowed<T> where T: CFnArg {}
-unsafe impl<T: CType> CFnReturn for Borrowed<T>
-where
-    T: CFnReturn,
-    Self: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>,
-{
-}
+// SAFETY: repr(transparent) preserves T's return ABI, including unit.
+unsafe impl<T: CFnReturn> CFnReturn for Borrowed<T> {}
 impl<T: CType> Borrowed<T> {
     pub const fn new(value: T) -> Self {
         Self(value)

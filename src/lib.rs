@@ -683,7 +683,8 @@ pub unsafe trait CFnArg: CType + Sized {}
 ///
 /// # Safety
 ///
-/// Type must be allowed as a foreign function return type. In particular, ZSTs are not allowed.
+/// Type must have a valid foreign return ABI. A zero-sized type may represent
+/// a void return when its ABI is guaranteed to match unit.
 pub unsafe trait CFnReturn: CType + Sized {}
 
 /// Pointers to types implementing this trait alias are “thin”.

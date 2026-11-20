@@ -85,10 +85,7 @@ unsafe impl<T: CFnArg> CFnArg for ManuallyDrop<T> where
     Self: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>
 {
 }
-unsafe impl<T: CFnReturn> CFnReturn for ManuallyDrop<T> where
-    Self: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>
-{
-}
+unsafe impl<T: CFnReturn> CFnReturn for ManuallyDrop<T> {}
 
 unsafe impl<T: EmptyStore> EmptyStore for ManuallyDrop<T> {}
 
@@ -236,10 +233,7 @@ unsafe impl<T: CFnArg> CFnArg for MaybeUninit<T> where
     Self: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>
 {
 }
-unsafe impl<T: CFnReturn> CFnReturn for MaybeUninit<T> where
-    Self: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>
-{
-}
+unsafe impl<T: CFnReturn> CFnReturn for MaybeUninit<T> {}
 
 unsafe impl<T: EmptyStore> EmptyStore for MaybeUninit<T> {}
 

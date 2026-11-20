@@ -23,7 +23,7 @@ error[E0277]: the trait bound `(): CFnArg` is not satisfied
    = note: required for `extern "C" fn(())` to implement `ReprC`
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0277]: the trait bound `[u32; 2]: CFnReturn` is not satisfied
+error[E0271]: type mismatch resolving `<[u32; 2] as RustSpec>::Size == Sized<Zero>`
   --> tests/ui_fail/callback_requires_companion.rs:10:1
    |
 10 | / ffi! {
@@ -33,18 +33,29 @@ error[E0277]: the trait bound `[u32; 2]: CFnReturn` is not satisfied
 14 | |     fn callback_with_bad_return(callback: BadReturn);
 15 | |     fn non_stable_callback(callback: NonStable);
 16 | | }
-   | |_^ the trait `CFnReturn` is not implemented for `[u32; 2]`
+   | |_^ expected `Sized<Zero>`, found `Sized<Gt<Zero>>`
    |
-   = help: the following other types implement trait `CFnReturn`:
-             ()
-             *const R
-             *mut R
-             Cell<T>
-             ManuallyDrop<T>
-             MaybeUninit<T>
-             NoRepr
-             NoReprCType
-           and $N others
+   = note: expected struct `Sized<Zero>`
+              found struct `Sized<Gt<Zero>>`
+   = note: required for `[u32; 2]` to implement `CFnReturn`
+   = note: required for `extern "C" fn() -> [u32; 2]` to implement `ReprC`
+   = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0271]: type mismatch resolving `<[u32; 2] as RustSpec>::__Alignment == One`
+  --> tests/ui_fail/callback_requires_companion.rs:10:1
+   |
+10 | / ffi! {
+11 | |     #![unsafe(extern("C"))]
+12 | |
+13 | |     fn callback_with_bad_argument(callback: BadArgument);
+14 | |     fn callback_with_bad_return(callback: BadReturn);
+15 | |     fn non_stable_callback(callback: NonStable);
+16 | | }
+   | |_^ expected `One`, found `Gt<One>`
+   |
+   = note: expected enum `One`
+            found struct `Gt<One>`
+   = note: required for `[u32; 2]` to implement `CFnReturn`
    = note: required for `extern "C" fn() -> [u32; 2]` to implement `ReprC`
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 

@@ -399,10 +399,7 @@ unsafe impl<T> CFnArg for core::option::Option<T> where
     Self: CType + RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>
 {
 }
-unsafe impl<T> CFnReturn for core::option::Option<T> where
-    Self: CType + RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>
-{
-}
+unsafe impl<T> CFnReturn for core::option::Option<T> where Self: CType + crate::abi::CFnReturnLayout {}
 
 impl<R: Encode> Encode for core::option::Option<R> where Self: EncodeMove {}
 impl<R: EncodeUnchecked> EncodeUnchecked for core::option::Option<R> where Self: EncodeMoveUnchecked {}
