@@ -5,6 +5,7 @@ use core::{
     cell::{Cell, UnsafeCell},
     mem::ManuallyDrop,
 };
+use rust_spec::Unstable;
 
 use disjoint_impls::disjoint_impls;
 use rust_spec::RustSpec;
@@ -234,7 +235,7 @@ macro_rules! define_mutable_encoders {
                 where
                     $($copy_spec)* Self: $crate::ReprC<CType: CType + Sized>
                         + $crate::convert::EncodeMoveUnchecked
-                        + $crate::rust_spec::RustSpec<Layout = $crate::rust_spec::Unstable>
+                        + $crate::rust_spec::RustSpec<Layout = $crate::Unstable>
                         + $crate::convert::DecodeMove<'_mut, Store: $crate::convert::EmptyStore + '_mut>
                         + Copy
                         + '_mut,
@@ -285,7 +286,7 @@ macro_rules! define_mutable_encoders {
                     $($owned_bounds)*
                     $($owned_spec)* Self: $crate::ReprC<CType: CType + Sized>
                         + $crate::convert::EncodeMoveUnchecked
-                        + $crate::rust_spec::RustSpec<Layout = $crate::rust_spec::Unstable>
+                        + $crate::rust_spec::RustSpec<Layout = $crate::Unstable>
                         + $crate::convert::DecodeMove<'_mut, Store: $crate::convert::EmptyStore + '_mut>
                         + Default
                         + '_mut,
@@ -334,7 +335,7 @@ macro_rules! define_mutable_encoders {
                 where
                     Self: $crate::ReprC<CType: CType + Sized>
                         + $crate::convert::EncodeMoveUnchecked
-                        + $crate::rust_spec::RustSpec<Layout = $crate::rust_spec::Unstable>
+                        + $crate::rust_spec::RustSpec<Layout = $crate::Unstable>
                         + $crate::convert::DecodeMove<'_mut, Store: $crate::convert::EmptyStore + '_mut>
                         + Copy
                         + '_mut,
@@ -362,7 +363,7 @@ macro_rules! define_mutable_encoders {
                 unsafe impl<'a, T: ReprC<CType: CType + Copy + Sized> + 'a> SoftEncodeMutUnchecked<'a>
                     for $vec
                 where
-                    Self: RustSpec<Layout = rust_spec::Unstable>,
+                    Self: RustSpec<Layout = Unstable>,
                     &'a mut T: EncodeMoveUnchecked + ReprC<CType: crate::CType + RefMutCarrier<T>>,
                     &'a mut Self: ReprC<CType = SoftRefMut<<Self as ReprC>::CType>>,
                 {
@@ -691,7 +692,7 @@ crate::primitive::with_fn_types! { define_mutable_encoders, {
         #[cfg(feature = "alloc")]
         unsafe impl<'a, T: ReprC<CType: CType + Copy + Sized> + 'a> SoftEncodeMutUnchecked<'a> for [T]
         where
-            T: rust_spec::RustSpec<Layout = rust_spec::Unstable, Trap = rust_spec::layout::NonRobust>,
+            T: rust_spec::RustSpec<Layout = Unstable, Trap = rust_spec::layout::NonRobust>,
             &'a mut T: EncodeMoveUnchecked + ReprC<CType: crate::CType + RefMutCarrier<T>>,
             &'a mut Self: ReprC<CType = AbiSoftWideRefMut<<Self as ReprC>::CType>>,
         {
@@ -734,7 +735,7 @@ crate::primitive::with_fn_types! { define_mutable_encoders, {
         #[cfg(feature = "alloc")]
         unsafe impl<'a, T: ReprC<CType: CType + Copy + Sized> + 'a> SoftEncodeMutUnchecked<'a> for [T]
         where
-            T: rust_spec::RustSpec<Layout = rust_spec::Unstable, Trap = rust_spec::layout::Robust>,
+            T: rust_spec::RustSpec<Layout = Unstable, Trap = rust_spec::layout::Robust>,
             &'a mut T: EncodeMoveUnchecked + ReprC<CType: crate::CType + RefMutCarrier<T>>,
             &'a mut Self: ReprC<CType = AbiSoftWideRefMut<<Self as ReprC>::CType>>,
         {
@@ -835,7 +836,7 @@ crate::primitive::with_fn_types! { define_mutable_encoders, {
         unsafe impl<
             'a,
             'b: 'a,
-            R: ReprC + RustSpec<Layout = rust_spec::Unstable, Size = rust_spec::size::Sized<K>>,
+            R: ReprC + RustSpec<Layout = Unstable, Size = rust_spec::size::Sized<K>>,
             K: SizedKind,
         > SoftEncodeMutUnchecked<'a> for &'b mut R
         where
@@ -863,7 +864,7 @@ crate::primitive::with_fn_types! { define_mutable_encoders, {
         unsafe impl<'a, T: ReprC<CType: CType + Copy + Sized> + 'a, const N: usize>
             SoftEncodeMutUnchecked<'a> for [T; N]
         where
-            Self: RustSpec<Layout = rust_spec::Unstable>,
+            Self: RustSpec<Layout = Unstable>,
             &'a mut T: EncodeMoveUnchecked + ReprC<CType: crate::CType + RefMutCarrier<T>>,
             &'a mut Self: ReprC<CType = SoftRefMut<<Self as ReprC>::CType>>,
         {
@@ -1003,7 +1004,7 @@ crate::primitive::with_fn_types! { define_mutable_encoders, {
         #[cfg(feature = "alloc")]
         unsafe impl<'a, T: ReprC<CType: CType + Copy + Sized> + 'a> SoftEncodeMut<'a> for [T]
         where
-            T: rust_spec::RustSpec<Layout = rust_spec::Unstable, Trap = rust_spec::layout::Robust>,
+            T: rust_spec::RustSpec<Layout = Unstable, Trap = rust_spec::layout::Robust>,
             &'a mut T: EncodeMove + ReprC<CType: crate::CType + RefMutCarrier<T>>,
             &'a mut Self: ReprC<CType = AbiSoftWideRefMut<<Self as ReprC>::CType>>,
         {
@@ -1114,7 +1115,7 @@ crate::primitive::with_fn_types! { define_mutable_encoders, {
         unsafe impl<
             'a,
             'b: 'a,
-            R: ReprC + RustSpec<Layout = rust_spec::Unstable, Size = rust_spec::size::Sized<K>>,
+            R: ReprC + RustSpec<Layout = Unstable, Size = rust_spec::size::Sized<K>>,
             K: SizedKind,
         > SoftEncodeMut<'a> for &'b mut R
         where
@@ -1142,7 +1143,7 @@ crate::primitive::with_fn_types! { define_mutable_encoders, {
         unsafe impl<'a, T: ReprC<CType: CType + Copy + Sized> + 'a, const N: usize> SoftEncodeMut<'a>
             for [T; N]
         where
-            Self: RustSpec<Layout = rust_spec::Unstable>,
+            Self: RustSpec<Layout = Unstable>,
             &'a mut T: EncodeMove + ReprC<CType: crate::CType + RefMutCarrier<T>>,
             &'a mut Self: ReprC<CType = SoftRefMut<<Self as ReprC>::CType>>,
         {

@@ -320,7 +320,7 @@ fn gen_transparent_decode_ref(
         let (layout, carrier) = if stable {
             (quote!(co3::rust_spec::Stable), quote!(co3::reference::abi::Ref<'d, <R as co3::ReprC>::CType>))
         } else {
-            (quote!(co3::rust_spec::Unstable), quote!(co3::reference::abi::SoftRef<<R as co3::ReprC>::CType>))
+            (quote!(__Co3Unstable), quote!(co3::reference::abi::SoftRef<<R as co3::ReprC>::CType>))
         };
         quote! {
             impl<'d, R> __Co3TransparentFieldDecode<'d, R> for #layout
@@ -781,7 +781,7 @@ fn gen_shared_field_decoder() -> TokenStream {
         let (layout, carrier) = if stable {
             (quote!(co3::rust_spec::Stable), quote!(co3::reference::abi::Ref<'d, <R as co3::ReprC>::CType>))
         } else {
-            (quote!(co3::rust_spec::Unstable), quote!(co3::reference::abi::SoftRef<<R as co3::ReprC>::CType>))
+            (quote!(__Co3Unstable), quote!(co3::reference::abi::SoftRef<<R as co3::ReprC>::CType>))
         };
         quote! {
             unsafe impl<'d, R: co3::ReprC<CType: co3::CType + Sized + 'd> + 'd> __Co3DecodeField<'d> for R

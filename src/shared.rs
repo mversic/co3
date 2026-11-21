@@ -1,4 +1,5 @@
 //! Referent-specific encoding for the unstable shared-reference path.
+use crate::marker::Native;
 #[cfg(feature = "alloc")]
 use alloc::{boxed::Box, vec::Vec};
 use core::{marker::PhantomData, mem::ManuallyDrop};
@@ -132,7 +133,7 @@ disjoint_impls! {
         <R as ReprC>::CType: crate::CType + Sized,
         R: RustSpec<Layout = Stable>,
         Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin>,
-        Self: ReprC<CType = AbiVec<<R as ReprC>::CType>> + 'a,
+        Self: ReprC<CType = Native<AbiVec<<R as ReprC>::CType>>> + 'a,
     {
         type SoftStore = RefSizedEncodeStore<Self, ()>;
 
@@ -143,9 +144,9 @@ disjoint_impls! {
         where
             'a: 'itm,
         {
-            store.encode(|_fields| unsafe {
+            store.encode(|_fields| Native(unsafe {
                 AbiVec::from_raw_parts(self.as_ptr().cast_mut().cast(), self.len(), self.capacity())
-            })
+            }))
         }
     }
     #[cfg(feature = "alloc")]
@@ -156,7 +157,7 @@ disjoint_impls! {
         R: RustSpec<Layout = Unstable>,
         Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin>,
         &'a R: EncodeMoveUnchecked + ReprC<CType = SoftRef<<R as ReprC>::CType>>,
-        Self: ReprC<CType = AbiVec<<R as ReprC>::CType>> + 'a,
+        Self: ReprC<CType = Native<AbiVec<<R as ReprC>::CType>>> + 'a,
     {
         type SoftStore = RefSizedEncodeStore<
             Self,
@@ -172,8 +173,7 @@ disjoint_impls! {
         {
             store.encode(|fields| {
                 let store = fields;
-
-                store.encode(|stores| unsafe { encode_vec_unchecked(self, self.capacity(), stores) })
+                Native(store.encode(|stores| unsafe { encode_vec_unchecked(self, self.capacity(), stores) }))
             })
         }
     }
@@ -195,7 +195,7 @@ disjoint_impls! {
         where
             'a: 'itm,
         {
-            store.encode(|fields| {
+            store.encode(|fields| {Native({
                 let store = fields;
 
                 match self {
@@ -207,7 +207,7 @@ disjoint_impls! {
                         AbiOption::None()
                     }
                 }
-            })
+            })})
         }
     }
     unsafe impl<'a, R: Niche, N: LayoutKind, __Interior: ExclusiveKind> SoftEncodeRefUnchecked<'a>
@@ -217,7 +217,8 @@ disjoint_impls! {
         R: RustSpec<Niche = WithNiche<N>>,
         Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin> + 'a,
         &'a R: EncodeMoveUnchecked + ReprC<CType: crate::CType + crate::reference::RefCarrier<R>>,
-    {
+    Self: ReprC<CType = Native<AbiOptionSome<<R as ReprC>::CType>>>,
+{
         type SoftStore = RefSizedEncodeStore<Self, Option<<&'a R as EncodeMoveUnchecked>::SoftStore>>;
 
         unsafe fn soft_encode_ref_unchecked<'itm>(
@@ -227,7 +228,7 @@ disjoint_impls! {
         where
             'a: 'itm,
         {
-            store.encode(|fields| {
+            store.encode(|fields| {Native({
                 let store = fields;
 
                 match self {
@@ -242,7 +243,7 @@ disjoint_impls! {
                         AbiOptionSome(R::NICHE)
                     }
                 }
-            })
+            })})
         }
     }
 
@@ -253,7 +254,7 @@ disjoint_impls! {
         Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin> + 'a,
         <R as ReprC>::CType: crate::CType + Copy,
         <E as ReprC>::CType: crate::CType + Copy,
-        Self: ReprC<CType = AbiResult<<R as ReprC>::CType, <E as ReprC>::CType>>,
+        Self: ReprC<CType = Native<AbiResult<<R as ReprC>::CType, <E as ReprC>::CType>>>,
         R: RustSpec<Size = RustSpecSized<K>>,
         E: RustSpec<Size = RustSpecSized<K>>,
         &'a R: EncodeMoveUnchecked + ReprC<CType: crate::CType + crate::reference::RefCarrier<R>>,
@@ -276,7 +277,7 @@ disjoint_impls! {
         where
             'a: 'itm,
         {
-            store.encode(|fields| {
+            store.encode(|fields| {Native({
                 let store = fields;
 
                 match self {
@@ -293,14 +294,14 @@ disjoint_impls! {
                         AbiResult::Err(unsafe { encode_ref_field_unchecked(err, inner) })
                     }
                 }
-            })
+            })})
         }
     }
     unsafe impl<'a, R: Niche, E: ReprC<CType: CType + Sized>, N: LayoutKind, __Interior: ExclusiveKind> SoftEncodeRefUnchecked<'a>
         for Result<R, E>
     where
         &'a Self: crate::ReprC<CType = crate::reference::abi::SoftRef<<Self as ReprC>::CType>>,
-        Self: ReprC<CType = AbiResultOk<<R as ReprC>::CType, <E as ReprC>::CType>>,
+        Self: ReprC<CType = Native<AbiResultOk<<R as ReprC>::CType, <E as ReprC>::CType>>>,
         R: RustSpec<Size = RustSpecSized<rust_spec::Gt<Zero>>, Niche = WithNiche<N>>,
         E: RustSpec<Size = RustSpecSized<Zero>>,
         Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin> + 'a,
@@ -315,7 +316,7 @@ disjoint_impls! {
         where
             'a: 'itm,
         {
-            store.encode(|fields| {
+            store.encode(|fields| {Native({
                 let store = fields;
 
                 match self {
@@ -327,14 +328,14 @@ disjoint_impls! {
                         AbiResultOk(R::NICHE, PhantomData)
                     }
                 }
-            })
+            })})
         }
     }
     unsafe impl<'a, R: ReprC<CType: CType + Sized>, E: Niche, N: LayoutKind, __Interior: ExclusiveKind> SoftEncodeRefUnchecked<'a>
         for Result<R, E>
     where
         &'a Self: crate::ReprC<CType = crate::reference::abi::SoftRef<<Self as ReprC>::CType>>,
-        Self: ReprC<CType = AbiResultErr<<R as ReprC>::CType, <E as ReprC>::CType>>,
+        Self: ReprC<CType = Native<AbiResultErr<<R as ReprC>::CType, <E as ReprC>::CType>>>,
         R: RustSpec<Size = RustSpecSized<Zero>>,
         E: RustSpec<Size = RustSpecSized<rust_spec::Gt<Zero>>, Niche = WithNiche<N>>,
         Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin> + 'a,
@@ -349,7 +350,7 @@ disjoint_impls! {
         where
             'a: 'itm,
         {
-            store.encode(|fields| {
+            store.encode(|fields| {Native({
                 let store = fields;
 
                 match self {
@@ -361,7 +362,7 @@ disjoint_impls! {
                         encode_ref_field_unchecked(err, store.insert(Default::default()))
                     }, PhantomData),
                 }
-            })
+            })})
         }
     }
 
@@ -526,7 +527,7 @@ disjoint_impls! {
     where
         &'a Self: crate::ReprC<CType = crate::reference::abi::SoftRef<<Self as ReprC>::CType>>,
         T: RustSpec<Layout = Stable, Mutability: SharedVecMutability>,
-        Self: ReprC<CType = AbiVec<<T as ReprC>::CType>>,
+        Self: ReprC<CType = Native<AbiVec<<T as ReprC>::CType>>>,
         Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin> + 'a,
     {
         type Store = RefSizedEncodeStore<Self, ()>;
@@ -535,9 +536,9 @@ disjoint_impls! {
         where
             'a: 'itm,
         {
-            store.encode(|_fields| unsafe {
+            store.encode(|_fields| Native(unsafe {
                 AbiVec::from_raw_parts(self.as_ptr().cast_mut().cast(), self.len(), self.capacity())
-            })
+            }))
         }
     }
 
@@ -547,7 +548,7 @@ disjoint_impls! {
     where
         &'a Self: crate::ReprC<CType = crate::reference::abi::SoftRef<<Self as ReprC>::CType>>,
         T: RustSpec<Layout = Unstable>,
-        Self: crate::convert::SoftEncodeRefUnchecked<'a> + ReprC<CType = AbiVec<<T as ReprC>::CType>>,
+        Self: crate::convert::SoftEncodeRefUnchecked<'a> + ReprC<CType = Native<AbiVec<<T as ReprC>::CType>>>,
         Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin> + 'a,
         &'a T: EncodeMove + ReprC<CType = SoftRef<<T as ReprC>::CType>>,
     {
@@ -558,11 +559,11 @@ disjoint_impls! {
         where
             'a: 'itm,
         {
-            store.encode(|fields| {
+            store.encode(|fields| {Native({
                 let store = fields;
 
                 store.encode(|stores| encode_vec(self, self.capacity(), stores))
-            })
+            })})
         }
     }
 
@@ -580,7 +581,7 @@ disjoint_impls! {
         where
             'a: 'itm,
         {
-            store.encode(|fields| {
+            store.encode(|fields| {Native({
                 let store = fields;
 
                 match self {
@@ -592,7 +593,7 @@ disjoint_impls! {
                         AbiOption::None()
                     }
                 }
-            })
+            })})
         }
     }
     unsafe impl<'a, R: Niche<CType: crate::CType + Copy>, N: LayoutKind, __Interior: ExclusiveKind> SoftEncodeRef<'a>
@@ -602,14 +603,15 @@ disjoint_impls! {
         R: RustSpec<Niche = WithNiche<N>>,
         Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin> + 'a,
         &'a R: EncodeMove + ReprC<CType: crate::CType + crate::reference::RefCarrier<R>>,
-    {
+    Self: ReprC<CType = Native<AbiOptionSome<<R as ReprC>::CType>>>,
+{
         type Store = RefSizedEncodeStore<Self, Option<<&'a R as EncodeMove>::Store>>;
 
         fn soft_encode_ref<'itm>(&'a self, store: &'itm mut Self::Store) -> <&'a Self as crate::ReprC>::CType
         where
             'a: 'itm,
         {
-            store.encode(|fields| {
+            store.encode(|fields| {Native({
                 let store = fields;
 
                 if let Some(value) = self {
@@ -620,7 +622,7 @@ disjoint_impls! {
                     *store = None;
                     AbiOptionSome(R::NICHE)
                 }
-            })
+            })})
         }
     }
 
@@ -633,7 +635,7 @@ disjoint_impls! {
     > SoftEncodeRef<'a> for Result<R, E>
     where
         &'a Self: crate::ReprC<CType = crate::reference::abi::SoftRef<<Self as ReprC>::CType>>,
-        Self: ReprC<CType = AbiResult<<R as ReprC>::CType, <E as ReprC>::CType>>,
+        Self: ReprC<CType = Native<AbiResult<<R as ReprC>::CType, <E as ReprC>::CType>>>,
         R: RustSpec<Size = RustSpecSized<K>>,
         E: RustSpec<Size = RustSpecSized<K>>,
         Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin> + 'a,
@@ -649,7 +651,7 @@ disjoint_impls! {
         where
             'a: 'itm,
         {
-            store.encode(|fields| {
+            store.encode(|fields| {Native({
                 let store = fields;
 
                 match self {
@@ -666,14 +668,14 @@ disjoint_impls! {
                         AbiResult::Err(encode_ref_field(err, store))
                     }
                 }
-            })
+            })})
         }
     }
     unsafe impl<'a, R: Niche, E: ReprC<CType: CType + Sized>, N: LayoutKind, __Interior: ExclusiveKind> SoftEncodeRef<'a>
         for Result<R, E>
     where
         &'a Self: crate::ReprC<CType = crate::reference::abi::SoftRef<<Self as ReprC>::CType>>,
-        Self: ReprC<CType = AbiResultOk<<R as ReprC>::CType, <E as ReprC>::CType>>,
+        Self: ReprC<CType = Native<AbiResultOk<<R as ReprC>::CType, <E as ReprC>::CType>>>,
         R: RustSpec<Size = RustSpecSized<rust_spec::Gt<Zero>>, Niche = WithNiche<N>>,
         E: RustSpec<Size = RustSpecSized<Zero>>,
         Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin> + 'a,
@@ -685,7 +687,7 @@ disjoint_impls! {
         where
             'a: 'itm,
         {
-            store.encode(|fields| {
+            store.encode(|fields| {Native({
                 let store = fields;
 
                 match self {
@@ -695,14 +697,14 @@ disjoint_impls! {
                         AbiResultOk(R::NICHE, PhantomData)
                     }
                 }
-            })
+            })})
         }
     }
     unsafe impl<'a, R: ReprC<CType: CType + Sized>, E: Niche, N: LayoutKind, __Interior: ExclusiveKind> SoftEncodeRef<'a>
         for Result<R, E>
     where
         &'a Self: crate::ReprC<CType = crate::reference::abi::SoftRef<<Self as ReprC>::CType>>,
-        Self: ReprC<CType = AbiResultErr<<R as ReprC>::CType, <E as ReprC>::CType>>,
+        Self: ReprC<CType = Native<AbiResultErr<<R as ReprC>::CType, <E as ReprC>::CType>>>,
         R: RustSpec<Size = RustSpecSized<Zero>>,
         E: RustSpec<Size = RustSpecSized<rust_spec::Gt<Zero>>, Niche = WithNiche<N>>,
         Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin> + 'a,
@@ -714,7 +716,7 @@ disjoint_impls! {
         where
             'a: 'itm,
         {
-            store.encode(|fields| {
+            store.encode(|fields| {Native({
                 let store = fields;
 
                 match self {
@@ -724,7 +726,7 @@ disjoint_impls! {
                     }
                     Err(err) => AbiResultErr(encode_ref_field(err, store.insert(Default::default())), PhantomData),
                 }
-            })
+            })})
         }
     }
 
@@ -806,7 +808,7 @@ unsafe impl<'a, R: ReprC, __Interior: ExclusiveKind> SoftEncodeRefUnchecked<'a>
     for crate::vec::Vec<R>
 where
     &'a Self: crate::ReprC<CType = crate::reference::abi::SoftRef<<Self as ReprC>::CType>>,
-    Self: ReprC<CType = crate::marker::Stable<AbiVec<<R as ReprC>::CType>>>,
+    Self: ReprC<CType = AbiVec<<R as ReprC>::CType>>,
     <R as ReprC>::CType: Copy,
     Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin> + 'a,
     &'a R: EncodeMoveUnchecked + ReprC<CType = SoftRef<<R as ReprC>::CType>>,
@@ -826,9 +828,7 @@ where
         store.encode(|fields| {
             let store = fields;
 
-            store
-                .encode(|stores| unsafe { encode_vec_unchecked(self, self.capacity(), stores) })
-                .into()
+            store.encode(|stores| unsafe { encode_vec_unchecked(self, self.capacity(), stores) })
         })
     }
 }
@@ -838,8 +838,7 @@ unsafe impl<'a, T: ReprC<CType: CType + Copy + Sized>, __Interior: ExclusiveKind
     for crate::vec::Vec<T>
 where
     &'a Self: crate::ReprC<CType = crate::reference::abi::SoftRef<<Self as ReprC>::CType>>,
-    Self: crate::convert::SoftEncodeRefUnchecked<'a>
-        + ReprC<CType = crate::marker::Stable<AbiVec<<T as ReprC>::CType>>>,
+    Self: crate::convert::SoftEncodeRefUnchecked<'a> + ReprC<CType = AbiVec<<T as ReprC>::CType>>,
     Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin> + 'a,
     &'a T: EncodeMove + ReprC<CType = SoftRef<<T as ReprC>::CType>>,
 {
@@ -856,9 +855,7 @@ where
         store.encode(|fields| {
             let store = fields;
 
-            store
-                .encode(|stores| encode_vec(self, self.capacity(), stores))
-                .into()
+            store.encode(|stores| encode_vec(self, self.capacity(), stores))
         })
     }
 }
@@ -1111,11 +1108,11 @@ macro_rules! impl_buffer_shared {
 impl_buffer_shared!(
     alloc::string::String,
     |value: &alloc::string::String| unsafe {
-        crate::string::abi::String(AbiVec::from_raw_parts(
+        Native(crate::string::abi::String(AbiVec::from_raw_parts(
             value.as_ptr().cast_mut(),
             value.len(),
             value.capacity(),
-        ))
+        )))
     }
 );
 #[cfg(feature = "alloc")]
@@ -1288,13 +1285,13 @@ mod tests {
         let value = Record((13_u32,));
         let mut store = Default::default();
         let encoded = co3::soft_encode(&value, &mut store);
-        assert_eq!(unsafe { (*encoded.as_ptr()).0.0 }, 13);
+        assert_eq!(unsafe { (*encoded.as_ptr()).0.0.0 }, 13);
         assert_eq!(store.sync(), Some(()));
 
         let value = Projected((17,));
         let mut store = Default::default();
         let encoded = unsafe { co3::soft_encode_unchecked(&value, &mut store) };
-        assert_eq!(unsafe { (*encoded.as_ptr()).0.0 }, 17);
+        assert_eq!(unsafe { (*encoded.as_ptr()).0.0.0 }, 17);
         assert_eq!(store.sync(), Some(()));
     }
 
@@ -1309,7 +1306,7 @@ mod tests {
             values.as_ptr()
         );
         assert_eq!(header.len(), 2);
-        assert_eq!(unsafe { (*header.as_ptr()).0 }, 19);
+        assert_eq!(unsafe { (*header.as_ptr()).0.0 }, 19);
         assert_eq!(store.sync(), Some(()));
         assert_eq!(values, [(19,), (23,)]);
     }
@@ -1431,7 +1428,7 @@ mod tests {
         assert_eq!(fields.values.as_ptr().cast_const(), value.values.as_ptr());
         assert_eq!(fields.text.as_ptr().cast_const(), value.text.as_ptr());
         assert_eq!(fields.text.capacity(), value.text.capacity());
-        assert_eq!(unsafe { (*fields.boxed.as_ptr()).0 }, 43);
+        assert_eq!(unsafe { (*fields.boxed.as_ptr()).0.0 }, 43);
         assert_eq!(store.sync(), Some(()));
         assert_eq!(value.values[0].0, 41);
 
@@ -1449,7 +1446,7 @@ mod tests {
         let mut store = Default::default();
         let encoded = co3::soft_encode(&value, &mut store);
         assert_eq!(
-            unsafe { (*encoded.as_ptr()).0.as_ptr().cast_const() },
+            unsafe { (*encoded.as_ptr()).0.0.as_ptr().cast_const() },
             value.0.as_ptr()
         );
         assert_eq!(store.sync(), Some(()));
@@ -1467,7 +1464,7 @@ mod tests {
         let mut store = Default::default();
         let header = co3::soft_encode(&value, &mut store);
         let header = unsafe { &*header.as_ptr() };
-        assert_eq!(header.0.as_ptr().cast_const(), pointer);
+        assert_eq!(header.0.0.as_ptr().cast_const(), pointer);
         assert_eq!(store.sync(), Some(()));
 
         let Some(value) = value else { unreachable!() };
@@ -1475,7 +1472,7 @@ mod tests {
         let mut store = Default::default();
         let header = co3::soft_encode(&value, &mut store);
         let header = unsafe { &*header.as_ptr() };
-        assert_eq!(header.0.as_ptr().cast_const(), pointer);
+        assert_eq!(header.0.0.as_ptr().cast_const(), pointer);
         assert_eq!(store.sync(), Some(()));
 
         let Ok(value) = value else { unreachable!() };
@@ -1494,17 +1491,17 @@ mod tests {
         let mut store = Default::default();
         let encoded = co3::soft_encode(&values, &mut store);
         let header = unsafe { &*encoded.as_ptr() };
-        assert_eq!(unsafe { (*header.as_ptr()).0 }, 59);
+        assert_eq!(unsafe { (*header.as_ptr()).0.0 }, 59);
         assert_eq!(store.sync(), Some(()));
 
         let mut store = Default::default();
         let encoded = unsafe { co3::soft_encode_unchecked(&values, &mut store) };
-        assert_eq!(unsafe { (*(*encoded.as_ptr()).as_ptr()).0 }, 59);
+        assert_eq!(unsafe { (*(*encoded.as_ptr()).as_ptr()).0.0 }, 59);
         assert_eq!(store.sync(), Some(()));
         let boxed = values.into_boxed_slice();
         let mut store = Default::default();
         let encoded = co3::soft_encode(&boxed, &mut store);
-        assert_eq!(unsafe { (*(*encoded.as_ptr()).as_ptr()).0 }, 59);
+        assert_eq!(unsafe { (*(*encoded.as_ptr()).as_ptr()).0.0 }, 59);
         assert_eq!(store.sync(), Some(()));
     }
 
@@ -1578,7 +1575,7 @@ mod tests {
 
         let _ = co3::soft_encode(&Ok::<_, ()>(core::num::NonZeroU8::new(1).unwrap()), &mut ());
         let encoded = co3::soft_encode(&Err::<core::num::NonZeroU8, _>(()), &mut ());
-        assert_eq!(unsafe { *encoded.as_ptr() }.0.0, 0);
+        assert_eq!(unsafe { *encoded.as_ptr() }.0.0.0, 0);
         assert_eq!(().sync(), Some(()));
     }
 
@@ -1589,7 +1586,10 @@ mod tests {
         let mut store = Default::default();
         let header = co3::soft_encode(&boxed, &mut store);
         let header = unsafe { &*header.as_ptr() };
-        assert_eq!(unsafe { (*header.as_ptr()).0.as_ptr() }, &value as *const _);
+        assert_eq!(
+            unsafe { (*header.as_ptr()).0.0.as_ptr() },
+            &value as *const _
+        );
         assert_eq!(store.sync(), Some(()));
     }
 
@@ -1663,7 +1663,7 @@ mod tests {
         let tuple = (113_u32,);
         let mut store = Default::default();
         let encoded = unsafe { co3::soft_encode_unchecked(&tuple, &mut store) };
-        assert_eq!(unsafe { (*encoded.as_ptr()).0 }, 113);
+        assert_eq!(unsafe { (*encoded.as_ptr()).0.0 }, 113);
         assert_eq!(store.sync(), Some(()));
     }
 
@@ -1740,7 +1740,7 @@ mod tests {
         let encoded = unsafe { co3::soft_encode_unchecked(values.as_slice(), &mut store) };
         assert_eq!(encoded.metadata(), 2);
         assert_eq!(
-            unsafe { (*encoded.as_ptr()).0.as_ptr().cast_const() },
+            unsafe { (*encoded.as_ptr()).0.0.as_ptr().cast_const() },
             original
         );
         assert_eq!(store.sync(), Some(()));

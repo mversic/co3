@@ -1,4 +1,5 @@
 //! C-compatible representation of [`core::result::Result`].
+use crate::marker::Native;
 use core::{marker::PhantomData, mem::MaybeUninit, ops::Add};
 
 use rust_spec::{
@@ -37,7 +38,7 @@ impl<T, E> From<core::result::Result<T, E>> for Result<T, E> {
 }
 
 impl<T: ReprC<CType: Copy>, E: ReprC<CType: Copy>> ReprC for Result<T, E> {
-    type CType = crate::marker::Stable<abi::Result<T::CType, E::CType>>;
+    type CType = abi::Result<T::CType, E::CType>;
 }
 
 macro_rules! result_codecs {
@@ -59,17 +60,13 @@ macro_rules! result_codecs {
                         let Ok(inner) = store.insert(Ok(Default::default())) else {
                             unreachable!()
                         };
-                        crate::marker::Stable(abi::Result::Ok(unsafe {
-                            value.soft_encode_unchecked(inner)
-                        }))
+                        abi::Result::Ok(unsafe { value.soft_encode_unchecked(inner) })
                     }
                     Self::Err(value) => {
                         let Err(inner) = store.insert(Err(Default::default())) else {
                             unreachable!()
                         };
-                        crate::marker::Stable(abi::Result::Err(unsafe {
-                            value.soft_encode_unchecked(inner)
-                        }))
+                        abi::Result::Err(unsafe { value.soft_encode_unchecked(inner) })
                     }
                 }
             }
@@ -86,13 +83,13 @@ macro_rules! result_codecs {
                         let Ok(inner) = store.insert(Ok(Default::default())) else {
                             unreachable!()
                         };
-                        crate::marker::Stable(abi::Result::Ok($encode::soft_encode(value, inner)))
+                        abi::Result::Ok($encode::soft_encode(value, inner))
                     }
                     Self::Err(value) => {
                         let Err(inner) = store.insert(Err(Default::default())) else {
                             unreachable!()
                         };
-                        crate::marker::Stable(abi::Result::Err($encode::soft_encode(value, inner)))
+                        abi::Result::Err($encode::soft_encode(value, inner))
                     }
                 }
             }
@@ -106,7 +103,7 @@ macro_rules! result_codecs {
                 source: Self::CType,
                 store: &'a mut Self::Store,
             ) -> Option<Self> {
-                match source.0.into_result()? {
+                match source.into_result()? {
                     Ok(value) => {
                         let Ok(inner) = store.insert(Ok(Default::default())) else {
                             unreachable!()
@@ -126,7 +123,7 @@ macro_rules! result_codecs {
                 source: Self::CType,
                 store: &'a mut Self::Store,
             ) -> Self {
-                match unsafe { source.0.into_result().unwrap_unchecked() } {
+                match unsafe { source.into_result().unwrap_unchecked() } {
                     Ok(value) => {
                         let Ok(inner) = store.insert(Ok(Default::default())) else {
                             unreachable!()
@@ -169,9 +166,7 @@ const _: () = {
                     let Ok(inner_owner) = owner.insert(Ok(Default::default())) else {
                         unreachable!()
                     };
-                    crate::marker::Stable(abi::Result::Ok(unsafe {
-                        value.soft_encode_unchecked(inner, inner_owner)
-                    }))
+                    abi::Result::Ok(unsafe { value.soft_encode_unchecked(inner, inner_owner) })
                 }
                 Self::Err(value) => {
                     let Err(inner) = store.insert(Err(Default::default())) else {
@@ -180,9 +175,7 @@ const _: () = {
                     let Err(inner_owner) = owner.insert(Err(Default::default())) else {
                         unreachable!()
                     };
-                    crate::marker::Stable(abi::Result::Err(unsafe {
-                        value.soft_encode_unchecked(inner, inner_owner)
-                    }))
+                    abi::Result::Err(unsafe { value.soft_encode_unchecked(inner, inner_owner) })
                 }
             }
         }
@@ -208,11 +201,7 @@ const _: () = {
                     let Ok(inner_owner) = owner.insert(Ok(Default::default())) else {
                         unreachable!()
                     };
-                    crate::marker::Stable(abi::Result::Ok(BorrowedEncode::soft_encode(
-                        value,
-                        inner,
-                        inner_owner,
-                    )))
+                    abi::Result::Ok(BorrowedEncode::soft_encode(value, inner, inner_owner))
                 }
                 Self::Err(value) => {
                     let Err(inner) = store.insert(Err(Default::default())) else {
@@ -221,11 +210,7 @@ const _: () = {
                     let Err(inner_owner) = owner.insert(Err(Default::default())) else {
                         unreachable!()
                     };
-                    crate::marker::Stable(abi::Result::Err(BorrowedEncode::soft_encode(
-                        value,
-                        inner,
-                        inner_owner,
-                    )))
+                    abi::Result::Err(BorrowedEncode::soft_encode(value, inner, inner_owner))
                 }
             }
         }
@@ -239,7 +224,7 @@ const _: () = {
             source: Self::CType,
             store: &'a mut Self::Store,
         ) -> Option<Self> {
-            match source.0.into_result()? {
+            match source.into_result()? {
                 Ok(value) => {
                     let Ok(inner) = store.insert(Ok(Default::default())) else {
                         unreachable!()
@@ -259,7 +244,7 @@ const _: () = {
             source: Self::CType,
             store: &'a mut Self::Store,
         ) -> Self {
-            match unsafe { source.0.into_result().unwrap_unchecked() } {
+            match unsafe { source.into_result().unwrap_unchecked() } {
                 Ok(value) => {
                     let Ok(inner) = store.insert(Ok(Default::default())) else {
                         unreachable!()
@@ -307,17 +292,13 @@ where
                 let Ok(inner) = fields.insert(Ok(Default::default())) else {
                     unreachable!()
                 };
-                crate::marker::Stable(abi::Result::Ok(unsafe {
-                    crate::stored::encode_ref_field_unchecked(value, inner)
-                }))
+                abi::Result::Ok(unsafe { crate::stored::encode_ref_field_unchecked(value, inner) })
             }
             Self::Err(value) => {
                 let Err(inner) = fields.insert(Err(Default::default())) else {
                     unreachable!()
                 };
-                crate::marker::Stable(abi::Result::Err(unsafe {
-                    crate::stored::encode_ref_field_unchecked(value, inner)
-                }))
+                abi::Result::Err(unsafe { crate::stored::encode_ref_field_unchecked(value, inner) })
             }
         })
     }
@@ -350,17 +331,13 @@ where
                 let Ok(inner) = fields.insert(Ok(Default::default())) else {
                     unreachable!()
                 };
-                crate::marker::Stable(abi::Result::Ok(crate::stored::encode_ref_field(
-                    value, inner,
-                )))
+                abi::Result::Ok(crate::stored::encode_ref_field(value, inner))
             }
             Self::Err(value) => {
                 let Err(inner) = fields.insert(Err(Default::default())) else {
                     unreachable!()
                 };
-                crate::marker::Stable(abi::Result::Err(crate::stored::encode_ref_field(
-                    value, inner,
-                )))
+                abi::Result::Err(crate::stored::encode_ref_field(value, inner))
             }
         })
     }
@@ -390,7 +367,7 @@ unsafe impl<T: AbiCompatible<CType: Copy>, E: AbiCompatible<CType: Copy>> AbiCom
 }
 
 impl<T: ReprC<CType: Copy>, E: ReprC<CType: Copy>> crate::niche::Niche for Result<T, E> {
-    const NICHE: Self::CType = crate::marker::Stable(abi::Result::niche());
+    const NICHE: Self::CType = abi::Result::niche();
 
     fn is_niche(value: &Self::CType) -> bool {
         value.is_niche()
@@ -398,19 +375,19 @@ impl<T: ReprC<CType: Copy>, E: ReprC<CType: Copy>> crate::niche::Niche for Resul
 }
 
 /// A transparent `Ok` payload with no Rust result discriminant.
-/// Lowers to `crate::marker::Stable<abi::ResultOk<T::CType, ()>>` and preserves the payload's validity requirements.
+/// Lowers to `abi::ResultOk<T::CType, ()>` and preserves the payload's validity requirements.
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, RustSpec)]
 pub struct ResultOk<T>(pub T);
 
 /// A transparent `Err` payload with no Rust result discriminant.
-/// Lowers to `crate::marker::Stable<abi::ResultErr<(), E::CType>>` and preserves the payload's validity requirements.
+/// Lowers to `abi::ResultErr<(), E::CType>` and preserves the payload's validity requirements.
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, RustSpec)]
 pub struct ResultErr<E>(pub E);
 
-crate::option::impl_niche_payload!(ResultOk => crate::marker::Stable<abi::ResultOk<T::CType, ()>>);
-crate::option::impl_niche_payload!(ResultErr => crate::marker::Stable<abi::ResultErr<(), T::CType>>);
+crate::option::impl_niche_payload!(ResultOk => abi::ResultOk<T::CType, ()>);
+crate::option::impl_niche_payload!(ResultErr => abi::ResultErr<(), T::CType>);
 
 impl<T, E> From<Result<T, E>> for core::result::Result<T, E> {
     fn from(value: Result<T, E>) -> Self {
@@ -450,9 +427,9 @@ impl<'d, R: Decode<'d>, E: Decode<'d>> Decode<'d> for core::result::Result<R, E>
 impl<R: ReprC<CType: Copy>, E: ReprC<CType: Copy>> crate::niche::Niche
     for core::result::Result<R, E>
 where
-    Self: ReprC<CType = abi::Result<<R as ReprC>::CType, <E as ReprC>::CType>>,
+    Self: ReprC<CType = Native<abi::Result<<R as ReprC>::CType, <E as ReprC>::CType>>>,
 {
-    const NICHE: Self::CType = abi::Result::niche();
+    const NICHE: Self::CType = Native(abi::Result::niche());
 
     fn is_niche(value: &Self::CType) -> bool {
         value.is_niche()
@@ -464,7 +441,7 @@ pub mod abi {
     macro_rules! niche_result_carrier {
     ($name:ident, $payload:ident, $other:ident, [$($generics:tt)*], $description:literal) => {
         #[doc = $description]
-        /// The co3 source wraps this carrier in [`crate::marker::Stable`].
+        /// CO3 sources select this carrier directly.
         /// Co3 payload wrappers use `()` as the marker for the other arm.
         #[repr(transparent)]
         #[derive(RustSpec)]
@@ -579,7 +556,7 @@ pub mod abi {
 
     /// FFI-safe equivalent of [`core::result::Result`].
     /// `T` and `E` are lowered payload types stored directly in the union.
-    /// Co3 sources select [`crate::marker::Stable<Self>`]; native Rust sources select this carrier directly.
+    /// CO3 sources select this carrier directly; native tagged or container sources wrap it in `Native`.
     #[repr(C)]
     #[doc(hidden)]
     pub union Result<T: CType + Copy, E: CType + Copy> {

@@ -9,6 +9,7 @@ use core::{
     marker::PhantomData,
     ptr::NonNull,
 };
+use rust_spec::Unstable;
 
 use rust_spec::{
     RustSpec,
@@ -271,14 +272,14 @@ macro_rules! impl_non_null_wide {
         where
             R: ReprC<CType: Wide<Header: CType + WideHeader<Data: CType>>> + Wide + ?Sized,
         {
-            type CType = crate::marker::Stable<abi::$carrier<$($lifetime,)? R::CType>>;
+            type CType = abi::$carrier<$($lifetime,)? R::CType>;
         }
 
         impl<$($lifetime,)? R> crate::niche::Niche for $direct<$($lifetime,)? R>
         where
             R: ReprC<CType: Wide<Header: CType + WideHeader<Data: CType>>> + Wide + ?Sized,
         {
-            const NICHE: Self::CType = crate::marker::Stable(abi::$carrier::null());
+            const NICHE: Self::CType = abi::$carrier::null();
 
             fn is_niche(value: &Self::CType) -> bool {
                 value.data.is_null()
@@ -292,7 +293,7 @@ macro_rules! impl_non_null_wide {
         unsafe impl<$($lifetime,)? R> EncodeMoveUnchecked for $direct<$($lifetime,)? R>
         where
             R: CType + ReprC<CType = R> + Wide<Header: CType + WideHeader<Data: CType>> + ?Sized,
-            Self: ReprC<CType = crate::marker::Stable<abi::$carrier<$($lifetime,)? <R as ReprC>::CType>>>,
+            Self: ReprC<CType = abi::$carrier<$($lifetime,)? <R as ReprC>::CType>>,
         {
             type SoftStore = ();
 
@@ -301,18 +302,18 @@ macro_rules! impl_non_null_wide {
                 Self: 'itm,
             {
                 let value = core::mem::ManuallyDrop::new(self);
-                crate::marker::Stable(abi::$carrier {
+                abi::$carrier {
                     data: value.data.as_ptr(),
                     metadata: value.metadata,
                     $(lifetime: PhantomData::<&$lifetime ()>,)?
-                })
+                }
             }
         }
 
         unsafe impl<$($lifetime,)? R> EncodeMove for $direct<$($lifetime,)? R>
         where
             R: CType + ReprC<CType = R> + Wide<Header: CType + WideHeader<Data: CType>> + ?Sized,
-            Self: ReprC<CType = crate::marker::Stable<abi::$carrier<$($lifetime,)? <R as ReprC>::CType>>>,
+            Self: ReprC<CType = abi::$carrier<$($lifetime,)? <R as ReprC>::CType>>,
         {
             type Store = ();
 
@@ -327,7 +328,7 @@ macro_rules! impl_non_null_wide {
         unsafe impl<'d, $($lifetime,)? R> DecodeMove<'d> for $direct<$($lifetime,)? R>
         where
             R: CType + ReprC<CType = R> + Wide<Header: CType + WideHeader<Data: CType>> + ?Sized,
-            Self: ReprC<CType = crate::marker::Stable<abi::$carrier<$($lifetime,)? <R as ReprC>::CType>>>,
+            Self: ReprC<CType = abi::$carrier<$($lifetime,)? <R as ReprC>::CType>>,
         {
             type Store = ();
 
@@ -560,7 +561,7 @@ where
         <R::Metadata as RustSpec>::__Alignment,
     >;
     type Trap = rust_spec::layout::NonRobust;
-    type Niche = rust_spec::niche::WithNiche<rust_spec::Unstable>;
+    type Niche = rust_spec::niche::WithNiche<Unstable>;
     type Drop = rust_spec::drop::CustomDrop<rust_spec::drop::AutoDrop>;
     type Mutability =
         <<R::Mutability as rust_spec::mutability::PointerMutability>::Output as core::ops::Add<
@@ -760,7 +761,7 @@ pub mod abi {
 
     /// Shared reference to a C-compatible wide pointee.
     ///
-    /// A null data pointer is the niche. Co3 sources wrap this carrier in [`crate::marker::Stable`].
+    /// A null data pointer is the niche. CO3 sources select this carrier directly.
     #[derive(RustSpec)]
     #[repr(C)]
     #[doc(hidden)]
@@ -772,7 +773,7 @@ pub mod abi {
 
     /// Wide carrier with a writable data pointer.
     ///
-    /// Co3 exclusive wide references wrap this carrier in [`crate::marker::Stable`].
+    /// CO3 exclusive wide references select this carrier directly.
     /// Native exclusive wide references use the bare `WideRef` carrier.
     #[derive(RustSpec)]
     #[repr(C)]
@@ -1134,7 +1135,7 @@ pub mod abi {
     /// Owned wide pointee with a defined C ABI layout.
     ///
     /// If the data pointer is set to `null`, the struct represents an absent box.
-    /// The direct `WideBox` source wraps this carrier in [`crate::marker::Stable`].
+    /// The direct `WideBox` source selects this carrier directly.
     #[derive(RustSpec)]
     #[repr(C)]
     #[doc(hidden)]
@@ -1230,6 +1231,8 @@ pub mod abi {
 
 #[cfg(test)]
 pub(crate) mod tests {
+    use rust_spec::Unstable;
+
     #[cfg(all(feature = "derive", feature = "alloc"))]
     #[test]
     fn box_tail_does_not_generate_wide_headers() {
@@ -1335,11 +1338,9 @@ pub(crate) mod tests {
         use crate::{ReprC, niche::Niche};
 
         type Source = WideRef<'static, [(u8,)]>;
-        type Carrier = crate::marker::Stable<abi::SoftWideRef<<[(u8,)] as crate::ReprC>::CType>>;
+        type Carrier = abi::SoftWideRef<<[(u8,)] as crate::ReprC>::CType>;
         static_assertions::assert_type_eq_all!(<Source as ReprC>::CType, Carrier);
-        assert!(Source::is_niche(&crate::marker::Stable(
-            abi::SoftWideRef::null()
-        )));
+        assert!(Source::is_niche(&abi::SoftWideRef::null()));
     }
 
     #[test]
@@ -1350,11 +1351,11 @@ pub(crate) mod tests {
         type Unstable = WideRefMut<'static, [(u8,)]>;
         static_assertions::assert_type_eq_all!(
             <Stable as ReprC>::CType,
-            crate::marker::Stable<abi::SoftWideRefMut<<[bool] as crate::ReprC>::CType>>
+            abi::SoftWideRefMut<<[bool] as crate::ReprC>::CType>
         );
         static_assertions::assert_type_eq_all!(
             <Unstable as ReprC>::CType,
-            crate::marker::Stable<abi::SoftWideRefMut<<[(u8,)] as crate::ReprC>::CType>>
+            abi::SoftWideRefMut<<[(u8,)] as crate::ReprC>::CType>
         );
         assert!(Stable::is_niche(&<Stable as Niche>::NICHE));
         assert!(Unstable::is_niche(&<Unstable as Niche>::NICHE));
@@ -1362,9 +1363,9 @@ pub(crate) mod tests {
 
     #[test]
     fn direct_wide_references_preserve_the_pointee_and_metadata() {
-        assert_impl_all!(WideRef<'static, Custom>: Copy, crate::ReprC<CType = crate::marker::Stable<super::abi::WideRef<'static, <Custom as crate::ReprC>::CType>>>);
+        assert_impl_all!(WideRef<'static, Custom>: Copy, crate::ReprC<CType = super::abi::WideRef<'static, <Custom as crate::ReprC>::CType>>);
         assert_not_impl_any!(WideRef<'static, Custom>: CType);
-        assert_impl_all!(WideRefMut<'static, Custom>: crate::ReprC<CType = crate::marker::Stable<super::abi::WideRefMut<'static, <Custom as crate::ReprC>::CType>>>);
+        assert_impl_all!(WideRefMut<'static, Custom>: crate::ReprC<CType = super::abi::WideRefMut<'static, <Custom as crate::ReprC>::CType>>);
         assert_not_impl_any!(WideRefMut<'static, Custom>: Copy);
         assert_not_impl_any!(WideRef<'static, [bool]>: CType);
 
@@ -1379,11 +1380,10 @@ pub(crate) mod tests {
                 marker: 7
             }
         );
-        let null =
-            crate::marker::Stable(super::abi::WideRef::<<Custom as crate::ReprC>::CType>::null());
+        let null = super::abi::WideRef::<<Custom as crate::ReprC>::CType>::null();
         assert!(unsafe { crate::decode::<WideRef<'_, Custom>>(null) }.is_none());
         let absent = crate::encode(None::<WideRef<'_, Custom>>);
-        assert!(absent.0.as_ptr().is_null());
+        assert!(absent.0.0.as_ptr().is_null());
         assert_eq!(
             unsafe { crate::decode::<Option<WideRef<'_, Custom>>>(absent) }
                 .map(|value| value.is_none()),
@@ -1393,9 +1393,7 @@ pub(crate) mod tests {
         let decoded = unsafe { crate::decode::<WideRef<'_, Custom>>(encoded) }.unwrap();
         assert_eq!(&unsafe { decoded.into_ref() }.0, &values);
 
-        let null = crate::marker::Stable(
-            super::abi::WideRefMut::<<Custom as crate::ReprC>::CType>::null(),
-        );
+        let null = super::abi::WideRefMut::<<Custom as crate::ReprC>::CType>::null();
         assert!(unsafe { crate::decode::<WideRefMut<'_, Custom>>(null) }.is_none());
 
         let exclusive = WideRefMut::<Custom>::from_mut(unsafe {
@@ -1422,11 +1420,11 @@ pub(crate) mod tests {
     fn direct_wide_box_transfers_the_original_allocation() {
         use super::WideBox;
 
-        assert_impl_all!(WideBox<[u8]>: crate::ReprC<CType = crate::marker::Stable<abi::WideBox<[u8]>>>);
+        assert_impl_all!(WideBox<[u8]>: crate::ReprC<CType = abi::WideBox<[u8]>>);
         assert_impl_all!(WideBox<[u8]>: rust_spec::RustSpec<
-            Niche = rust_spec::niche::WithNiche<rust_spec::Unstable>,
+            Niche = rust_spec::niche::WithNiche<Unstable>,
         >);
-        assert_impl_all!(Option<WideBox<[u8]>>: rust_spec::RustSpec<Layout = rust_spec::Unstable>);
+        assert_impl_all!(Option<WideBox<[u8]>>: rust_spec::RustSpec<Layout = Unstable>);
         assert_not_impl_any!(WideBox<[u8]>: Copy);
         assert_not_impl_any!(WideBox<[bool]>: CType);
 
@@ -1452,7 +1450,7 @@ pub(crate) mod tests {
         assert_ne!(text.as_ptr(), owned.as_ptr());
         assert_eq!(&*unsafe { owned.into_box() }, "wide");
 
-        let null = crate::marker::Stable(abi::WideBox::<[u8]>::null());
+        let null = abi::WideBox::<[u8]>::null();
         assert!(unsafe { crate::decode::<WideBox<[u8]>>(null) }.is_none());
         let source = alloc::vec![1_u8, 2].into_boxed_slice();
         let address = source.as_ptr();

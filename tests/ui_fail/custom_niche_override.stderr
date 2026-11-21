@@ -5,7 +5,7 @@ error[E0271]: type mismatch resolving `<(NonZero<u8>,) as RustSpec>::Niche == Wi
   |                    ^^^^^ expected `WithoutNiche`, found `WithNiche<Stable>`
   |
   = note: expected enum `WithoutNiche`
-           found struct `WithNiche<rust_spec::Stable>`
+           found struct `WithNiche<Stable>`
   = note: this error originates in the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0271]: type mismatch resolving `<CustomNicheRequiresUnstable as RustSpec>::Niche == WithNiche<Unstable>`

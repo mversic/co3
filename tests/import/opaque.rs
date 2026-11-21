@@ -184,5 +184,5 @@ fn owned_handle_has_null_niche() {
     let decoded = unsafe { co3::soft_decode::<Option<OwnedOpaqueStruct>>(raw, &mut None) }
         .expect("valid carrier")
         .expect("non-null handle");
-    assert_eq!(core::ptr::from_ref(&*decoded).cast_mut(), raw.0);
+    assert_eq!(core::ptr::from_ref(&*decoded).cast_mut(), raw.0.0);
 }

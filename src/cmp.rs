@@ -334,6 +334,8 @@ pub mod abi {
 
 #[cfg(test)]
 mod tests {
+    use crate::marker::Native;
+
     use static_assertions::{assert_impl_all, assert_type_eq_all};
 
     use super::*;
@@ -419,9 +421,9 @@ mod tests {
             unsafe { decode::<Reverse<bool>>(core::cmp::Reverse(co3::primitive::abi::bool(2))) },
             None
         );
-        let none: AbiOptionSome<<Reverse<bool> as crate::ReprC>::CType> =
+        let none: Native<AbiOptionSome<<Reverse<bool> as crate::ReprC>::CType>> =
             encode(None::<Reverse<bool>>);
-        assert!(<Reverse<bool> as Niche>::is_niche(&none.0));
+        assert!(<Reverse<bool> as Niche>::is_niche(&none.0.0));
     }
 
     #[cfg(feature = "alloc")]

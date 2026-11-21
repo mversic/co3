@@ -475,6 +475,8 @@ pub mod abi {
 
 #[cfg(test)]
 mod tests {
+    use crate::marker::Native;
+
     use core::cell::UnsafeCell;
 
     use static_assertions::assert_impl_all;
@@ -513,7 +515,7 @@ mod tests {
         );
         static_assertions::assert_type_eq_all!(
             <&'static UnsafeCell<(u32, u32)> as ReprC>::CType,
-            SoftRef<UnsafeCell<crate::tuple::abi::Tuple2<u32, u32>>>
+            SoftRef<UnsafeCell<Native<crate::tuple::abi::Tuple2<u32, u32>>>>
         );
         static_assertions::assert_type_eq_all!(
             <&'static mut bool as ReprC>::CType,

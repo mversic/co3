@@ -20,6 +20,10 @@ Cross-language Rust interop through a stable ABI
 
 Check the [release article](https://mversic.github.io/co3/) for the motivation behind `CO3` and in-depth analysis of its features.
 
+## Stable Intermediate Representation
+
+CO3 lowers Rust declarations into SIR (Stable Intermediate Representation), which specifies a compiler-independent Rust interface with a stable ABI. SIR gives binding generators for any language a common interface of lowered types, declarations, and ownership information. [Read the SIR specification](SIR.md).
+
 ## ABI Stability
 
 Although this crate is pre-1.0.0, its **ABI is considered stable**. This does not imply the API (aside from declaration syntax) of this crate is stable. In practice:

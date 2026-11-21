@@ -1,5 +1,6 @@
 //! Stable UTF-8 strings and their C-compatible representation.
 
+use crate::marker::Native;
 use alloc::{boxed::Box, vec::Vec};
 use core::ptr::NonNull;
 
@@ -108,7 +109,7 @@ impl core::str::FromStr for String {
     }
 }
 impl ReprC for String {
-    type CType = crate::marker::Stable<abi::String>;
+    type CType = abi::String;
 }
 unsafe impl AbiCompatible for String {}
 unsafe impl AbiCompatibleValidate for String {
@@ -130,7 +131,7 @@ unsafe impl EncodeMoveUnchecked for String {
     where
         Self: 'itm,
     {
-        crate::marker::Stable(abi::String::from_string(self.into()))
+        abi::String::from_string(self.into())
     }
 }
 unsafe impl EncodeMove for String {
@@ -139,25 +140,27 @@ unsafe impl EncodeMove for String {
     where
         Self: 'itm,
     {
-        crate::marker::Stable(abi::String::from_string(self.into()))
+        abi::String::from_string(self.into())
     }
 }
 unsafe impl<'d> DecodeMove<'d> for String {
     type Store = ();
     unsafe fn soft_decode<'itm: 'd>(source: Self::CType, _: &'itm mut ()) -> Option<Self> {
-        unsafe { <alloc::string::String as DecodeMove>::soft_decode(source.0, &mut ()) }
+        unsafe { <alloc::string::String as DecodeMove>::soft_decode(Native(source), &mut ()) }
             .map(Self::from)
     }
     unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, _: &'itm mut ()) -> Self {
-        unsafe { <alloc::string::String as DecodeMove>::soft_decode_unchecked(source.0, &mut ()) }
-            .into()
+        unsafe {
+            <alloc::string::String as DecodeMove>::soft_decode_unchecked(Native(source), &mut ())
+        }
+        .into()
     }
 }
 impl Encode for String {}
 impl crate::convert::EncodeUnchecked for String {}
 impl Decode<'_> for String {}
 impl Niche for String {
-    const NICHE: Self::CType = crate::marker::Stable(abi::String::null());
+    const NICHE: Self::CType = abi::String::null();
     fn is_niche(value: &Self::CType) -> bool {
         value.as_ptr().is_null()
     }
@@ -173,13 +176,14 @@ unsafe impl BorrowedEncodeUnchecked for String {
     where
         Self: 'itm,
     {
-        crate::marker::Stable(unsafe {
+        unsafe {
             <alloc::string::String as BorrowedEncodeUnchecked>::soft_encode_unchecked(
                 self.into(),
                 store,
                 owner,
             )
-        })
+            .0
+        }
     }
 }
 unsafe impl BorrowedEncode for String {
@@ -192,22 +196,20 @@ unsafe impl BorrowedEncode for String {
     where
         Self: 'itm,
     {
-        crate::marker::Stable(<alloc::string::String as BorrowedEncode>::soft_encode(
-            self.into(),
-            store,
-            owner,
-        ))
+        <alloc::string::String as BorrowedEncode>::soft_encode(self.into(), store, owner).0
     }
 }
 unsafe impl<'d> BorrowedDecode<'d> for String {
     type Store = ();
     unsafe fn soft_decode<'itm: 'd>(source: Self::CType, store: &'itm mut ()) -> Option<Self> {
-        unsafe { <alloc::string::String as BorrowedDecode>::soft_decode(source.0, store) }
+        unsafe { <alloc::string::String as BorrowedDecode>::soft_decode(Native(source), store) }
             .map(Self::from)
     }
     unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, store: &'itm mut ()) -> Self {
-        unsafe { <alloc::string::String as BorrowedDecode>::soft_decode_unchecked(source.0, store) }
-            .into()
+        unsafe {
+            <alloc::string::String as BorrowedDecode>::soft_decode_unchecked(Native(source), store)
+        }
+        .into()
     }
 }
 
@@ -219,7 +221,7 @@ impl From<String> for alloc::string::String {
 }
 
 impl ReprC for alloc::string::String {
-    type CType = abi::String;
+    type CType = Native<abi::String>;
 }
 
 unsafe impl EncodeMove for alloc::string::String {
@@ -239,7 +241,7 @@ unsafe impl EncodeMoveUnchecked for alloc::string::String {
     where
         Self: 'itm,
     {
-        abi::String::from_string(self)
+        Native(abi::String::from_string(self))
     }
 }
 
@@ -247,12 +249,12 @@ unsafe impl<'d> DecodeMove<'d> for alloc::string::String {
     type Store = ();
 
     unsafe fn soft_decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
-        let bytes = unsafe { source.0.into_vec()? };
+        let bytes = unsafe { source.0.0.into_vec()? };
         Self::from_utf8(bytes).ok()
     }
 
     unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, (): &mut ()) -> Self {
-        let bytes = unsafe { source.0.into_vec().unwrap_unchecked() };
+        let bytes = unsafe { source.0.0.into_vec().unwrap_unchecked() };
         unsafe { Self::from_utf8_unchecked(bytes) }
     }
 }
@@ -262,7 +264,7 @@ impl crate::convert::EncodeUnchecked for alloc::string::String {}
 impl Decode<'_> for alloc::string::String {}
 
 impl Niche for alloc::string::String {
-    const NICHE: Self::CType = abi::String::null();
+    const NICHE: Self::CType = Native(abi::String::null());
 
     fn is_niche(value: &Self::CType) -> bool {
         value.as_ptr().is_null()
@@ -307,7 +309,7 @@ unsafe impl BorrowedEncodeUnchecked for alloc::string::String {
                 owner,
             )
         };
-        crate::string::abi::String(carrier)
+        Native(crate::string::abi::String(carrier.0))
     }
 }
 
@@ -323,7 +325,7 @@ unsafe impl BorrowedEncode for alloc::string::String {
         Self: 'itm,
     {
         let carrier = <Vec<u8> as BorrowedEncode>::soft_encode(self.into_bytes(), store, owner);
-        crate::string::abi::String(carrier)
+        Native(crate::string::abi::String(carrier.0))
     }
 }
 
@@ -402,6 +404,8 @@ unsafe impl<'d> BorrowedDecode<'d> for Box<str> {
 
 #[doc(hidden)]
 pub mod abi {
+    use crate::marker::Native;
+
     use super::{
         AbiCompatible, Box, CFnArg, CFnReturn, CType, Decode, DecodeMove, Encode, EncodeMove,
         EncodeMoveUnchecked, NonNull, OwnedBoxCarrier, ReprC, RustSpec, primitive_derive, vec,
@@ -460,6 +464,18 @@ pub mod abi {
             let bytes = bytes.into_boxed_slice();
             let len = bytes.len();
             unsafe { wide::abi::WideBox::from_raw_parts(Box::into_non_null(bytes).cast(), len) }
+        }
+    }
+
+    impl OwnedBoxCarrier<wide::abi::WideBox<<str as crate::ReprC>::CType>> for Native<String> {
+        unsafe fn from_box_carrier(
+            value: wide::abi::WideBox<<str as crate::ReprC>::CType>,
+        ) -> Option<Self> {
+            unsafe { String::from_box_carrier(value) }.map(Self)
+        }
+
+        unsafe fn into_box_carrier(self) -> wide::abi::WideBox<<str as crate::ReprC>::CType> {
+            unsafe { self.0.into_box_carrier() }
         }
     }
 }

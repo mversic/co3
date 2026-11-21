@@ -55,6 +55,7 @@ Any conversion written manually against traits of this crate **DOES NOT** consti
 A C-compatible companion type has a defined foreign representation and no trap representations, and its fields are themselves C-compatible companion types.
 
 - By default, the derive defines a C-compatible companion type and conversions between the two types.
+- A generated companion for `Name<T>` is named `NameCType<T>` and retains the original Rust parameters.
 - `#[repr_c(identity)]` uses a `#[repr(C)]` or `#[repr(transparent)]` type directly as its companion.
 - `#[repr_c(is_valid = |field0, ...| {...})]` provides additional validity invariant of a struct/variant.
 - `#[repr_c(NICHE = <expr>)]` defines the struct's trap value that is used for niche optimization.

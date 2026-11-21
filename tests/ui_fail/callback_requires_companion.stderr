@@ -16,9 +16,9 @@ error[E0277]: the trait bound `(): CFnArg` is not satisfied
              Cell<T>
              ManuallyDrop<T>
              MaybeUninit<T>
+             Native<T>
              NoRepr
              NoReprCType
-             OptionSome<T>
            and $N others
    = note: required for `extern "C" fn(())` to implement `ReprC`
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
@@ -87,7 +87,7 @@ error[E0271]: type mismatch resolving `<NoRepr as RustSpec>::Layout == Stable`
 16 | | }
    | |_^ type mismatch resolving `<NoRepr as RustSpec>::Layout == Stable`
    |
-note: expected this to be `rust_spec::Stable`
+note: expected this to be `Stable`
   --> tests/ui_fail/callback_requires_companion.rs:3:10
    |
  3 | #[derive(RustSpec, ReprC)]

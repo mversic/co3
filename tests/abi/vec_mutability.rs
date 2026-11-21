@@ -1,3 +1,4 @@
+use co3::marker::Native;
 use core::cell::Cell;
 
 #[test]
@@ -89,7 +90,7 @@ fn stable_vec_decode_checks_validity_before_reusing_allocation() {
     ]);
     let original = source.as_ptr().cast::<bool>();
     let mut store = ();
-    let decoded = unsafe { co3::soft_decode::<Vec<bool>>(source, &mut store) }.unwrap();
+    let decoded = unsafe { co3::soft_decode::<Vec<bool>>(Native(source), &mut store) }.unwrap();
     assert_eq!(decoded.as_ptr(), original);
     assert_eq!(decoded, [true, false]);
 
@@ -97,9 +98,12 @@ fn stable_vec_decode_checks_validity_before_reusing_allocation() {
         co3::primitive::abi::bool(1),
         co3::primitive::abi::bool(2),
     ]);
-    assert!(unsafe { co3::soft_decode::<Vec::<bool>>(invalid, &mut Default::default()) }.is_none());
     assert!(
-        unsafe { co3::soft_decode::<Vec::<bool>>(abi::Vec::null(), &mut Default::default()) }
+        unsafe { co3::soft_decode::<Vec<bool>>(Native(invalid), &mut Default::default()) }
+            .is_none()
+    );
+    assert!(
+        unsafe { co3::soft_decode::<Vec<bool>>(Native(abi::Vec::null()), &mut Default::default()) }
             .is_none()
     );
 
@@ -107,7 +111,7 @@ fn stable_vec_decode_checks_validity_before_reusing_allocation() {
         abi::Vec::<<bool as co3::ReprC>::CType>::from_vec(vec![co3::primitive::abi::bool(1)]);
     let original = source.as_ptr().cast::<bool>();
     let decoded =
-        unsafe { co3::soft_decode_unchecked::<Vec<bool>>(source, &mut Default::default()) };
+        unsafe { co3::soft_decode_unchecked::<Vec<bool>>(Native(source), &mut Default::default()) };
     assert_eq!(decoded.as_ptr(), original);
     assert_eq!(decoded, [true]);
 }

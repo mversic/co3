@@ -40,7 +40,7 @@ impl<T> From<core::option::Option<T>> for Option<T> {
 }
 
 impl<T: ReprC<CType: Sized>> ReprC for Option<T> {
-    type CType = crate::marker::Stable<abi::Option<T::CType>>;
+    type CType = abi::Option<T::CType>;
 }
 
 macro_rules! option_codecs {
@@ -58,11 +58,11 @@ macro_rules! option_codecs {
                 match self {
                     Self::None => {
                         *store = None;
-                        crate::marker::Stable(abi::Option::None())
+                        abi::Option::None()
                     }
-                    Self::Some(value) => crate::marker::Stable(abi::Option::Some(unsafe {
+                    Self::Some(value) => abi::Option::Some(unsafe {
                         value.soft_encode_unchecked(store.insert(Default::default()))
-                    })),
+                    }),
                 }
             }
         }
@@ -76,10 +76,11 @@ macro_rules! option_codecs {
                 match self {
                     Self::None => {
                         *store = None;
-                        crate::marker::Stable(abi::Option::None())
+                        abi::Option::None()
                     }
-                    Self::Some(value) => crate::marker::Stable(abi::Option::Some(
-                        $encode::soft_encode(value, store.insert(Default::default())),
+                    Self::Some(value) => abi::Option::Some($encode::soft_encode(
+                        value,
+                        store.insert(Default::default()),
                     )),
                 }
             }
@@ -91,7 +92,7 @@ macro_rules! option_codecs {
                 source: Self::CType,
                 store: &'a mut Self::Store,
             ) -> core::option::Option<Self> {
-                match source.0.into_option()? {
+                match source.into_option()? {
                     None => {
                         *store = None;
                         Some(Self::None)
@@ -106,7 +107,7 @@ macro_rules! option_codecs {
                 source: Self::CType,
                 store: &'a mut Self::Store,
             ) -> Self {
-                match unsafe { source.0.into_option().unwrap_unchecked() } {
+                match unsafe { source.into_option().unwrap_unchecked() } {
                     None => {
                         *store = None;
                         Self::None
@@ -138,14 +139,14 @@ const _: () = {
                 Self::None => {
                     *store = None;
                     *owner = None;
-                    crate::marker::Stable(abi::Option::None())
+                    abi::Option::None()
                 }
-                Self::Some(value) => crate::marker::Stable(abi::Option::Some(unsafe {
+                Self::Some(value) => abi::Option::Some(unsafe {
                     value.soft_encode_unchecked(
                         store.insert(Default::default()),
                         owner.insert(Default::default()),
                     )
-                })),
+                }),
             }
         }
     }
@@ -164,15 +165,13 @@ const _: () = {
                 Self::None => {
                     *store = None;
                     *owner = None;
-                    crate::marker::Stable(abi::Option::None())
+                    abi::Option::None()
                 }
-                Self::Some(value) => {
-                    crate::marker::Stable(abi::Option::Some(BorrowedEncode::soft_encode(
-                        value,
-                        store.insert(Default::default()),
-                        owner.insert(Default::default()),
-                    )))
-                }
+                Self::Some(value) => abi::Option::Some(BorrowedEncode::soft_encode(
+                    value,
+                    store.insert(Default::default()),
+                    owner.insert(Default::default()),
+                )),
             }
         }
     }
@@ -183,7 +182,7 @@ const _: () = {
             source: Self::CType,
             store: &'a mut Self::Store,
         ) -> core::option::Option<Self> {
-            match source.0.into_option()? {
+            match source.into_option()? {
                 None => {
                     *store = None;
                     Some(Self::None)
@@ -198,7 +197,7 @@ const _: () = {
             source: Self::CType,
             store: &'a mut Self::Store,
         ) -> Self {
-            match unsafe { source.0.into_option().unwrap_unchecked() } {
+            match unsafe { source.into_option().unwrap_unchecked() } {
                 None => {
                     *store = None;
                     Self::None
@@ -231,11 +230,11 @@ where
         store.encode(|fields| match self {
             Self::None => {
                 *fields = None;
-                crate::marker::Stable(abi::Option::None())
+                abi::Option::None()
             }
-            Self::Some(value) => crate::marker::Stable(abi::Option::Some(unsafe {
+            Self::Some(value) => abi::Option::Some(unsafe {
                 crate::stored::encode_ref_field_unchecked(value, fields.insert(Default::default()))
-            })),
+            }),
         })
     }
 }
@@ -259,10 +258,11 @@ where
         store.encode(|fields| match self {
             Self::None => {
                 *fields = None;
-                crate::marker::Stable(abi::Option::None())
+                abi::Option::None()
             }
-            Self::Some(value) => crate::marker::Stable(abi::Option::Some(
-                crate::stored::encode_ref_field(value, fields.insert(Default::default())),
+            Self::Some(value) => abi::Option::Some(crate::stored::encode_ref_field(
+                value,
+                fields.insert(Default::default()),
             )),
         })
     }
@@ -284,7 +284,7 @@ unsafe impl<T: AbiCompatibleValidate<CType: Copy>> AbiCompatibleValidate for Opt
 unsafe impl<T: AbiCompatible<CType: Copy>> AbiCompatible for Option<T> {}
 
 impl<T: ReprC<CType: Copy>> crate::niche::Niche for Option<T> {
-    const NICHE: Self::CType = crate::marker::Stable(abi::Option::niche());
+    const NICHE: Self::CType = abi::Option::niche();
 
     fn is_niche(value: &Self::CType) -> bool {
         value.is_niche()
@@ -294,8 +294,8 @@ impl<T: ReprC<CType: Copy>> crate::niche::Niche for Option<T> {
 /// A transparent payload with option niche intent and no Rust enum discriminant.
 ///
 /// This stores a valid `T`, including its ordinary validity requirements. It
-/// lowers to `crate::marker::Stable<abi::OptionSome<T::CType>>`. Native niche-encoded options use
-/// the bare carrier. A custom niche does not add a tag.
+/// lowers to `abi::OptionSome<T::CType>`. Native niche-encoded options wrap
+/// that carrier in `Native`. A custom niche does not add a tag.
 /// Robustness follows `T`, including any `rust-spec` custom-niche classification.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, RustSpec)]
 #[repr(transparent)]
@@ -315,7 +315,7 @@ macro_rules! impl_niche_payload {
         unsafe impl<T: $crate::marker::AbiCompatible<CType: Sized>> $crate::marker::AbiCompatible for $name<T> {}
         unsafe impl<T: $crate::convert::AbiCompatibleValidate<CType: Sized>> $crate::convert::AbiCompatibleValidate for $name<T> {
             unsafe fn is_valid(value: &Self::CType) -> bool {
-                unsafe { T::is_valid(&value.0.0) }
+                unsafe { T::is_valid(&value.0) }
             }
         }
         $crate::option::impl_niche_payload!(@codecs $name,
@@ -327,23 +327,23 @@ macro_rules! impl_niche_payload {
             unsafe impl<T: BorrowedEncode> BorrowedEncode for $name<T> {
                 type Store = T::Store;
                 fn soft_encode<'a>(self, store: &'a mut Self::Store, owner: &'a mut Self::Owner) -> Self::CType where Self: 'a {
-                    crate::marker::Stable(abi::$name::from_payload(T::soft_encode(self.0, store, owner)))
+                    abi::$name::from_payload(T::soft_encode(self.0, store, owner))
                 }
             }
             unsafe impl<T: BorrowedEncodeUnchecked> BorrowedEncodeUnchecked for $name<T> {
                 type Owner = T::Owner;
             type SoftStore = T::SoftStore;
                 unsafe fn soft_encode_unchecked<'a>(self, store: &'a mut Self::SoftStore, owner: &'a mut Self::Owner) -> Self::CType where Self: 'a {
-                    crate::marker::Stable(abi::$name::from_payload(unsafe { T::soft_encode_unchecked(self.0, store, owner) }))
+                    abi::$name::from_payload(unsafe { T::soft_encode_unchecked(self.0, store, owner) })
                 }
             }
             unsafe impl<'d, T: BorrowedDecode<'d>> BorrowedDecode<'d> for $name<T> {
                 type Store = T::Store;
                 unsafe fn soft_decode<'a: 'd>(value: Self::CType, store: &'a mut Self::Store) -> core::option::Option<Self> {
-                    Some($name(unsafe { T::soft_decode(value.0.0, store)? }))
+                    Some($name(unsafe { T::soft_decode(value.0, store)? }))
                 }
                 unsafe fn soft_decode_unchecked<'a: 'd>(value: Self::CType, store: &'a mut Self::Store) -> Self {
-                    $name(unsafe { T::soft_decode_unchecked(value.0.0, store) })
+                    $name(unsafe { T::soft_decode_unchecked(value.0, store) })
                 }
             }
         };
@@ -356,29 +356,29 @@ macro_rules! impl_niche_payload {
             unsafe impl<T: EncodePayload> EncodePayload for $name<T> {
                 type Store = T::Store;
                 fn soft_encode<'a>(self, store: &'a mut Self::Store) -> Self::CType where Self: 'a {
-                    crate::marker::Stable(abi::$name::from_payload(T::soft_encode(self.0, store)))
+                    abi::$name::from_payload(T::soft_encode(self.0, store))
                 }
             }
             unsafe impl<T: EncodePayloadUnchecked> EncodePayloadUnchecked for $name<T> {
                 type SoftStore = T::SoftStore;
                 unsafe fn soft_encode_unchecked<'a>(self, store: &'a mut Self::SoftStore) -> Self::CType where Self: 'a {
-                    crate::marker::Stable(abi::$name::from_payload(unsafe { T::soft_encode_unchecked(self.0, store) }))
+                    abi::$name::from_payload(unsafe { T::soft_encode_unchecked(self.0, store) })
                 }
             }
             unsafe impl<'d, T: DecodePayload<'d>> DecodePayload<'d> for $name<T> {
                 type Store = T::Store;
                 unsafe fn soft_decode<'a: 'd>(value: Self::CType, store: &'a mut Self::Store) -> core::option::Option<Self> {
-                    Some($name(unsafe { T::soft_decode(value.0.0, store)? }))
+                    Some($name(unsafe { T::soft_decode(value.0, store)? }))
                 }
                 unsafe fn soft_decode_unchecked<'a: 'd>(value: Self::CType, store: &'a mut Self::Store) -> Self {
-                    $name(unsafe { T::soft_decode_unchecked(value.0.0, store) })
+                    $name(unsafe { T::soft_decode_unchecked(value.0, store) })
                 }
             }
         };
     };
 }
 pub(crate) use impl_niche_payload;
-impl_niche_payload!(OptionSome => crate::marker::Stable<abi::OptionSome<T::CType>>);
+impl_niche_payload!(OptionSome => abi::OptionSome<T::CType>);
 
 impl<T> From<Option<T>> for core::option::Option<T> {
     fn from(value: Option<T>) -> Self {
@@ -408,7 +408,7 @@ impl<'d, R: Decode<'d>> Decode<'d> for core::option::Option<R> where Self: Decod
 #[doc(hidden)]
 pub mod abi {
     /// Transparent carrier for a niche-encoded native option or a co3 payload wrapper.
-    /// The co3 source wraps this carrier in [`crate::marker::Stable`].
+    /// CO3 sources select this carrier directly.
     ///
     /// The Rust source type supplies the absent value through `Niche::NICHE`; it need not be a null pointer or zero.
     #[derive(RustSpec)]
@@ -507,7 +507,7 @@ pub mod abi {
     }
 
     /// FFI-safe equivalent of [`core::option::Option`].
-    /// Co3 sources select [`crate::marker::Stable<Self>`]; native Rust sources select this carrier directly.
+    /// CO3 sources select this carrier directly; native tagged or container sources wrap it in `Native`.
     #[repr(C)]
     #[doc(hidden)]
     pub struct Option<T: CType> {
@@ -669,6 +669,8 @@ pub mod abi {
 
 #[cfg(test)]
 mod tests {
+    use crate::marker::Native;
+
     use core::mem::MaybeUninit;
 
     use super::abi::{self, Option as AbiOption};
@@ -693,11 +695,12 @@ mod tests {
     fn decoding_none_has_no_active_store() {
         let mut untagged = Default::default();
         let decoded =
-            unsafe { co3::soft_decode::<Option<u8>>(abi::Option::Some(7), &mut untagged) };
+            unsafe { co3::soft_decode::<Option<u8>>(Native(abi::Option::Some(7)), &mut untagged) };
         assert!(matches!(decoded, Some(Some(7))));
         assert!(untagged.is_some());
 
-        let decoded = unsafe { co3::soft_decode::<Option<u8>>(abi::Option::None(), &mut untagged) };
+        let decoded =
+            unsafe { co3::soft_decode::<Option<u8>>(Native(abi::Option::None()), &mut untagged) };
         assert!(matches!(decoded, Some(None)));
         assert!(untagged.is_none());
         assert_eq!(co3::convert::Store::sync(untagged), Some(()));
@@ -705,14 +708,17 @@ mod tests {
         let mut niche = Default::default();
         let mut source = co3::primitive::abi::bool::TRUE;
         let encoded = unsafe { SoftRefMut::<<bool as co3::ReprC>::CType>::from_raw(&mut source) };
-        let decoded =
-            unsafe { co3::soft_decode::<Option<&mut bool>>(abi::OptionSome(encoded), &mut niche) };
+        let decoded = unsafe {
+            co3::soft_decode::<Option<&mut bool>>(Native(abi::OptionSome(encoded)), &mut niche)
+        };
         assert!(matches!(decoded, Some(Some(true))));
         assert!(niche.is_some());
 
         let decoded = unsafe {
             co3::soft_decode::<Option<&mut bool>>(
-                abi::OptionSome(SoftRefMut::<<bool as co3::ReprC>::CType>::null()),
+                Native(abi::OptionSome(
+                    SoftRefMut::<<bool as co3::ReprC>::CType>::null(),
+                )),
                 &mut niche,
             )
         };

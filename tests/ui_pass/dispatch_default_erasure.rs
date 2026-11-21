@@ -13,7 +13,7 @@ struct Pair(Tuple2<u8, u8>);
 impl Unpack2<u16, u16> for Pair {
     type Error = core::convert::Infallible;
     fn unpack(value: Self::CType) -> Result<(u16, u16), Self::Error> {
-        Ok((value.0.0.0.into(), value.0.0.1.into()))
+        Ok((value.0.0.into(), value.0.1.into()))
     }
 }
 

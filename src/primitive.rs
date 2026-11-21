@@ -678,6 +678,8 @@ pub mod abi {
 
 #[cfg(test)]
 mod tests {
+    use crate::marker::Native;
+
     #[cfg(feature = "alloc")]
     use alloc::{boxed::Box, vec::Vec};
     use core::cmp::Ordering;
@@ -701,9 +703,9 @@ mod tests {
         assert_not_impl_any!(abi::bool: Niche);
         assert_not_impl_any!(COrdering: Niche);
         assert_not_impl_any!(abi::char: Niche);
-        assert_impl_all!(Option<abi::bool>: ReprC<CType = AbiOption<abi::bool>>);
-        assert_impl_all!(Option<COrdering>: ReprC<CType = AbiOption<COrdering>>);
-        assert_impl_all!(Option<abi::char>: ReprC<CType = AbiOption<abi::char>>);
+        assert_impl_all!(Option<abi::bool>: ReprC<CType = Native<AbiOption<abi::bool>>>);
+        assert_impl_all!(Option<COrdering>: ReprC<CType = Native<AbiOption<COrdering>>>);
+        assert_impl_all!(Option<abi::char>: ReprC<CType = Native<AbiOption<abi::char>>>);
 
         for raw in u8::MIN..=u8::MAX {
             let boolean = abi::bool(raw);
@@ -748,9 +750,9 @@ mod tests {
                 value
             );
         }
-        assert!(bool::is_niche(&crate::encode(None::<bool>).0));
-        assert!(Ordering::is_niche(&crate::encode(None::<Ordering>).0));
-        assert!(char::is_niche(&crate::encode(None::<char>).0));
+        assert!(bool::is_niche(&crate::encode(None::<bool>).0.0));
+        assert!(Ordering::is_niche(&crate::encode(None::<Ordering>).0.0));
+        assert!(char::is_niche(&crate::encode(None::<char>).0.0));
     }
 
     #[test]
@@ -773,6 +775,7 @@ mod tests {
         assert!(unsafe { crate::decode::<Callback>(None) }.is_none());
         assert!(
             crate::soft_encode(Option::<Callback>::None, &mut None)
+                .0
                 .0
                 .is_none()
         );
@@ -846,7 +849,7 @@ mod tests {
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<u8>:
-            Niche<CType = crate::vec::abi::Vec<u8>>,
+            Niche<CType = Native<crate::vec::abi::Vec<u8>>>,
             Decode<'static>,
             Encode,
         );
@@ -856,7 +859,7 @@ mod tests {
             CType,
         );
         assert_impl_all!(Option<u8>:
-            Niche<CType = AbiOption<u8>>,
+            Niche<CType = Native<AbiOption<u8>>>,
             Decode<'static>,
             Encode,
         );
@@ -877,7 +880,7 @@ mod tests {
     fn str_is_supported() {
         assert_impl_all!(str: ReprC<CType = co3::primitive::abi::str>);
         #[cfg(feature = "alloc")]
-        assert_impl_all!(String: ReprC<CType = crate::string::abi::String>);
+        assert_impl_all!(String: ReprC<CType = Native<crate::string::abi::String>>);
 
         assert_impl_all!(&str:
             Niche<CType = crate::wide::abi::WideRef<'static, <str as crate::ReprC>::CType>>,
@@ -963,7 +966,10 @@ mod tests {
         assert_eq!(decoded.capacity(), capacity);
 
         let invalid = crate::string::abi::String(crate::vec::abi::Vec::from_vec(alloc::vec![0xff]));
-        assert!(unsafe { crate::decode::<String>(invalid) }.is_none());
-        assert!(unsafe { crate::decode::<String>(crate::string::abi::String::null()) }.is_none());
+        assert!(unsafe { crate::decode::<String>(Native(invalid)) }.is_none());
+        assert!(
+            unsafe { crate::decode::<String>(Native(crate::string::abi::String::null())) }
+                .is_none()
+        );
     }
 }

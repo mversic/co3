@@ -1,5 +1,6 @@
 //! Conversion between C-compatible representations and ABI arguments.
 
+use crate::marker::Native;
 use core::{
     cell::{Cell, UnsafeCell},
     marker::PhantomData,
@@ -148,25 +149,25 @@ where
 
 impl<T: Pack2<Part1, Part2>, Part1: CType, Part2: CType> Pack2<Part1, Part2> for Option<T>
 where
-    Self: ReprC<CType = AbiOptionSome<<T as ReprC>::CType>>,
+    Self: ReprC<CType = Native<AbiOptionSome<<T as ReprC>::CType>>>,
 {
     type Error = T::Error;
 
     #[inline(always)]
     unsafe fn pack(part1: Part1, part2: Part2) -> Result<Self::CType, Self::Error> {
-        unsafe { T::pack(part1, part2) }.map(AbiOptionSome)
+        unsafe { T::pack(part1, part2) }.map(|value| Native(AbiOptionSome(value)))
     }
 }
 
 impl<T: Unpack2<Part1, Part2>, Part1: CType, Part2: CType> Unpack2<Part1, Part2> for Option<T>
 where
-    Self: ReprC<CType = AbiOptionSome<<T as ReprC>::CType>>,
+    Self: ReprC<CType = Native<AbiOptionSome<<T as ReprC>::CType>>>,
 {
     type Error = T::Error;
 
     #[inline(always)]
     fn unpack(value: Self::CType) -> Result<(Part1, Part2), Self::Error> {
-        T::unpack(value.0)
+        T::unpack(value.0.0)
     }
 }
 
@@ -188,11 +189,11 @@ disjoint_impls! {
     where
         Ok: rust_spec::RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>,
         Err: rust_spec::RustSpec<Size = rust_spec::size::Sized<rust_spec::Zero>>,
-        Self: ReprC<CType = AbiResultOk<<Ok as crate::ReprC>::CType, <Err as crate::ReprC>::CType>>,
+        Self: ReprC<CType = Native<AbiResultOk<<Ok as crate::ReprC>::CType, <Err as crate::ReprC>::CType>>>,
     {
         type Error = Ok::Error;
         fn unpack(value: Self::CType) -> Result<(A, B), Self::Error> {
-            Ok::unpack(value.0)
+            Ok::unpack(value.0.0)
         }
     }
 
@@ -201,11 +202,11 @@ disjoint_impls! {
     where
         Ok: rust_spec::RustSpec<Size = rust_spec::size::Sized<rust_spec::Zero>>,
         Err: rust_spec::RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>,
-        Self: ReprC<CType = AbiResultErr<<Ok as crate::ReprC>::CType, <Err as crate::ReprC>::CType>>,
+        Self: ReprC<CType = Native<AbiResultErr<<Ok as crate::ReprC>::CType, <Err as crate::ReprC>::CType>>>,
     {
         type Error = Err::Error;
         fn unpack(value: Self::CType) -> Result<(A, B), Self::Error> {
-            Err::unpack(value.0)
+            Err::unpack(value.0.0)
         }
     }
 }
@@ -230,11 +231,11 @@ disjoint_impls! {
     where
         Ok: rust_spec::RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>,
         Err: rust_spec::RustSpec<Size = rust_spec::size::Sized<rust_spec::Zero>>,
-        Self: ReprC<CType = AbiResultOk<<Ok as crate::ReprC>::CType, <Err as crate::ReprC>::CType>>,
+        Self: ReprC<CType = Native<AbiResultOk<<Ok as crate::ReprC>::CType, <Err as crate::ReprC>::CType>>>,
     {
         type Error = Ok::Error;
         unsafe fn pack(a: A, b: B) -> Result<Self::CType, Self::Error> {
-            unsafe { Ok::pack(a, b) }.map(|value| AbiResultOk(value, PhantomData))
+            unsafe { Ok::pack(a, b) }.map(|value| Native(AbiResultOk(value, PhantomData)))
         }
     }
 
@@ -243,11 +244,11 @@ disjoint_impls! {
     where
         Ok: rust_spec::RustSpec<Size = rust_spec::size::Sized<rust_spec::Zero>>,
         Err: rust_spec::RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>,
-        Self: ReprC<CType = AbiResultErr<<Ok as crate::ReprC>::CType, <Err as crate::ReprC>::CType>>,
+        Self: ReprC<CType = Native<AbiResultErr<<Ok as crate::ReprC>::CType, <Err as crate::ReprC>::CType>>>,
     {
         type Error = Err::Error;
         unsafe fn pack(a: A, b: B) -> Result<Self::CType, Self::Error> {
-            unsafe { Err::pack(a, b) }.map(|value| AbiResultErr(value, PhantomData))
+            unsafe { Err::pack(a, b) }.map(|value| Native(AbiResultErr(value, PhantomData)))
         }
     }
 }
@@ -294,26 +295,26 @@ where
 impl<A: ReprC<CType = Part1>, B: ReprC<CType = Part2>, Part1: CType, Part2: CType>
     Unpack2<Part1, Part2> for (A, B)
 where
-    Self: ReprC<CType = AbiTuple2<<A as ReprC>::CType, <B as ReprC>::CType>>,
+    Self: ReprC<CType = Native<AbiTuple2<<A as ReprC>::CType, <B as ReprC>::CType>>>,
 {
     type Error = core::convert::Infallible;
 
     #[inline(always)]
     fn unpack(value: Self::CType) -> Result<(Part1, Part2), Self::Error> {
-        Ok((value.0, value.1))
+        Ok((value.0.0, value.0.1))
     }
 }
 
 impl<A: ReprC<CType = Part1>, B: ReprC<CType = Part2>, Part1: CType, Part2: CType>
     Pack2<Part1, Part2> for (A, B)
 where
-    Self: ReprC<CType = AbiTuple2<<A as ReprC>::CType, <B as ReprC>::CType>>,
+    Self: ReprC<CType = Native<AbiTuple2<<A as ReprC>::CType, <B as ReprC>::CType>>>,
 {
     type Error = core::convert::Infallible;
 
     #[inline(always)]
     unsafe fn pack(part1: Part1, part2: Part2) -> Result<Self::CType, Self::Error> {
-        Ok(AbiTuple2(part1, part2))
+        Ok(Native(AbiTuple2(part1, part2)))
     }
 }
 
@@ -385,7 +386,7 @@ mod tests {
             <Option<Box<Pointee>> as Pack2<*mut u8, usize>>::pack(core::ptr::null_mut(), metadata)
         }
         .unwrap();
-        assert!(carrier.0.as_ptr().is_null());
+        assert!(carrier.0.0.as_ptr().is_null());
         let (pointer, unpacked) =
             <Option<Box<Pointee>> as Unpack2<*mut u8, usize>>::unpack(carrier).unwrap();
         assert!(pointer.is_null());

@@ -468,6 +468,9 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
         } else {
             Ok(quote! {
                 const _: () = {
+                    #[allow(unused_imports)]
+                    use co3::{marker::Native as __Co3Native, rust_spec::Unstable as __Co3Unstable};
+
                     co3::disjoint_impls! {
                         trait __Co3CFnReturnLayout {}
 

@@ -46,6 +46,8 @@ unsafe impl<T: CFnReturn> CFnReturn for Cell<T> {}
 
 #[cfg(test)]
 mod tests {
+    use crate::marker::Native;
+
     #[cfg(feature = "alloc")]
     use alloc::{boxed::Box, vec::Vec};
     use core::{mem::ManuallyDrop, num::NonZero};
@@ -127,7 +129,7 @@ mod tests {
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<UnsafeCell<u8>>:
-            Niche<CType = crate::vec::abi::Vec<<UnsafeCell<u8> as crate::ReprC>::CType>>,
+            Niche<CType = Native<crate::vec::abi::Vec<<UnsafeCell<u8> as crate::ReprC>::CType>>>,
             Decode<'static>,
             Encode,
         );
@@ -137,7 +139,7 @@ mod tests {
             Encode,
         );
         assert_impl_all!(Option<UnsafeCell<u8>>:
-            ReprC<CType = AbiOption<<UnsafeCell<u8> as crate::ReprC>::CType>>,
+            ReprC<CType = Native<AbiOption<<UnsafeCell<u8> as crate::ReprC>::CType>>>,
             Decode<'static>,
             Encode,
         );
@@ -239,7 +241,7 @@ mod tests {
         assert_eq!(decoded.get(), 6);
 
         let none = crate::encode(None::<Box<UnsafeCell<u8>>>);
-        assert!(none.0.as_ptr().is_null());
+        assert!(none.0.0.as_ptr().is_null());
         assert!(matches!(
             unsafe { crate::decode::<Option<Box<UnsafeCell<u8>>>>(none) },
             Some(None)
@@ -349,7 +351,7 @@ mod tests {
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<UnsafeCell<NonZero<u8>>>:
-            Niche<CType = crate::vec::abi::Vec<<UnsafeCell<core::num::NonZeroU8> as crate::ReprC>::CType>>,
+            Niche<CType = Native<crate::vec::abi::Vec<<UnsafeCell<core::num::NonZeroU8> as crate::ReprC>::CType>>>,
             Decode<'static>,
             Encode,
         );
@@ -358,7 +360,9 @@ mod tests {
             let invalid = crate::vec::abi::Vec::from_vec(alloc::vec![core::cell::UnsafeCell::new(
                 crate::marker::NonZero(0_u8),
             )]);
-            assert!(unsafe { crate::decode::<Vec<UnsafeCell<NonZero<u8>>>>(invalid) }.is_none());
+            assert!(
+                unsafe { crate::decode::<Vec<UnsafeCell<NonZero<u8>>>>(Native(invalid)) }.is_none()
+            );
 
             let invalid = AbiWideBox::from_box(
                 alloc::vec![core::cell::UnsafeCell::new(crate::marker::NonZero(0_u8))]
@@ -372,7 +376,7 @@ mod tests {
             Encode,
         );
         assert_impl_all!(Option<UnsafeCell<NonZero<u8>>>:
-            ReprC<CType = AbiOption<<UnsafeCell<core::num::NonZeroU8> as crate::ReprC>::CType>>,
+            ReprC<CType = Native<AbiOption<<UnsafeCell<core::num::NonZeroU8> as crate::ReprC>::CType>>>,
             Decode<'static>,
             Encode,
         );

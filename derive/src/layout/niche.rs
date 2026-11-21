@@ -67,7 +67,7 @@ pub fn gen_struct_niche_ir(
         if let Some(niche_value) = niche_value {
             let custom_niche_bounds = quote! {
                 #struct_name #ty_generics: co3::rust_spec::RustSpec<
-                    Niche = co3::rust_spec::niche::WithNiche<co3::rust_spec::Unstable>
+                    Niche = co3::rust_spec::niche::WithNiche<__Co3Unstable>
                 >,
                 #fields_tuple: co3::rust_spec::RustSpec<
                     Niche = co3::rust_spec::niche::WithoutNiche
@@ -87,7 +87,12 @@ pub fn gen_struct_niche_ir(
             )
         } else {
             let niche_field_values = accessors.iter().map(|accessor| {
-                quote! { <#fields_tuple as co3::niche::Niche>::NICHE.#accessor }
+                let mut value = quote!(<#fields_tuple as co3::niche::Niche>::NICHE);
+                for index in accessor.to_string().split('.') {
+                    let index = syn::Index::from(index.trim().parse::<usize>().unwrap());
+                    value = quote!(#value.0.#index);
+                }
+                value
             });
             let niche_value = match fields {
                 syn::Fields::Named(_) | syn::Fields::Unit => {
@@ -163,7 +168,7 @@ fn build_tuple_value(fields: &[(Vec<usize>, TokenStream)], depth: usize) -> Toke
             .collect::<Vec<_>>();
         build_tuple_value(&group, depth + 1)
     });
-    quote!(co3::tuple::abi::#ident(#(#members),*))
+    quote!(__Co3Native(co3::tuple::abi::#ident(#(#members),*)))
 }
 
 pub(super) fn gen_enum_niche_tag(
@@ -413,6 +418,17 @@ mod tests {
                 assert!(tuple.elems.is_empty());
             }
             ExpectedNode::Tuple(children) => {
+                let syn::Type::Path(wrapper) = ty else {
+                    panic!("expected native tuple modifier, got {ty:?}");
+                };
+                let segment = wrapper.path.segments.last().expect("modifier path");
+                assert_eq!(segment.ident, "__Co3Native");
+                let syn::PathArguments::AngleBracketed(arguments) = &segment.arguments else {
+                    panic!("expected modifier argument");
+                };
+                let Some(syn::GenericArgument::Type(ty)) = arguments.args.first() else {
+                    panic!("expected carrier type");
+                };
                 let syn::Type::Path(ty) = ty else {
                     panic!("expected Tuple{} type, got {ty:?}", children.len());
                 };

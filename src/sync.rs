@@ -2,6 +2,7 @@
 use alloc::{borrow::ToOwned, boxed::Box, vec::Vec};
 #[cfg(feature = "alloc")]
 use core::marker::PhantomData;
+use rust_spec::Unstable;
 
 #[cfg(feature = "alloc")]
 use crate::{
@@ -136,7 +137,7 @@ unsafe impl<T: Clone, S> TakeDecoded for DecodedField<'_, T, S, rust_spec::Stabl
     }
 }
 
-unsafe impl<T: ?Sized, S: TakeDecoded> TakeDecoded for DecodedField<'_, T, S, rust_spec::Unstable> {
+unsafe impl<T: ?Sized, S: TakeDecoded> TakeDecoded for DecodedField<'_, T, S, Unstable> {
     type Value = S::Value;
 
     unsafe fn take_decoded(field: *mut Self) -> Option<Self::Value> {
@@ -1077,7 +1078,7 @@ mod tests {
         unsafe {
             // Both carriers point into live conversion stores. Only the first
             // carrier contains an invalid Rust bool representation.
-            *encoded.0.as_ptr() = crate::primitive::abi::bool(2);
+            *encoded.0.0.as_ptr() = crate::primitive::abi::bool(2);
             *encoded.1.as_ptr() = crate::primitive::abi::bool::TRUE;
         }
 

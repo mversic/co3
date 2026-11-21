@@ -1,3 +1,4 @@
+use co3::marker::Native;
 use co3::{
     ReprC,
     option::{Option as StableOption, abi::Option as AbiOption},
@@ -79,14 +80,14 @@ fn mutable_repr_c_option_writes_back() {
     let mut store = Default::default();
     let encoded = co3::soft_encode(&mut value, &mut store);
     let output = unsafe { &mut *encoded.as_ptr() };
-    *output = co3::marker::Stable(AbiOption::Some(11));
+    *output = AbiOption::Some(11);
     assert_eq!(co3::convert::Store::sync(store), Some(()));
     assert_eq!(value, StableOption::Some(11));
 
     let mut value = StableOption::<u32>::None;
     let mut store = Default::default();
     let encoded = co3::soft_encode(&mut value, &mut store);
-    unsafe { *encoded.as_ptr() = co3::marker::Stable(AbiOption::Some(13)) };
+    unsafe { *encoded.as_ptr() = AbiOption::Some(13) };
     assert_eq!(co3::convert::Store::sync(store), Some(()));
     assert_eq!(value, StableOption::Some(13));
 }
@@ -96,18 +97,18 @@ fn mutable_copy_result_can_change_variant() {
     let mut value: Result<u32, bool> = Ok(7);
     let mut store = Default::default();
     let encoded = co3::soft_encode(&mut value, &mut store);
-    unsafe { *encoded.as_ptr() = co3::result::abi::Result::Err(co3::primitive::abi::bool::TRUE) };
+    unsafe {
+        *encoded.as_ptr() = Native(co3::result::abi::Result::Err(
+            co3::primitive::abi::bool::TRUE,
+        ))
+    };
     assert_eq!(co3::convert::Store::sync(store), Some(()));
     assert_eq!(value, Err(true));
 
     let mut value: co3::result::Result<u32, bool> = co3::result::Result::Ok(4);
     let mut store = Default::default();
     let encoded = co3::soft_encode(&mut value, &mut store);
-    unsafe {
-        *encoded.as_ptr() = co3::marker::Stable(co3::result::abi::Result::Err(
-            co3::primitive::abi::bool::TRUE,
-        ))
-    };
+    unsafe { *encoded.as_ptr() = co3::result::abi::Result::Err(co3::primitive::abi::bool::TRUE) };
     assert_eq!(co3::convert::Store::sync(store), Some(()));
     assert_eq!(value, co3::result::Result::Err(true));
 }
@@ -169,7 +170,7 @@ fn mutable_boxed_slice_converts_unstable_elements() {
     let mut store = Default::default();
     let encoded = co3::soft_encode(&mut values, &mut store);
     let header = unsafe { &mut *encoded.as_ptr() };
-    unsafe { (*header.as_ptr().add(1)).0 = 8 };
+    unsafe { (*header.as_ptr().add(1)).0.0 = 8 };
     assert_eq!(co3::convert::Store::sync(store), Some(()));
     assert_eq!(&*values, &[(3,), (8,)]);
 }
@@ -181,7 +182,7 @@ fn mutable_boxed_slice_converts_unstable_elements() {
 //    let mut store = Default::default();
 //    let encoded = co3::soft_encode(&mut values, &mut store);
 //    let header = unsafe { &mut *encoded.as_ptr() };
-//    unsafe { (*header.as_ptr().add(1)).0 = 8 };
+//    unsafe { (*header.as_ptr().add(1)).0.0 = 8 };
 //    assert_eq!(co3::convert::Store::sync(store), Some(()));
 //    assert_eq!(values, [(3,), (8,)]);
 //}
@@ -226,8 +227,11 @@ fn mutable_vec_rejects_header_length_changes() {
     let encoded = co3::soft_encode(&mut values, &mut store);
     let header = unsafe { *encoded.as_ptr() };
     unsafe {
-        *encoded.as_ptr() =
-            co3::vec::abi::Vec::from_raw_parts(header.as_ptr(), 1, header.capacity());
+        *encoded.as_ptr() = Native(co3::vec::abi::Vec::from_raw_parts(
+            header.as_ptr(),
+            1,
+            header.capacity(),
+        ));
     }
     assert_eq!(co3::convert::Store::sync(store), None);
     assert_eq!(values, [1, 2]);

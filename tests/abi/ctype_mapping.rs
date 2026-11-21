@@ -1,3 +1,4 @@
+use co3::marker::Native;
 use core::{
     marker::PhantomData,
     mem::MaybeUninit,
@@ -65,11 +66,11 @@ assert_type_eq_all!(<NonZeroUsize as ReprC>::CType, co3::marker::NonZero<usize>)
 assert_type_eq_all!(<NonZeroIsize as ReprC>::CType, co3::marker::NonZero<isize>);
 assert_type_eq_all!(
     <Option<NonZeroU8> as ReprC>::CType,
-    co3::option::abi::OptionSome<<NonZeroU8 as co3::ReprC>::CType>
+    Native<co3::option::abi::OptionSome<<NonZeroU8 as co3::ReprC>::CType>>
 );
 assert_type_eq_all!(
     <Result<NonZeroU8, ()> as ReprC>::CType,
-    co3::result::abi::ResultOk<<NonZeroU8 as co3::ReprC>::CType, ()>
+    Native<co3::result::abi::ResultOk<<NonZeroU8 as co3::ReprC>::CType, ()>>
 );
 assert_impl_all!(Result<NonZeroU32, ()>: CType);
 assert_impl_all!(Result<(), NonZeroU32>: CType);
@@ -88,19 +89,19 @@ assert_impl_all!(Generic<u32>: CType);
 assert_impl_all!(ConditionalField: CType);
 assert_type_eq_all!(
     <co3::option::Option<bool> as ReprC>::CType,
-    co3::marker::Stable<co3::option::abi::Option<<bool as co3::ReprC>::CType>>
+    co3::option::abi::Option<<bool as co3::ReprC>::CType>
 );
 assert_type_eq_all!(
     <co3::result::Result<bool, u8> as ReprC>::CType,
-    co3::marker::Stable<co3::result::abi::Result<<bool as co3::ReprC>::CType, u8>>
+    co3::result::abi::Result<<bool as co3::ReprC>::CType, u8>
 );
 assert_type_eq_all!(
     <Vec<bool> as ReprC>::CType,
-    co3::vec::abi::Vec<<bool as co3::ReprC>::CType>
+    Native<co3::vec::abi::Vec<<bool as co3::ReprC>::CType>>
 );
 assert_type_eq_all!(
     <Vec<co3::primitive::abi::bool> as ReprC>::CType,
-    co3::vec::abi::Vec<co3::primitive::abi::bool>
+    Native<co3::vec::abi::Vec<co3::primitive::abi::bool>>
 );
 assert_type_eq_all!(
     co3::option::abi::Option<<bool as co3::ReprC>::CType>,
@@ -125,23 +126,23 @@ assert_not_impl_any!(HasDrop: CType);
 
 assert_type_eq_all!(
     <Option<&u32> as ReprC>::CType,
-    co3::option::abi::OptionSome<<&u32 as co3::ReprC>::CType>
+    Native<co3::option::abi::OptionSome<<&u32 as co3::ReprC>::CType>>
 );
 assert_type_eq_all!(
     <Option<Box<u32>> as ReprC>::CType,
-    co3::option::abi::OptionSome<<Box<u32> as co3::ReprC>::CType>
+    Native<co3::option::abi::OptionSome<<Box<u32> as co3::ReprC>::CType>>
 );
 assert_type_eq_all!(
     <Option<&(u32,)> as ReprC>::CType,
-    co3::option::abi::OptionSome<<&(u32,) as co3::ReprC>::CType>
+    Native<co3::option::abi::OptionSome<<&(u32,) as co3::ReprC>::CType>>
 );
 assert_type_eq_all!(
     <Result<Box<u32>, ()> as ReprC>::CType,
-    co3::result::abi::ResultOk<<Box<u32> as co3::ReprC>::CType, ()>
+    Native<co3::result::abi::ResultOk<<Box<u32> as co3::ReprC>::CType, ()>>
 );
 assert_type_eq_all!(
     <Result<(), &(u32,)> as ReprC>::CType,
-    co3::result::abi::ResultErr<(), <&(u32,) as co3::ReprC>::CType>
+    Native<co3::result::abi::ResultErr<(), <&(u32,) as co3::ReprC>::CType>>
 );
 assert_type_ne_all!(
     co3::result::abi::ResultOk<u8, ()>,

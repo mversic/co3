@@ -556,6 +556,7 @@
 //! ```
 #![no_std]
 
+use crate::marker::Native;
 #[cfg(feature = "alloc")]
 extern crate alloc;
 extern crate self as co3;
@@ -587,7 +588,6 @@ use crate::ffi::NulTerminatedBuf;
 use crate::{boxed::abi::Box as AbiBox, wide::abi::WideBox as AbiWideBox};
 use crate::{
     convert::Store,
-    marker::Stable,
     niche::Niche,
     reference::abi::{Ref, RefMut, SoftRef, SoftRefMut},
     wide::{
@@ -799,14 +799,14 @@ disjoint_impls! {
         R: RustSpec<Niche = WithoutNiche>,
         <R as ReprC>::CType: crate::CType + Sized,
     {
-        type CType = option::abi::Option<R::CType>;
+        type CType = Native<option::abi::Option<R::CType>>;
     }
     impl<R: Niche, N: LayoutKind> ReprC for Option<R>
     where
         R: RustSpec<Niche = WithNiche<N>>,
         <R as ReprC>::CType: crate::CType + Sized,
     {
-        type CType = option::abi::OptionSome<R::CType>;
+        type CType = Native<option::abi::OptionSome<R::CType>>;
     }
 
     impl<R: ReprC, E: ReprC, K: SizedKind> ReprC for Result<R, E>
@@ -818,7 +818,7 @@ disjoint_impls! {
         <R as ReprC>::CType: CType + Copy,
         <E as ReprC>::CType: CType + Copy,
     {
-        type CType = result::abi::Result<R::CType, E::CType>;
+        type CType = Native<result::abi::Result<R::CType, E::CType>>;
     }
     impl<R: Niche, E: ReprC<CType: CType + Sized>> ReprC for Result<R, E>
     where
@@ -826,7 +826,7 @@ disjoint_impls! {
         E: RustSpec<Size = rust_spec::size::Sized<Zero>>,
         <R as ReprC>::CType: crate::CType + Sized,
     {
-        type CType = result::abi::ResultOk<R::CType, E::CType>;
+        type CType = Native<result::abi::ResultOk<R::CType, E::CType>>;
     }
     impl<R: ReprC<CType: CType + Sized>, E: Niche> ReprC for Result<R, E>
     where
@@ -834,7 +834,7 @@ disjoint_impls! {
         E: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>,
         <E as ReprC>::CType: crate::CType + Sized,
     {
-        type CType = result::abi::ResultErr<R::CType, E::CType>;
+        type CType = Native<result::abi::ResultErr<R::CType, E::CType>>;
     }
 
     impl<'a, R: ?Sized> ReprC for wide::WideRef<'a, R>
@@ -842,14 +842,14 @@ disjoint_impls! {
         R: ReprC<CType: crate::CType + wide::Wide<Header: CType + wide::WideHeader<Data: CType>>>
             + wide::Wide + RustSpec<Layout = StableLayout>,
     {
-        type CType = Stable<wide::abi::WideRef<'a, R::CType>>;
+        type CType = wide::abi::WideRef<'a, R::CType>;
     }
     impl<'a, R: ?Sized> ReprC for wide::WideRef<'a, R>
     where
         R: ReprC<CType: crate::CType + wide::Wide<Header: CType + wide::WideHeader<Data: CType>>>
-            + wide::Wide + RustSpec<Layout = rust_spec::Unstable>,
+            + wide::Wide + RustSpec<Layout = Unstable>,
     {
-        type CType = Stable<wide::abi::SoftWideRef<R::CType>>;
+        type CType = wide::abi::SoftWideRef<R::CType>;
     }
 
     impl<'a, R: ?Sized> ReprC for wide::WideRefMut<'a, R>
@@ -857,21 +857,21 @@ disjoint_impls! {
         R: ReprC<CType: crate::CType + wide::Wide<Header: CType + wide::WideHeader<Data: CType>>>
             + wide::Wide + RustSpec<Layout = StableLayout, Trap = rust_spec::layout::Robust>,
     {
-        type CType = Stable<wide::abi::WideRefMut<'a, R::CType>>;
+        type CType = wide::abi::WideRefMut<'a, R::CType>;
     }
     impl<'a, R: ?Sized> ReprC for wide::WideRefMut<'a, R>
     where
         R: ReprC<CType: crate::CType + wide::Wide<Header: CType + wide::WideHeader<Data: CType>>>
             + wide::Wide + RustSpec<Layout = StableLayout, Trap = rust_spec::layout::NonRobust>,
     {
-        type CType = Stable<wide::abi::SoftWideRefMut<R::CType>>;
+        type CType = wide::abi::SoftWideRefMut<R::CType>;
     }
     impl<'a, R: ?Sized> ReprC for wide::WideRefMut<'a, R>
     where
         R: ReprC<CType: crate::CType + wide::Wide<Header: CType + wide::WideHeader<Data: CType>>>
-            + wide::Wide + RustSpec<Layout = rust_spec::Unstable>,
+            + wide::Wide + RustSpec<Layout = Unstable>,
     {
-        type CType = Stable<wide::abi::SoftWideRefMut<R::CType>>;
+        type CType = wide::abi::SoftWideRefMut<R::CType>;
     }
 }
 
@@ -970,6 +970,8 @@ pub unsafe fn soft_decode_unchecked<'d, T: Decode<'d>>(
 
 #[cfg(test)]
 mod tests {
+    use crate::marker::Native;
+
     use core::{
         cell::{Cell, UnsafeCell},
         cmp::Reverse,
@@ -1037,22 +1039,22 @@ mod tests {
         static_assertions::assert_impl_all!(TaggedOption<NonZeroU8>: AbiCompatible);
         static_assertions::assert_impl_all!(TaggedResult<NonZeroU8, ()>: AbiCompatible);
         let value = NonZeroU8::new(7).unwrap();
-        let native: option::abi::OptionSome<<NonZeroU8 as crate::ReprC>::CType> =
+        let native: Native<option::abi::OptionSome<<NonZeroU8 as crate::ReprC>::CType>> =
             encode(Some(value));
-        assert_eq!(option::abi::OptionSome(NonZero(7)), native);
-        let tagged: crate::marker::Stable<AbiOption<<NonZeroU8 as crate::ReprC>::CType>> =
+        assert_eq!(option::abi::OptionSome(NonZero(7)), native.0);
+        let tagged: AbiOption<<NonZeroU8 as crate::ReprC>::CType> =
             encode(TaggedOption::Some(value));
-        assert_eq!(native.0.0, 7);
+        assert_eq!(native.0.0.0, 7);
         assert_eq!(tagged.into_option(), Some(Some(NonZero(7))));
         assert_eq!(
             unsafe { decode::<TaggedOption<NonZeroU8>>(tagged) },
             Some(TaggedOption::Some(value))
         );
         assert!(<NonZeroU8 as crate::niche::Niche>::is_niche(
-            &encode(None::<NonZeroU8>).0
+            &encode(None::<NonZeroU8>).0.0
         ));
 
-        let native: result::abi::ResultOk<<NonZeroU8 as crate::ReprC>::CType, ()> =
+        let native: Native<result::abi::ResultOk<<NonZeroU8 as crate::ReprC>::CType, ()>> =
             encode(Result::<NonZeroU8, ()>::Err(()));
         assert_eq!(
             result::abi::ResultOk::<<NonZeroU8 as crate::ReprC>::CType, ()>(
@@ -1070,9 +1072,9 @@ mod tests {
             .0,
             NonZero(7)
         );
-        let tagged: crate::marker::Stable<AbiResult<<NonZeroU8 as crate::ReprC>::CType, ()>> =
+        let tagged: AbiResult<<NonZeroU8 as crate::ReprC>::CType, ()> =
             encode(TaggedResult::<NonZeroU8, ()>::Err(()));
-        assert!(<NonZeroU8 as crate::niche::Niche>::is_niche(&native.0));
+        assert!(<NonZeroU8 as crate::niche::Niche>::is_niche(&native.0.0));
         assert_eq!(
             unsafe { decode::<TaggedResult<NonZeroU8, ()>>(tagged) },
             Some(TaggedResult::Err(()))
@@ -1109,20 +1111,18 @@ mod tests {
             Some(StableOption::Some(true))
         );
         let niche = unsafe {
-            crate::marker::Stable(AbiOption::<<bool as crate::ReprC>::CType>::from_raw_parts(
+            AbiOption::<<bool as crate::ReprC>::CType>::from_raw_parts(
                 2,
                 core::mem::MaybeUninit::uninit(),
-            ))
+            )
         };
         assert!(niche.is_niche());
-        assert!(
-            !crate::marker::Stable(AbiOption::<<bool as crate::ReprC>::CType>::None()).is_niche()
-        );
+        assert!(!AbiOption::<<bool as crate::ReprC>::CType>::None().is_niche());
         let other_tag = unsafe {
-            crate::marker::Stable(AbiOption::<<bool as crate::ReprC>::CType>::from_raw_parts(
+            AbiOption::<<bool as crate::ReprC>::CType>::from_raw_parts(
                 3,
                 core::mem::MaybeUninit::uninit(),
-            ))
+            )
         };
         assert!(!other_tag.is_niche());
         assert_eq!(unsafe { decode::<StableOption<bool>>(niche) }, None);
@@ -1133,24 +1133,17 @@ mod tests {
             Some(StableResult::Err(7))
         );
         let niche = unsafe {
-            crate::marker::Stable(
-                AbiResult::<<bool as crate::ReprC>::CType, u8>::from_raw_parts(
-                    2,
-                    Ok(core::mem::MaybeUninit::uninit()),
-                ),
+            AbiResult::<<bool as crate::ReprC>::CType, u8>::from_raw_parts(
+                2,
+                Ok(core::mem::MaybeUninit::uninit()),
             )
         };
         assert!(niche.is_niche());
-        assert!(
-            !crate::marker::Stable(AbiResult::<<bool as crate::ReprC>::CType, u8>::Err(7))
-                .is_niche()
-        );
+        assert!(!AbiResult::<<bool as crate::ReprC>::CType, u8>::Err(7).is_niche());
         let other_tag = unsafe {
-            crate::marker::Stable(
-                AbiResult::<<bool as crate::ReprC>::CType, u8>::from_raw_parts(
-                    3,
-                    Err(core::mem::MaybeUninit::uninit()),
-                ),
+            AbiResult::<<bool as crate::ReprC>::CType, u8>::from_raw_parts(
+                3,
+                Err(core::mem::MaybeUninit::uninit()),
             )
         };
         assert!(!other_tag.is_niche());
@@ -1180,17 +1173,14 @@ mod tests {
         let mut value = StableOption::Some(true);
         let mut store = Default::default();
         let carrier = crate::soft_encode(&mut value, &mut store);
-        unsafe { *carrier.as_ptr() = crate::marker::Stable(AbiOption::None()) };
+        unsafe { *carrier.as_ptr() = AbiOption::None() };
         assert_eq!(store.sync(), Some(()));
         assert_eq!(value, StableOption::None);
 
         let mut value = StableResult::<u32, bool>::Ok(4);
         let mut store = Default::default();
         let carrier = crate::soft_encode(&mut value, &mut store);
-        unsafe {
-            *carrier.as_ptr() =
-                crate::marker::Stable(AbiResult::Err(co3::primitive::abi::bool::TRUE))
-        };
+        unsafe { *carrier.as_ptr() = AbiResult::Err(co3::primitive::abi::bool::TRUE) };
         assert_eq!(store.sync(), Some(()));
         assert_eq!(value, StableResult::Err(true));
     }
@@ -1206,7 +1196,7 @@ mod tests {
             let mut store = Default::default();
             let encoded = soft_encode(value_mut_ref, &mut store);
             unsafe {
-                *encoded.as_ptr() = AbiOption::Some(other);
+                *encoded.as_ptr() = Native(AbiOption::Some(other));
             }
             store.sync().unwrap();
         }
@@ -1218,7 +1208,7 @@ mod tests {
             let mut store = Default::default();
             let encoded = soft_encode(ref_mut, &mut store);
             let c_slice = unsafe { encoded.into_mut().unwrap() };
-            c_slice[0] = AbiOption::Some(other);
+            c_slice[0] = Native(AbiOption::Some(other));
             store.sync().unwrap();
         }
         assert_eq!(slice, [Some(42u8)]);
@@ -1227,7 +1217,7 @@ mod tests {
     #[test]
     #[cfg(feature = "alloc")]
     fn decode_stored_mut_ref() {
-        let mut c_opt = AbiOption::Some(1u8);
+        let mut c_opt = Native(AbiOption::Some(1u8));
         let c_ptr = SoftRefMut::<<Option<u8> as crate::ReprC>::CType>::from_mut(&mut c_opt);
         let new_val: u8 = 42;
         {
@@ -1237,9 +1227,9 @@ mod tests {
             *decoded = Some(new_val);
             store.sync().unwrap();
         }
-        assert_eq!(c_opt, AbiOption::Some(42u8));
+        assert_eq!(c_opt, Native(AbiOption::Some(42u8)));
 
-        let mut c_opts = [AbiOption::Some(1u8)];
+        let mut c_opts = [Native(AbiOption::Some(1u8))];
         let c_slice =
             AbiSoftWideRefMut::<<[Option<u8>] as crate::ReprC>::CType>::from_mut(&mut c_opts[..]);
         let x: u8 = 10;
@@ -1250,7 +1240,7 @@ mod tests {
             decoded[0] = Some(x);
             store.sync().unwrap();
         }
-        assert_eq!(c_opts[0], AbiOption::Some(10u8));
+        assert_eq!(c_opts[0], Native(AbiOption::Some(10u8)));
     }
 
     #[test]
@@ -1267,8 +1257,8 @@ mod tests {
             let encoded = soft_encode(slice_ref, &mut store);
             let c_slice = unsafe { encoded.into_mut().unwrap() };
 
-            c_slice[0] = abi::Tuple2(100_u32, co3::primitive::abi::bool::FALSE);
-            c_slice[1] = abi::Tuple2(200_u32, co3::primitive::abi::bool::TRUE);
+            c_slice[0] = Native(abi::Tuple2(100_u32, co3::primitive::abi::bool::FALSE));
+            c_slice[1] = Native(abi::Tuple2(200_u32, co3::primitive::abi::bool::TRUE));
             store.sync().unwrap();
         }
 
@@ -1289,8 +1279,10 @@ mod tests {
             let mut store = Default::default();
             let encoded = soft_encode(&mut value, &mut store);
             let original_data = unsafe { (*encoded.as_ptr()).as_ptr() };
-            let replacement =
-                AbiBox::from_box(Box::new(AbiTuple2(100, co3::primitive::abi::bool::TRUE)));
+            let replacement = AbiBox::from_box(Box::new(Native(AbiTuple2(
+                100,
+                co3::primitive::abi::bool::TRUE,
+            ))));
             let replacement_data = replacement.as_ptr();
 
             unsafe {
@@ -1309,7 +1301,7 @@ mod tests {
     fn decode_stored_ref_mut_slice() {
         use tuple::abi::Tuple2 as AbiTuple2;
 
-        let mut tuples = [AbiTuple2(10_u32, co3::primitive::abi::bool::TRUE)];
+        let mut tuples = [Native(AbiTuple2(10_u32, co3::primitive::abi::bool::TRUE))];
         let c_slice =
             AbiSoftWideRefMut::<<[(u32, bool)] as crate::ReprC>::CType>::from_mut(&mut tuples[..]);
 
@@ -1322,7 +1314,7 @@ mod tests {
             store.sync().unwrap();
         }
 
-        assert_eq!(tuples[0].0, 100);
+        assert_eq!(tuples[0].0.0, 100);
     }
 
     #[test]
@@ -1388,20 +1380,20 @@ mod tests {
             result::abi::Result as AbiResult,
             tuple::{Tuple2, abi::Tuple2 as AbiTuple2},
         };
-        assert_type_eq_all!(<(u8, bool) as ReprC>::CType, AbiTuple2<u8, <bool as crate::ReprC>::CType>);
+        assert_type_eq_all!(
+            <(u8, bool) as ReprC>::CType,
+            Native<AbiTuple2<u8, <bool as crate::ReprC>::CType>>
+        );
         assert_type_eq_all!(
             <Tuple2<u8, bool> as ReprC>::CType,
-            crate::marker::Stable<tuple::abi::Tuple2<u8, crate::primitive::abi::bool>>
+            tuple::abi::Tuple2<u8, crate::primitive::abi::bool>
         );
-        assert_type_eq_all!(<Option<u8> as ReprC>::CType, AbiOption<u8>);
-        assert_type_eq_all!(
-            <crate::option::Option<u8> as ReprC>::CType,
-            crate::marker::Stable<AbiOption<u8>>
-        );
-        assert_type_eq_all!(<Result<u8, u8> as ReprC>::CType, AbiResult<u8, u8>);
+        assert_type_eq_all!(<Option<u8> as ReprC>::CType, Native<AbiOption<u8>>);
+        assert_type_eq_all!(<crate::option::Option<u8> as ReprC>::CType, AbiOption<u8>);
+        assert_type_eq_all!(<Result<u8, u8> as ReprC>::CType, Native<AbiResult<u8, u8>>);
         assert_type_eq_all!(
             <crate::result::Result<u8, u8> as ReprC>::CType,
-            crate::marker::Stable<AbiResult<u8, u8>>
+            AbiResult<u8, u8>
         );
         assert_type_eq_all!(<core::num::NonZeroU8 as ReprC>::CType, NonZero<u8>);
         assert_type_eq_all!(<crate::marker::NonZero<u8> as ReprC>::CType, NonZero<u8>);
@@ -1426,21 +1418,19 @@ mod tests {
         use crate::vec::abi::Vec as AbiVec;
         assert_type_eq_all!(
             <Vec<bool> as ReprC>::CType,
-            AbiVec<<bool as crate::ReprC>::CType>
+            Native<AbiVec<<bool as crate::ReprC>::CType>>
         );
         assert_type_eq_all!(
             <crate::vec::Vec<bool> as ReprC>::CType,
-            crate::marker::Stable<AbiVec<<bool as crate::ReprC>::CType>>
+            AbiVec<<bool as crate::ReprC>::CType>
         );
         assert_type_eq_all!(
             <ManuallyDrop<Vec<bool>> as ReprC>::CType,
-            core::mem::ManuallyDrop<crate::vec::abi::Vec<<bool as crate::ReprC>::CType>>
+            core::mem::ManuallyDrop<Native<crate::vec::abi::Vec<<bool as crate::ReprC>::CType>>>
         );
         assert_type_ne_all!(
-            core::mem::ManuallyDrop<crate::vec::abi::Vec<<bool as crate::ReprC>::CType>>,
-            core::mem::ManuallyDrop<
-                crate::marker::Stable<crate::vec::abi::Vec<<bool as crate::ReprC>::CType>>,
-            >
+            core::mem::ManuallyDrop<Native<crate::vec::abi::Vec<<bool as crate::ReprC>::CType>>>,
+            core::mem::ManuallyDrop<crate::vec::abi::Vec<<bool as crate::ReprC>::CType>>
         );
         let source = Cell::new(Vec::from([true, false]));
         let mut store = Default::default();

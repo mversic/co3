@@ -82,11 +82,11 @@ error: runtime-dispatched #[unpack] arguments cannot use `_` placeholders
 50 |     fn missing_payload_unpack_try<dyn(u8) T = (u8, u8)>(#[unpack(_, _)] value: T)
    |                                                         ^^^^^^^^^^^^^^^
 
-error[E0277]: the trait bound `Tuple2<u8, u8>: Unpack2<u32, co3::string::abi::String>` is not satisfied
+error[E0277]: the trait bound `Tuple2<u8, u8>: Unpack2<u32, Native<co3::string::abi::String>>` is not satisfied
   --> tests/ui_fail/unpack_type.rs:31:51
    |
 31 |     fn missing_into(#[unpack(u32, String)] value: Tuple2<u8, u8>);
-   |                                                   ^^^^^^^^^^^^^^ the trait `Unpack2<u32, co3::string::abi::String>` is not implemented for `Tuple2<u8, u8>`
+   |                                                   ^^^^^^^^^^^^^^ the trait `Unpack2<u32, Native<co3::string::abi::String>>` is not implemented for `Tuple2<u8, u8>`
    |
 help: item with same name found
   --> src/tuple.rs
@@ -109,7 +109,7 @@ help: item with same name found
            and $N others
    = note: this error originates in the macro `impl_abi_tuple` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0277]: the trait bound `Tuple2<u8, u8>: Unpack2<u32, co3::string::abi::String>` is not satisfied
+error[E0277]: the trait bound `Tuple2<u8, u8>: Unpack2<u32, Native<co3::string::abi::String>>` is not satisfied
   --> tests/ui_fail/unpack_type.rs:28:1
    |
 28 | / ffi! {
@@ -118,7 +118,7 @@ error[E0277]: the trait bound `Tuple2<u8, u8>: Unpack2<u32, co3::string::abi::St
 31 | |     fn missing_into(#[unpack(u32, String)] value: Tuple2<u8, u8>);
 32 | |     fn missing_into_try(#[unpack(u32, String)] value: Tuple2<u8, u8>);
 33 | | }
-   | |_^ the trait `Unpack2<u32, co3::string::abi::String>` is not implemented for `Tuple2<u8, u8>`
+   | |_^ the trait `Unpack2<u32, Native<co3::string::abi::String>>` is not implemented for `Tuple2<u8, u8>`
    |
 help: item with same name found
   --> src/tuple.rs
@@ -141,11 +141,11 @@ help: item with same name found
            and $N others
    = note: this error originates in the macro `ffi` which comes from the expansion of the macro `impl_abi_tuple` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0277]: the trait bound `Tuple2<u8, u8>: Unpack2<u32, co3::string::abi::String>` is not satisfied
+error[E0277]: the trait bound `Tuple2<u8, u8>: Unpack2<u32, Native<co3::string::abi::String>>` is not satisfied
   --> tests/ui_fail/unpack_type.rs:32:55
    |
 32 |     fn missing_into_try(#[unpack(u32, String)] value: Tuple2<u8, u8>);
-   |                                                       ^^^^^^^^^^^^^^ the trait `Unpack2<u32, co3::string::abi::String>` is not implemented for `Tuple2<u8, u8>`
+   |                                                       ^^^^^^^^^^^^^^ the trait `Unpack2<u32, Native<co3::string::abi::String>>` is not implemented for `Tuple2<u8, u8>`
    |
 help: item with same name found
   --> src/tuple.rs

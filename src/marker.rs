@@ -89,6 +89,9 @@ impl<T: ?Sized> EncodeUnchecked for PhantomData<T> {}
 impl<T: ?Sized> Encode for PhantomData<T> {}
 
 unsafe impl<T: ?Sized> CType for PhantomData<T> {}
+// SAFETY: PhantomData<T> is guaranteed to have size 0 and alignment 1,
+// making its return ABI compatible with unit.
+unsafe impl<T: ?Sized> CFnReturn for PhantomData<T> {}
 crate::mutable::impl_direct_mut!([T: ?Sized] PhantomData<T>);
 
 /// Marks a lowered ABI value that is borrowed across the FFI boundary.
@@ -163,28 +166,28 @@ impl<T: CType + PartialEq> PartialEq for Borrowed<T> {
 }
 impl<T: CType + Eq> Eq for Borrowed<T> {}
 
-/// Marks the lowered carrier of a source type that opted into co3's stable representation.
+/// Marks the lowered carrier of the native Rust form of a type.
 ///
 /// The marker has the same layout and calling convention as its payload.
 #[derive(RustSpec, Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
-pub struct Stable<T: CType + ?Sized>(pub T);
+pub struct Native<T: CType + ?Sized>(pub T);
 
-impl<T: CType + ?Sized> ReprC for Stable<T> {
+impl<T: CType + ?Sized> ReprC for Native<T> {
     type CType = Self;
 }
 
-unsafe impl<T: CType + ?Sized> CType for Stable<T> {}
-unsafe impl<T: CType + ?Sized> AbiCompatibleValidate for Stable<T> {
+unsafe impl<T: CType + ?Sized> CType for Native<T> {}
+unsafe impl<T: CType + ?Sized> AbiCompatibleValidate for Native<T> {
     unsafe fn is_valid(_: &Self) -> bool {
         true
     }
 }
-unsafe impl<T: CType + ?Sized> AbiCompatible for Stable<T> {}
-unsafe impl<T: CFnArg> CFnArg for Stable<T> {}
-unsafe impl<T: CFnReturn> CFnReturn for Stable<T> {}
+unsafe impl<T: CType + ?Sized> AbiCompatible for Native<T> {}
+unsafe impl<T: CFnArg> CFnArg for Native<T> {}
+unsafe impl<T: CFnReturn> CFnReturn for Native<T> {}
 
-unsafe impl<T: CType> EncodeMoveUnchecked for Stable<T> {
+unsafe impl<T: CType> EncodeMoveUnchecked for Native<T> {
     type SoftStore = ();
 
     unsafe fn soft_encode_unchecked<'itm>(self, (): &'itm mut ()) -> Self
@@ -195,7 +198,7 @@ unsafe impl<T: CType> EncodeMoveUnchecked for Stable<T> {
     }
 }
 
-unsafe impl<T: CType> EncodeMove for Stable<T> {
+unsafe impl<T: CType> EncodeMove for Native<T> {
     type Store = ();
 
     fn soft_encode<'itm>(self, (): &'itm mut ()) -> Self
@@ -206,7 +209,7 @@ unsafe impl<T: CType> EncodeMove for Stable<T> {
     }
 }
 
-unsafe impl<'d, T: CType> DecodeMove<'d> for Stable<T> {
+unsafe impl<'d, T: CType> DecodeMove<'d> for Native<T> {
     type Store = ();
 
     unsafe fn soft_decode<'itm: 'd>(source: Self, (): &'itm mut ()) -> Option<Self> {
@@ -214,39 +217,39 @@ unsafe impl<'d, T: CType> DecodeMove<'d> for Stable<T> {
     }
 }
 
-impl<T: CType> Encode for Stable<T> {}
-impl<T: CType> EncodeUnchecked for Stable<T> {}
-impl<T: CType> Decode<'_> for Stable<T> {}
-crate::borrow::__impl_borrowed_identity!([T: CType] Stable<T>);
+impl<T: CType> Encode for Native<T> {}
+impl<T: CType> EncodeUnchecked for Native<T> {}
+impl<T: CType> Decode<'_> for Native<T> {}
+crate::borrow::__impl_borrowed_identity!([T: CType] Native<T>);
 
-impl<T: CType> From<T> for Stable<T> {
+impl<T: CType> From<T> for Native<T> {
     fn from(value: T) -> Self {
         Self(value)
     }
 }
 
-impl<T: CType + ?Sized> core::ops::Deref for Stable<T> {
+impl<T: CType + ?Sized> core::ops::Deref for Native<T> {
     type Target = T;
     fn deref(&self) -> &T {
         &self.0
     }
 }
-impl<T: CType + ?Sized> core::ops::DerefMut for Stable<T> {
+impl<T: CType + ?Sized> core::ops::DerefMut for Native<T> {
     fn deref_mut(&mut self) -> &mut T {
         &mut self.0
     }
 }
-unsafe impl<T: CType + Zeroable> Zeroable for Stable<T> {}
+unsafe impl<T: CType + Zeroable> Zeroable for Native<T> {}
 
-impl<T: CType + crate::wide::WideHeader> crate::wide::WideHeader for Stable<T> {
+impl<T: CType + crate::wide::WideHeader> crate::wide::WideHeader for Native<T> {
     type Data = T::Data;
 }
 
-unsafe impl<T: CType + crate::wide::Wide + ?Sized> crate::wide::Wide for Stable<T>
+unsafe impl<T: CType + crate::wide::Wide + ?Sized> crate::wide::Wide for Native<T>
 where
     T::Header: CType,
 {
-    type Header = Stable<T::Header>;
+    type Header = Native<T::Header>;
     type Metadata = T::Metadata;
 
     fn metadata(pointer: *const Self) -> Self::Metadata {

@@ -1,5 +1,6 @@
 //! Module providing ABI compatible functionality
 
+use crate::marker::Native;
 #[cfg(feature = "alloc")]
 use alloc::boxed::Box;
 use core::{
@@ -29,7 +30,8 @@ use crate::{
 };
 
 disjoint_impls! {
-    // A 1-ZST is ABI-compatible with (). Other aggregate returns need nonzero size.
+    // Aggregate returns may be 1-ZSTs, but must retain their aggregate ABI type.
+    // Zero size alone does not guarantee ABI compatibility with ().
     pub(crate) trait CFnReturnLayout {}
 
     impl<T: RustSpec<Size = RustSpecSized<Gt<Zero>>>> CFnReturnLayout for T {}
@@ -123,12 +125,13 @@ disjoint_impls! {
     unsafe impl<R: AbiCompatibleValidate<CType: CType + Copy> + Niche, E: ReprC<CType: CType + Sized>>
         AbiCompatibleValidate for Result<R, E>
     where
-        Self: RustSpec<Layout = Stable> + ReprC<CType = AbiResultOk<<R as ReprC>::CType, <E as ReprC>::CType>>,
+        Self: RustSpec<Layout = Stable> + ReprC<CType = Native<AbiResultOk<<R as ReprC>::CType, <E as ReprC>::CType>>>,
         R: RustSpec<Size = RustSpecSized<Gt<Zero>>>,
         E: RustSpec<Size = RustSpecSized<Zero>>,
     {
         #[inline(always)]
         unsafe fn is_valid(target: &Self::CType) -> bool {
+let target = &target.0;
             R::is_niche(&target.0) || unsafe { R::is_valid(&target.0) }
         }
     }
@@ -136,12 +139,13 @@ disjoint_impls! {
     unsafe impl<R: ReprC<CType: CType + Sized>, E: AbiCompatibleValidate<CType: CType + Copy> + Niche>
         AbiCompatibleValidate for Result<R, E>
     where
-        Self: RustSpec<Layout = Stable> + ReprC<CType = AbiResultErr<<R as ReprC>::CType, <E as ReprC>::CType>>,
+        Self: RustSpec<Layout = Stable> + ReprC<CType = Native<AbiResultErr<<R as ReprC>::CType, <E as ReprC>::CType>>>,
         R: RustSpec<Size = RustSpecSized<Zero>>,
         E: RustSpec<Size = RustSpecSized<Gt<Zero>>>,
     {
         #[inline(always)]
         unsafe fn is_valid(target: &Self::CType) -> bool {
+let target = &target.0;
             E::is_niche(&target.0) || unsafe { E::is_valid(&target.0) }
         }
     }
@@ -309,15 +313,16 @@ unsafe impl AbiCompatible for str {}
 
 unsafe impl<R: AbiCompatibleValidate + Niche> AbiCompatibleValidate for Option<R>
 where
-    Self: RustSpec<Layout = Stable> + ReprC<CType = AbiOptionSome<<R as ReprC>::CType>>,
+    Self: RustSpec<Layout = Stable> + ReprC<CType = Native<AbiOptionSome<<R as ReprC>::CType>>>,
 {
     #[inline(always)]
     unsafe fn is_valid(target: &Self::CType) -> bool {
+        let target = &target.0;
         R::is_niche(&target.0) || unsafe { R::is_valid(&target.0) }
     }
 }
 unsafe impl<R: AbiCompatible + Niche> AbiCompatible for Option<R> where
-    Self: RustSpec<Layout = Stable> + ReprC<CType = AbiOptionSome<<R as ReprC>::CType>>
+    Self: RustSpec<Layout = Stable> + ReprC<CType = Native<AbiOptionSome<<R as ReprC>::CType>>>
 {
 }
 
@@ -352,6 +357,8 @@ pub(crate) unsafe fn transmute_owned<S, T>(source: S) -> T {
 
 #[cfg(test)]
 mod tests {
+    use crate::marker::Native;
+
     #[cfg(feature = "alloc")]
     use alloc::vec::Vec;
     use core::cell::{Cell, UnsafeCell};
@@ -395,14 +402,18 @@ mod tests {
     fn option_validation_accepts_none_and_checks_some() {
         use core::num::NonZeroU8;
 
-        assert!(unsafe { <Option<NonZeroU8>>::is_valid(&AbiOptionSome(NonZero(0))) });
-        assert!(unsafe { <Option<NonZeroU8>>::is_valid(&AbiOptionSome(NonZero(7))) });
-        assert!(unsafe { <Option<&bool>>::is_valid(&AbiOptionSome(Ref::null())) });
+        assert!(unsafe { <Option<NonZeroU8>>::is_valid(&Native(AbiOptionSome(NonZero(0)))) });
+        assert!(unsafe { <Option<NonZeroU8>>::is_valid(&Native(AbiOptionSome(NonZero(7)))) });
+        assert!(unsafe { <Option<&bool>>::is_valid(&Native(AbiOptionSome(Ref::null()))) });
         assert!(unsafe {
-            <Option<&bool>>::is_valid(&AbiOptionSome(Ref::from_ref(&co3::primitive::abi::bool(1))))
+            <Option<&bool>>::is_valid(&Native(AbiOptionSome(Ref::from_ref(
+                &co3::primitive::abi::bool(1),
+            ))))
         });
         assert!(!unsafe {
-            <Option<&bool>>::is_valid(&AbiOptionSome(Ref::from_ref(&co3::primitive::abi::bool(3))))
+            <Option<&bool>>::is_valid(&Native(AbiOptionSome(Ref::from_ref(
+                &co3::primitive::abi::bool(3),
+            ))))
         });
 
         let none = None::<NonZeroU8>;
@@ -517,7 +528,7 @@ mod tests {
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<bool>:
-            Niche<CType = crate::vec::abi::Vec<<bool as crate::ReprC>::CType>>,
+            Niche<CType = Native<crate::vec::abi::Vec<<bool as crate::ReprC>::CType>>>,
             Decode<'static>,
             Encode,
         );
@@ -527,7 +538,7 @@ mod tests {
             Encode,
         );
         assert_impl_all!(Option<bool>:
-            Niche<CType = AbiOptionSome<<bool as crate::ReprC>::CType>>,
+            Niche<CType = Native<AbiOptionSome<<bool as crate::ReprC>::CType>>>,
             Decode<'static>,
             Encode,
         );
@@ -568,7 +579,7 @@ mod tests {
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<&u8>:
-            Niche<CType = crate::vec::abi::Vec<<&'static u8 as crate::ReprC>::CType>>,
+            Niche<CType = Native<crate::vec::abi::Vec<<&'static u8 as crate::ReprC>::CType>>>,
             Decode<'static>,
             Encode,
         );
@@ -578,7 +589,7 @@ mod tests {
             Encode,
         );
         assert_impl_all!(Option<&u8>:
-            ReprC<CType = AbiOptionSome<<&'static u8 as crate::ReprC>::CType>>,
+            ReprC<CType = Native<AbiOptionSome<<&'static u8 as crate::ReprC>::CType>>>,
             Decode<'static>,
             Encode,
         );
@@ -623,7 +634,7 @@ mod tests {
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<&bool>:
-            Niche<CType = crate::vec::abi::Vec<<&'static bool as crate::ReprC>::CType>>,
+            Niche<CType = Native<crate::vec::abi::Vec<<&'static bool as crate::ReprC>::CType>>>,
             Decode<'static>,
             Encode,
         );
@@ -633,7 +644,7 @@ mod tests {
             Encode,
         );
         assert_impl_all!(Option<&bool>:
-            ReprC<CType = AbiOptionSome<<&'static bool as crate::ReprC>::CType>>,
+            ReprC<CType = Native<AbiOptionSome<<&'static bool as crate::ReprC>::CType>>>,
             Decode<'static>,
             Encode,
         );
@@ -673,7 +684,7 @@ mod tests {
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<&mut u8>:
-            Niche<CType = crate::vec::abi::Vec<<&'static mut u8 as crate::ReprC>::CType>>,
+            Niche<CType = Native<crate::vec::abi::Vec<<&'static mut u8 as crate::ReprC>::CType>>>,
             Decode<'static>,
             Encode,
         );
@@ -683,7 +694,7 @@ mod tests {
             Encode,
         );
         assert_impl_all!(Option<&mut u8>:
-            ReprC<CType = AbiOptionSome<<&'static mut u8 as crate::ReprC>::CType>>,
+            ReprC<CType = Native<AbiOptionSome<<&'static mut u8 as crate::ReprC>::CType>>>,
             Decode<'static>,
             Encode,
         );
@@ -725,7 +736,7 @@ mod tests {
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<&mut bool>:
-            Niche<CType = crate::vec::abi::Vec<<&'static mut bool as crate::ReprC>::CType>>,
+            Niche<CType = Native<crate::vec::abi::Vec<<&'static mut bool as crate::ReprC>::CType>>>,
             Decode<'static>,
             Encode
         );
@@ -735,7 +746,7 @@ mod tests {
             Encode
         );
         assert_impl_all!(Option<&mut bool>:
-            ReprC<CType = AbiOptionSome<<&'static mut bool as crate::ReprC>::CType>>,
+            ReprC<CType = Native<AbiOptionSome<<&'static mut bool as crate::ReprC>::CType>>>,
             Decode<'static>,
             Encode
         );
@@ -849,16 +860,16 @@ mod tests {
     fn result_niche_is_valid_for_error() {
         use core::num::NonZeroU8;
         assert!(unsafe {
-            <Result<NonZeroU8, ()>>::is_valid(&crate::result::abi::ResultOk(
+            <Result<NonZeroU8, ()>>::is_valid(&Native(crate::result::abi::ResultOk(
                 NonZero(0),
                 core::marker::PhantomData,
-            ))
+            )))
         });
         assert!(unsafe {
-            <Result<NonZeroU8, ()>>::is_valid(&crate::result::abi::ResultOk(
+            <Result<NonZeroU8, ()>>::is_valid(&Native(crate::result::abi::ResultOk(
                 NonZero(1),
                 core::marker::PhantomData,
-            ))
+            )))
         });
     }
 
@@ -866,16 +877,16 @@ mod tests {
     fn result_niche_is_valid_for_success() {
         use core::num::NonZeroU8;
         assert!(unsafe {
-            <Result<(), NonZeroU8>>::is_valid(&crate::result::abi::ResultErr(
+            <Result<(), NonZeroU8>>::is_valid(&Native(crate::result::abi::ResultErr(
                 NonZero(0),
                 core::marker::PhantomData,
-            ))
+            )))
         });
         assert!(unsafe {
-            <Result<(), NonZeroU8>>::is_valid(&crate::result::abi::ResultErr(
+            <Result<(), NonZeroU8>>::is_valid(&Native(crate::result::abi::ResultErr(
                 NonZero(1),
                 core::marker::PhantomData,
-            ))
+            )))
         });
     }
 
@@ -937,7 +948,7 @@ mod tests {
         let values = [(true, 3u8), (false, 4u8)];
         let mut store = Default::default();
         let encoded = crate::soft_encode(values, &mut store);
-        assert_eq!(encoded[0].0, co3::primitive::abi::bool::TRUE);
+        assert_eq!(encoded[0].0.0, co3::primitive::abi::bool::TRUE);
         assert_eq!(encoded[1].1, 4);
         let mut decode_store = Default::default();
         let decoded =

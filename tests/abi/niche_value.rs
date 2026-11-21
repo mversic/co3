@@ -1,3 +1,4 @@
+use co3::marker::Native;
 use std::{cmp::Ordering, ffi::CStr};
 
 use co3::{
@@ -435,7 +436,7 @@ fn verify_enum_niche_value() {
     assert!(bool::is_niche(&encode(None::<bool>).payload()));
     assert!(Ordering::is_niche(&encode(None::<Ordering>).payload()));
 
-    assert_eq!(encode(None::<Opaque>), abi::Option::None());
+    assert_eq!(encode(None::<Opaque>), Native(abi::Option::None()));
     assert!(OwnedExtern::is_niche(
         &encode(None::<OwnedExtern>).payload()
     ));

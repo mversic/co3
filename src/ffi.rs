@@ -674,6 +674,7 @@ unsafe impl borrow::BorrowedEncode for alloc::ffi::CString {
 
 #[cfg(test)]
 mod tests {
+    use crate::marker::Native;
 
     #[cfg(all(feature = "alloc", feature = "derive"))]
     use alloc::string::String;
@@ -916,11 +917,11 @@ mod tests {
     fn exported_shared_string_and_alias_use_the_decoder() {
         let source = AbiString::from_string(String::from("héllo"));
         assert_eq!(
-            unsafe { string_len_raw(SoftRef::from_ref(&source)) },
+            unsafe { string_len_raw(SoftRef::from_ref(&Native(source))) },
             "héllo".len()
         );
         assert_eq!(
-            unsafe { alias_len_raw(Borrowed::new(SoftRef::from_ref(&source))) },
+            unsafe { alias_len_raw(Borrowed::new(SoftRef::from_ref(&Native(source,)))) },
             "héllo".len()
         );
         assert_eq!(unsafe { source.0.into_vec() }.unwrap(), "héllo".as_bytes());
@@ -984,7 +985,7 @@ mod tests {
         value: SoftRefMut<<Option<u8> as crate::ReprC>::CType>,
     ) -> u32 {
         let value = value.as_ptr();
-        unsafe { *value = AbiOption::Some(42) };
+        unsafe { *value = Native(AbiOption::Some(42)) };
         7
     }
 
@@ -1509,11 +1510,11 @@ mod tests {
     fn raw_companions_validate_fields_in_declaration_order() {
         assert_eq!(
             unsafe {
-                raw_order_tuple_raw(Borrowed::new(AbiTuple3(
+                raw_order_tuple_raw(Borrowed::new(Native(AbiTuple3(
                     <RawOrderProbe as co3::ReprC>::CType::from_fields(1),
                     <RawOrderProbe as co3::ReprC>::CType::from_fields(2),
                     <RawOrderProbe as co3::ReprC>::CType::from_fields(3),
-                )))
+                ))))
             },
             6
         );
@@ -1890,10 +1891,16 @@ mod tests {
         let _: Option<AliasComposite> = None;
         static_assertions::assert_type_eq_all!(
             AliasMaybeCallback,
-            co3::option::abi::OptionSome<<unsafe extern "C" fn(u8) as crate::ReprC>::CType>
+            Native<co3::option::abi::OptionSome<<unsafe extern "C" fn(u8) as crate::ReprC>::CType>>
         );
-        static_assertions::assert_type_eq_all!(AliasNicheOk, co3::result::abi::ResultOk<<core::num::NonZeroU8 as crate::ReprC>::CType, ()>);
-        static_assertions::assert_type_eq_all!(AliasNicheErr, co3::result::abi::ResultErr<(), <core::num::NonZeroU8 as crate::ReprC>::CType>);
+        static_assertions::assert_type_eq_all!(
+            AliasNicheOk,
+            Native<co3::result::abi::ResultOk<<core::num::NonZeroU8 as crate::ReprC>::CType, ()>>
+        );
+        static_assertions::assert_type_eq_all!(
+            AliasNicheErr,
+            Native<co3::result::abi::ResultErr<(), <core::num::NonZeroU8 as crate::ReprC>::CType>>
+        );
         static_assertions::assert_type_eq_all!(
             AliasCompositeReturn,
             <(u8, unsafe extern "C" fn() -> u8) as ReprC>::CType

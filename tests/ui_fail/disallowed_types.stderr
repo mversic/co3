@@ -199,7 +199,7 @@ help: the trait `BorrowedEncode` is not implemented for `provider::OpaqueZst`
               (A, B, C, D, E)
               (A, B, C, D, E, F)
             and $N others
-    = note: required for `Box<provider::OpaqueZst>` to implement `co3::borrow::_::BorrowedEncode_cfg0<co3::boxed::abi::Box<provider::OpaqueZst>, rust_spec::Stable, rust_spec::size::Sized<Gt<rust_spec::Zero>>>`
+    = note: required for `Box<provider::OpaqueZst>` to implement `co3::borrow::_::BorrowedEncode_cfg0<co3::boxed::abi::Box<provider::OpaqueZst>, Stable, rust_spec::size::Sized<Gt<rust_spec::Zero>>>`
     = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0080]: evaluation panicked: ABI retype size mismatch

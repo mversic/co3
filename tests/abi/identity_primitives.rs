@@ -1,3 +1,4 @@
+use co3::marker::Native;
 use co3::{
     ReprC,
     boxed::Box,
@@ -144,7 +145,10 @@ fn lowered_aggregates_use_codecs_without_conversion_traits() {
         );
     }
     let option = AbiOption::Some(42_u8);
-    assert_eq!(unsafe { co3::decode::<Option<u8>>(option) }, Some(Some(42)));
+    assert_eq!(
+        unsafe { co3::decode::<Option<u8>>(Native(option)) },
+        Some(Some(42))
+    );
 
     for value in [Ok(42_u8), Err(7_u8)] {
         let mut store = Default::default();
@@ -156,7 +160,7 @@ fn lowered_aggregates_use_codecs_without_conversion_traits() {
     }
     let result = AbiResult::<u8, u8>::Err(7_u8);
     assert_eq!(
-        unsafe { co3::decode::<Result<u8, u8>>(result) },
+        unsafe { co3::decode::<Result<u8, u8>>(Native(result)) },
         Some(Err(7))
     );
     assert_eq!(
@@ -211,13 +215,19 @@ fn safe_carrier_constructors_accept_lowered_storage() {
 
     let bytes: Box<[u8]> = Box::from("hello".as_bytes());
     let utf8 = co3::string::abi::String(co3::vec::abi::Vec::from_vec(bytes.into_vec()));
-    assert_eq!(unsafe { co3::decode::<String>(utf8) }.unwrap(), "hello");
+    assert_eq!(
+        unsafe { co3::decode::<String>(Native(utf8)) }.unwrap(),
+        "hello"
+    );
 
     let bytes: Box<[u8]> = Box::from("world".as_bytes());
     let len = bytes.len();
     let utf8 = co3::string::abi::String(co3::vec::abi::Vec::from_vec(bytes.into_vec()));
     assert_eq!(utf8.len(), len);
-    assert_eq!(unsafe { co3::decode::<String>(utf8) }.unwrap(), "world");
+    assert_eq!(
+        unsafe { co3::decode::<String>(Native(utf8)) }.unwrap(),
+        "world"
+    );
 
     let bytes = [1_u8, 2];
     let _slice = AbiSoftWideRef::<[u8]>::from_ref(&bytes[..]);

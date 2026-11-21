@@ -1,5 +1,6 @@
 //! Logic related to the conversion of [`Option<T>`] to and from FFI-compatible representation
 
+use crate::marker::Native;
 #[cfg(feature = "alloc")]
 use alloc::boxed::Box;
 
@@ -97,9 +98,9 @@ disjoint_impls! {
     impl<'a, R: ?Sized> Niche for WideRef<'a, R>
     where
         R: ReprC<CType: crate::CType + Wide<Header: CType + WideHeader<Data: CType>>> + Wide,
-        Self: ReprC<CType = crate::marker::Stable<AbiWideRef<'a, <R as ReprC>::CType>>>,
+        Self: ReprC<CType = AbiWideRef<'a, <R as ReprC>::CType>>,
     {
-        const NICHE: Self::CType = crate::marker::Stable(AbiWideRef::null());
+        const NICHE: Self::CType = AbiWideRef::null();
 
         fn is_niche(value: &Self::CType) -> bool {
             value.as_ptr().is_null()
@@ -109,9 +110,9 @@ disjoint_impls! {
     impl<'a, R: ?Sized> Niche for WideRef<'a, R>
     where
         R: ReprC<CType: crate::CType + Wide<Header: CType + WideHeader<Data: CType>>> + Wide,
-        Self: ReprC<CType = crate::marker::Stable<AbiSoftWideRef<<R as ReprC>::CType>>>,
+        Self: ReprC<CType = AbiSoftWideRef<<R as ReprC>::CType>>,
     {
-        const NICHE: Self::CType = crate::marker::Stable(AbiSoftWideRef::null());
+        const NICHE: Self::CType = AbiSoftWideRef::null();
 
         fn is_niche(value: &Self::CType) -> bool {
             value.as_ptr().is_null()
@@ -121,9 +122,9 @@ disjoint_impls! {
     impl<'a, R: ?Sized> Niche for WideRefMut<'a, R>
     where
         R: ReprC<CType: crate::CType + Wide<Header: CType + WideHeader<Data: CType>>> + Wide,
-        Self: ReprC<CType = crate::marker::Stable<AbiWideRefMut<'a, <R as ReprC>::CType>>>,
+        Self: ReprC<CType = AbiWideRefMut<'a, <R as ReprC>::CType>>,
     {
-        const NICHE: Self::CType = crate::marker::Stable(AbiWideRefMut::null());
+        const NICHE: Self::CType = AbiWideRefMut::null();
 
         fn is_niche(value: &Self::CType) -> bool {
             value.as_ptr().is_null()
@@ -133,9 +134,9 @@ disjoint_impls! {
     impl<'a, R: ?Sized> Niche for WideRefMut<'a, R>
     where
         R: ReprC<CType: crate::CType + Wide<Header: CType + WideHeader<Data: CType>>> + Wide,
-        Self: ReprC<CType = crate::marker::Stable<AbiSoftWideRefMut<<R as ReprC>::CType>>>,
+        Self: ReprC<CType = AbiSoftWideRefMut<<R as ReprC>::CType>>,
     {
-        const NICHE: Self::CType = crate::marker::Stable(AbiSoftWideRefMut::null());
+        const NICHE: Self::CType = AbiSoftWideRefMut::null();
 
         fn is_niche(value: &Self::CType) -> bool {
             value.as_ptr().is_null()
@@ -217,9 +218,9 @@ disjoint_impls! {
 
     impl<R: ReprC<CType: CType + Copy>> Niche for Option<R>
     where
-        Self: ReprC<CType = AbiOption<<R as ReprC>::CType>>,
+        Self: ReprC<CType = Native<AbiOption<<R as ReprC>::CType>>>,
     {
-        const NICHE: Self::CType = AbiOption::niche();
+        const NICHE: Self::CType = Native(AbiOption::niche());
 
         fn is_niche(value: &Self::CType) -> bool {
             value.is_niche()
@@ -228,22 +229,24 @@ disjoint_impls! {
     // TODO: Depends on: https://github.com/mversic/co3/issues/33
     impl Niche for Option<bool>
     where
-        Self: ReprC<CType = AbiOptionSome<<bool as crate::ReprC>::CType>>,
+        Self: ReprC<CType = Native<AbiOptionSome<<bool as crate::ReprC>::CType>>>,
     {
-        const NICHE: Self::CType = AbiOptionSome(co3::primitive::abi::bool(3));
+        const NICHE: Self::CType = Native(AbiOptionSome(co3::primitive::abi::bool(3)));
 
         fn is_niche(value: &Self::CType) -> bool {
+let value = &value.0;
             value.0.0 == 3
         }
     }
     impl Niche for Option<Option<bool>>
     where
-        Self: ReprC<CType = AbiOptionSome<<Option<bool> as crate::ReprC>::CType>>,
+        Self: ReprC<CType = Native<AbiOptionSome<<Option<bool> as crate::ReprC>::CType>>>,
     {
-        const NICHE: Self::CType = AbiOptionSome(AbiOptionSome(co3::primitive::abi::bool(4)));
+        const NICHE: Self::CType = Native(AbiOptionSome(Native(AbiOptionSome(co3::primitive::abi::bool(4)))));
 
         fn is_niche(value: &Self::CType) -> bool {
-            value.0.0.0 == 4
+let value = &value.0;
+            value.0.0.0.0 == 4
         }
     }
 
@@ -251,10 +254,10 @@ disjoint_impls! {
     where
         A: RustSpec<Niche = WithNiche<N>>,
     {
-        const NICHE: Self::CType = AbiTuple2(A::NICHE, unsafe { core::mem::zeroed() });
+        const NICHE: Self::CType = Native(AbiTuple2(A::NICHE, unsafe { core::mem::zeroed() }));
 
         fn is_niche(value: &Self::CType) -> bool {
-            A::is_niche(&value.0)
+            A::is_niche(&value.0.0)
         }
     }
 
@@ -263,10 +266,10 @@ disjoint_impls! {
         A: RustSpec<Niche = WithoutNiche>,
         B: RustSpec<Niche = WithNiche<N>>,
     {
-        const NICHE: Self::CType = AbiTuple2(unsafe { core::mem::zeroed() }, B::NICHE);
+        const NICHE: Self::CType = Native(AbiTuple2(unsafe { core::mem::zeroed() }, B::NICHE));
 
         fn is_niche(value: &Self::CType) -> bool {
-            B::is_niche(&value.1)
+            B::is_niche(&value.0.1)
         }
     }
 }
@@ -284,6 +287,8 @@ impl<R: Niche, const N: usize> Niche for [R; N] {
 
 #[cfg(test)]
 mod tests {
+    use crate::marker::Native;
+
     #[cfg(feature = "alloc")]
     use alloc::string::String;
     use core::{mem::ManuallyDrop, num::NonZero, ptr::NonNull};
@@ -299,19 +304,19 @@ mod tests {
     #[test]
     fn nested_option_niche_family() {
         assert_impl_all!(Option<bool>:
-            Niche<CType = AbiOptionSome<<bool as crate::ReprC>::CType>>,
+            Niche<CType = Native<AbiOptionSome<<bool as crate::ReprC>::CType>>>,
             Decode<'static>,
             Encode,
 
         );
         assert_impl_all!(Option<Option<bool>>:
-            Niche<CType = AbiOptionSome<<Option<bool> as crate::ReprC>::CType>>,
+            Niche<CType = Native<AbiOptionSome<<Option<bool> as crate::ReprC>::CType>>>,
             Decode<'static>,
             Encode,
 
         );
         assert_impl_all!(Option<(u8, NonZero<u8>)>:
-            ReprC<CType = AbiOptionSome<<(u8, NonZero<u8>) as crate::ReprC>::CType>>,
+            ReprC<CType = Native<AbiOptionSome<<(u8, NonZero<u8>) as crate::ReprC>::CType>>>,
             Decode<'static>,
             Encode,
         );
@@ -413,26 +418,30 @@ mod tests {
 
     #[test]
     fn niche_values() {
-        assert!(<&bool>::is_niche(&crate::encode(None::<&bool>).0));
+        assert!(<&bool>::is_niche(&crate::encode(None::<&bool>).0.0));
         assert!(<&mut bool>::is_niche(
-            &co3::soft_encode(None::<&mut bool>, &mut Default::default()).0
+            &co3::soft_encode(None::<&mut bool>, &mut Default::default())
+                .0
+                .0
         ));
 
         #[cfg(feature = "alloc")]
-        assert!(String::is_niche(&crate::encode(None::<String>).0));
+        assert!(String::is_niche(&crate::encode(None::<String>).0.0));
         #[cfg(feature = "alloc")]
-        assert!(<Box<str>>::is_niche(&crate::encode(None::<Box<str>>).0));
+        assert!(<Box<str>>::is_niche(&crate::encode(None::<Box<str>>).0.0));
 
-        assert!(<&str>::is_niche(&crate::encode(None::<&str>).0));
+        assert!(<&str>::is_niche(&crate::encode(None::<&str>).0.0));
 
         #[cfg(feature = "alloc")]
         assert!(<&mut str>::is_niche(
-            &crate::soft_encode(None::<&mut str>, &mut Default::default()).0
+            &crate::soft_encode(None::<&mut str>, &mut Default::default())
+                .0
+                .0
         ));
 
         assert_eq!(
             core::ptr::null_mut(),
-            crate::encode(None::<NonNull<u32>>).0.0
+            crate::encode(None::<NonNull<u32>>).0.0.0
         );
 
         #[cfg(feature = "alloc")]
@@ -441,7 +450,7 @@ mod tests {
         ));
 
         assert!(<ManuallyDrop<bool> as Niche>::is_niche(
-            &crate::encode(None::<ManuallyDrop<bool>>).0
+            &crate::encode(None::<ManuallyDrop<bool>>).0.0
         ));
     }
 }

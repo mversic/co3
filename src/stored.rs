@@ -1,3 +1,4 @@
+use crate::marker::Native;
 #[cfg(feature = "alloc")]
 use alloc::{borrow::ToOwned, boxed::Box, vec::Vec};
 #[cfg(feature = "alloc")]
@@ -348,7 +349,7 @@ disjoint_impls! {
         where
             Self: 'itm,
         {
-            crate::marker::Stable(AbiVec::from_vec(unsafe { encode_vec_elements_unchecked(self.into(), store) }))
+            AbiVec::from_vec(unsafe { encode_vec_elements_unchecked(self.into(), store) })
         }
     }
 
@@ -513,16 +514,19 @@ disjoint_impls! {
         where
             Self: 'itm,
         {
+Native({
             unsafe {
                 EncodeMoveUnchecked::soft_encode_unchecked(StableOption::from(self), store)
-                    .0
+
             }
-        }
+        })
+}
     }
     unsafe impl<R: EncodeMoveUnchecked + Niche, N: LayoutKind> EncodeMoveUnchecked for Option<R>
     where
         R: RustSpec<Niche = WithNiche<N>>,
-    {
+    Self: ReprC<CType = Native<AbiOptionSome<<R as ReprC>::CType>>>,
+{
         type SoftStore = Option<R::SoftStore>;
 
         #[inline(always)]
@@ -530,6 +534,7 @@ disjoint_impls! {
         where
             Self: 'itm,
         {
+Native({
             match self {
                 Some(value) => AbiOptionSome(unsafe {
                     value.soft_encode_unchecked(store.insert(Default::default()))
@@ -539,12 +544,13 @@ disjoint_impls! {
                     AbiOptionSome(R::NICHE)
                 }
             }
-        }
+        })
+}
     }
     unsafe impl<R: EncodeMoveUnchecked<CType: crate::CType + Copy>, E: EncodeMoveUnchecked<CType: crate::CType + Copy>, K: SizedKind>
         EncodeMoveUnchecked for Result<R, E>
     where
-        Self: ReprC<CType = AbiResult<<R as ReprC>::CType, <E as ReprC>::CType>>,
+        Self: ReprC<CType = Native<AbiResult<<R as ReprC>::CType, <E as ReprC>::CType>>>,
         R: RustSpec<Size = RustSpecSized<K>>,
         E: RustSpec<Size = RustSpecSized<K>>,
     {
@@ -555,16 +561,18 @@ disjoint_impls! {
         where
             Self: 'itm,
         {
+Native({
             unsafe {
                 EncodeMoveUnchecked::soft_encode_unchecked(StableResult::from(self), store)
-                    .0
+
             }
-        }
+        })
+}
     }
     unsafe impl<R: EncodeMoveUnchecked + Niche, E: ReprC<CType: CType + Sized>, N: LayoutKind> EncodeMoveUnchecked
         for Result<R, E>
     where
-        Self: ReprC<CType = AbiResultOk<<R as ReprC>::CType, <E as ReprC>::CType>>,
+        Self: ReprC<CType = Native<AbiResultOk<<R as ReprC>::CType, <E as ReprC>::CType>>>,
         R: RustSpec<Size = RustSpecSized<Gt<Zero>>, Niche = WithNiche<N>>,
         E: RustSpec<Size = RustSpecSized<Zero>>,
     {
@@ -575,6 +583,7 @@ disjoint_impls! {
         where
             Self: 'itm,
         {
+Native({
             match self {
                 Ok(ok) => AbiResultOk(
                     unsafe { ok.soft_encode_unchecked(store.insert(Default::default())) },
@@ -585,12 +594,13 @@ disjoint_impls! {
                     AbiResultOk(R::NICHE, PhantomData)
                 }
             }
-        }
+        })
+}
     }
     unsafe impl<R: ReprC<CType: CType + Sized>, E: EncodeMoveUnchecked + Niche, N: LayoutKind> EncodeMoveUnchecked
         for Result<R, E>
     where
-        Self: ReprC<CType = AbiResultErr<<R as ReprC>::CType, <E as ReprC>::CType>>,
+        Self: ReprC<CType = Native<AbiResultErr<<R as ReprC>::CType, <E as ReprC>::CType>>>,
         R: RustSpec<Size = RustSpecSized<Zero>>,
         E: RustSpec<Size = RustSpecSized<Gt<Zero>>, Niche = WithNiche<N>>,
     {
@@ -601,6 +611,7 @@ disjoint_impls! {
         where
             Self: 'itm,
         {
+Native({
             match self {
                 Ok(_) => {
                     *store = None;
@@ -611,7 +622,8 @@ disjoint_impls! {
                     PhantomData,
                 ),
             }
-        }
+        })
+}
     }
 }
 disjoint_impls! {
@@ -1046,7 +1058,7 @@ disjoint_impls! {
     unsafe impl<R: EncodeMove> EncodeMove for Option<R>
     where
         R: RustSpec<Niche = WithoutNiche>,
-        Self: ReprC<CType = crate::option::abi::Option<<R as ReprC>::CType>>,
+        Self: ReprC<CType = Native<crate::option::abi::Option<<R as ReprC>::CType>>>,
     {
         type Store = <StableOption<R> as EncodeMove>::Store;
 
@@ -1055,15 +1067,17 @@ disjoint_impls! {
         where
             Self: 'itm,
         {
+Native({
             StableOption::from(self)
                 .soft_encode(store)
-                .0
-        }
+
+        })
+}
     }
     unsafe impl<R: EncodeMove + Niche, N: LayoutKind> EncodeMove for Option<R>
     where
         R: RustSpec<Niche = WithNiche<N>>,
-        Self: ReprC<CType = AbiOptionSome<<R as ReprC>::CType>>,
+        Self: ReprC<CType = Native<AbiOptionSome<<R as ReprC>::CType>>>,
     {
         type Store = Option<R::Store>;
 
@@ -1072,20 +1086,22 @@ disjoint_impls! {
         where
             Self: 'itm,
         {
+Native({
             if let Some(value) = self {
                 let encoded = EncodeMove::soft_encode(value, store.insert(Default::default()));
                 debug_assert!(!R::is_niche(&encoded), "encoding produced NICHE value");
-                return AbiOptionSome(encoded);
+                return Native(AbiOptionSome(encoded));
             }
 
             *store = None;
             AbiOptionSome(R::NICHE)
-        }
+        })
+}
     }
     unsafe impl<R: EncodeMove<CType: crate::CType + Copy>, E: EncodeMove<CType: crate::CType + Copy>, K: SizedKind> EncodeMove
         for Result<R, E>
     where
-        Self: ReprC<CType = AbiResult<<R as ReprC>::CType, <E as ReprC>::CType>>,
+        Self: ReprC<CType = Native<AbiResult<<R as ReprC>::CType, <E as ReprC>::CType>>>,
         R: RustSpec<Size = RustSpecSized<K>>,
         E: RustSpec<Size = RustSpecSized<K>>,
     {
@@ -1096,14 +1112,16 @@ disjoint_impls! {
         where
             Self: 'itm,
         {
+Native({
             StableResult::from(self)
                 .soft_encode(store)
-                .0
-        }
+
+        })
+}
     }
     unsafe impl<R: EncodeMove + Niche, E: ReprC<CType: CType + Sized>, N: LayoutKind> EncodeMove for Result<R, E>
     where
-        Self: ReprC<CType = AbiResultOk<<R as ReprC>::CType, <E as ReprC>::CType>>,
+        Self: ReprC<CType = Native<AbiResultOk<<R as ReprC>::CType, <E as ReprC>::CType>>>,
         R: RustSpec<Size = RustSpecSized<Gt<Zero>>, Niche = WithNiche<N>>,
         E: RustSpec<Size = RustSpecSized<Zero>>,
     {
@@ -1114,6 +1132,7 @@ disjoint_impls! {
         where
             Self: 'itm,
         {
+Native({
             match self {
                 Ok(ok) => AbiResultOk(
                     EncodeMove::soft_encode(ok, store.insert(Default::default())),
@@ -1121,11 +1140,12 @@ disjoint_impls! {
                 ),
                 Err(_) => AbiResultOk(R::NICHE, PhantomData),
             }
-        }
+        })
+}
     }
     unsafe impl<R: ReprC<CType: CType + Sized>, E: EncodeMove + Niche, N: LayoutKind> EncodeMove for Result<R, E>
     where
-        Self: ReprC<CType = AbiResultErr<<R as ReprC>::CType, <E as ReprC>::CType>>,
+        Self: ReprC<CType = Native<AbiResultErr<<R as ReprC>::CType, <E as ReprC>::CType>>>,
         R: RustSpec<Size = RustSpecSized<Zero>>,
         E: RustSpec<Size = RustSpecSized<Gt<Zero>>, Niche = WithNiche<N>>,
     {
@@ -1136,6 +1156,7 @@ disjoint_impls! {
         where
             Self: 'itm,
         {
+Native({
             match self {
                 Ok(_) => AbiResultErr(E::NICHE, PhantomData),
                 Err(err) => AbiResultErr(
@@ -1143,7 +1164,8 @@ disjoint_impls! {
                     PhantomData,
                 ),
             }
-        }
+        })
+}
     }
 }
 disjoint_impls! {
@@ -1804,8 +1826,10 @@ disjoint_impls! {
             source: Self::CType,
             store: &'itm mut Self::Store,
         ) -> Option<Self> {
+let source = source.0;
+
             unsafe {
-                <StableOption<R> as DecodeMove<'d>>::soft_decode(crate::marker::Stable(source), store)
+                <StableOption<R> as DecodeMove<'d>>::soft_decode(source, store)
             }
             .map(Into::into)
         }
@@ -1815,9 +1839,11 @@ disjoint_impls! {
             source: Self::CType,
             store: &'itm mut Self::Store,
         ) -> Self {
+let source = source.0;
+
             unsafe {
                 <StableOption<R> as DecodeMove<'d>>::soft_decode_unchecked(
-                    crate::marker::Stable(source),
+                    source,
                     store,
                 )
             }
@@ -1827,7 +1853,8 @@ disjoint_impls! {
     unsafe impl<'d, R: DecodeMove<'d> + Niche, N: LayoutKind> DecodeMove<'d> for Option<R>
     where
         R: RustSpec<Niche = WithNiche<N>>,
-    {
+    Self: ReprC<CType = Native<AbiOptionSome<<R as ReprC>::CType>>>,
+{
         type Store = Option<<R as DecodeMove<'d>>::Store>;
 
         #[inline(always)]
@@ -1835,6 +1862,8 @@ disjoint_impls! {
             source: Self::CType,
             store: &'itm mut Self::Store,
         ) -> Option<Self> {
+let source = source.0;
+
             if R::is_niche(&source.0) {
                 *store = None;
                 return Some(None);
@@ -1848,6 +1877,8 @@ disjoint_impls! {
             source: Self::CType,
             store: &'itm mut Self::Store,
         ) -> Self {
+let source = source.0;
+
             if R::is_niche(&source.0) {
                 *store = None;
                 return None;
@@ -1859,7 +1890,7 @@ disjoint_impls! {
     unsafe impl<'d, R: DecodeMove<'d, CType: crate::CType + Copy>, E: DecodeMove<'d, CType: crate::CType + Copy>, K: SizedKind>
         DecodeMove<'d> for Result<R, E>
     where
-        Self: ReprC<CType = AbiResult<<R as ReprC>::CType, <E as ReprC>::CType>>,
+        Self: ReprC<CType = Native<AbiResult<<R as ReprC>::CType, <E as ReprC>::CType>>>,
         R: RustSpec<Size = RustSpecSized<K>>,
         E: RustSpec<Size = RustSpecSized<K>>,
     {
@@ -1870,9 +1901,11 @@ disjoint_impls! {
             source: Self::CType,
             store: &'itm mut Self::Store,
         ) -> Option<Self> {
+let source = source.0;
+
             unsafe {
                 <StableResult<R, E> as DecodeMove<'d>>::soft_decode(
-                    crate::marker::Stable(source),
+                    source,
                     store,
                 )
             }
@@ -1884,9 +1917,11 @@ disjoint_impls! {
             source: Self::CType,
             store: &'itm mut Self::Store,
         ) -> Self {
+let source = source.0;
+
             unsafe {
                 <StableResult<R, E> as DecodeMove<'d>>::soft_decode_unchecked(
-                    crate::marker::Stable(source),
+                    source,
                     store,
                 )
             }
@@ -1896,7 +1931,7 @@ disjoint_impls! {
     unsafe impl<'d, R: DecodeMove<'d> + Niche, E: Default + ReprC<CType: CType + Sized>, N: LayoutKind> DecodeMove<'d>
         for Result<R, E>
     where
-        Self: ReprC<CType = AbiResultOk<<R as ReprC>::CType, <E as ReprC>::CType>>,
+        Self: ReprC<CType = Native<AbiResultOk<<R as ReprC>::CType, <E as ReprC>::CType>>>,
         R: RustSpec<Size = RustSpecSized<Gt<Zero>>, Niche = WithNiche<N>>,
         E: RustSpec<Size = RustSpecSized<Zero>>,
     {
@@ -1907,6 +1942,8 @@ disjoint_impls! {
             source: Self::CType,
             store: &'itm mut Self::Store,
         ) -> Option<Self> {
+let source = source.0;
+
             if R::is_niche(&source.0) {
                 return Some(Err(E::default()));
             }
@@ -1919,6 +1956,8 @@ disjoint_impls! {
             source: Self::CType,
             store: &'itm mut Self::Store,
         ) -> Self {
+let source = source.0;
+
             if R::is_niche(&source.0) {
                 return Err(E::default());
             }
@@ -1929,7 +1968,7 @@ disjoint_impls! {
     unsafe impl<'d, R: Default + ReprC<CType: CType + Sized>, E: DecodeMove<'d> + Niche, N: LayoutKind> DecodeMove<'d>
         for Result<R, E>
     where
-        Self: ReprC<CType = AbiResultErr<<R as ReprC>::CType, <E as ReprC>::CType>>,
+        Self: ReprC<CType = Native<AbiResultErr<<R as ReprC>::CType, <E as ReprC>::CType>>>,
         R: RustSpec<Size = RustSpecSized<Zero>>,
         E: RustSpec<Size = RustSpecSized<Gt<Zero>>, Niche = WithNiche<N>>,
     {
@@ -1940,6 +1979,8 @@ disjoint_impls! {
             source: Self::CType,
             store: &'itm mut Self::Store,
         ) -> Option<Self> {
+let source = source.0;
+
             if E::is_niche(&source.0) {
                 return Some(Ok(R::default()));
             }
@@ -1952,6 +1993,8 @@ disjoint_impls! {
             source: Self::CType,
             store: &'itm mut Self::Store,
         ) -> Self {
+let source = source.0;
+
             if E::is_niche(&source.0) {
                 return Ok(R::default());
             }
@@ -2570,7 +2613,7 @@ mod tests {
         let mut tuple_store = Default::default();
         let encoded =
             unsafe { co3::soft_encode_unchecked((StoredDirect(9), 4_u8), &mut tuple_store) };
-        assert_eq!(encoded.0, 9);
+        assert_eq!(encoded.0.0, 9);
         assert_eq!(tuple_store.0.calls, 1);
 
         let mut array_store = Default::default();
@@ -2683,10 +2726,10 @@ mod tests {
         let original = core::ptr::from_mut(&mut value).cast::<u8>();
 
         let optional = unsafe { co3::encode_unchecked(Some(&mut value)) };
-        assert_eq!(optional.0.as_ptr().cast::<u8>(), original);
+        assert_eq!(optional.0.0.as_ptr().cast::<u8>(), original);
 
         let result = unsafe { co3::encode_unchecked(Ok::<&mut bool, ()>(&mut value)) };
-        assert_eq!(result.0.as_ptr().cast::<u8>(), original);
+        assert_eq!(result.0.0.as_ptr().cast::<u8>(), original);
 
         let record = unsafe {
             co3::encode_unchecked(RecordMut {
@@ -2699,7 +2742,7 @@ mod tests {
         assert!(value);
 
         let tuple = unsafe { co3::encode_unchecked((&mut value, 7_u8)) };
-        assert_eq!(tuple.0.as_ptr().cast::<u8>(), original);
+        assert_eq!(tuple.0.0.as_ptr().cast::<u8>(), original);
 
         let array = unsafe { co3::encode_unchecked([&mut value]) };
         assert_eq!(array[0].as_ptr().cast::<u8>(), original);
@@ -2844,7 +2887,7 @@ mod tests {
         let mut value = false;
         let mut store = Default::default();
         let encoded = co3::soft_encode(Some(&mut value), &mut store);
-        unsafe { *encoded.0.as_ptr() = co3::primitive::abi::bool::TRUE };
+        unsafe { *encoded.0.0.as_ptr() = co3::primitive::abi::bool::TRUE };
         store.sync().unwrap();
         assert!(value);
 
@@ -2861,7 +2904,7 @@ mod tests {
         let mut value = false;
         let mut store = Default::default();
         let encoded = co3::soft_encode(alloc::vec![Some(&mut value), None], &mut store);
-        unsafe { *(*encoded.as_ptr()).0.as_ptr() = co3::primitive::abi::bool::TRUE };
+        unsafe { *(*encoded.as_ptr()).0.0.as_ptr() = co3::primitive::abi::bool::TRUE };
         drop(unsafe { encoded.into_vec().unwrap() });
         store.sync().unwrap();
         assert!(value);
@@ -2908,7 +2951,7 @@ mod tests {
         let mut value = false;
         let mut store = Default::default();
         let encoded = co3::soft_encode(Some(TransparentMut(&mut value)), &mut store);
-        unsafe { *encoded.0.0.as_ptr() = co3::primitive::abi::bool::TRUE };
+        unsafe { *encoded.0.0.0.as_ptr() = co3::primitive::abi::bool::TRUE };
         store.sync().unwrap();
         assert!(value);
 

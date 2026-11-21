@@ -239,6 +239,8 @@ unsafe impl<T: EmptyStore> EmptyStore for MaybeUninit<T> {}
 
 #[cfg(test)]
 mod tests {
+    use crate::marker::Native;
+
     #[cfg(feature = "alloc")]
     use alloc::{boxed::Box, string::String, vec::Vec};
 
@@ -388,7 +390,7 @@ mod tests {
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<ManuallyDrop<u8>>:
-            Niche<CType = crate::vec::abi::Vec<<ManuallyDrop<u8> as crate::ReprC>::CType>>,
+            Niche<CType = Native<crate::vec::abi::Vec<<ManuallyDrop<u8> as crate::ReprC>::CType>>>,
             Decode<'static>,
             Encode,
         );
@@ -398,7 +400,7 @@ mod tests {
             Encode,
         );
         assert_impl_all!(Option<ManuallyDrop<u8>>:
-            Niche<CType = AbiOption<<ManuallyDrop<u8> as crate::ReprC>::CType>>,
+            Niche<CType = Native<AbiOption<<ManuallyDrop<u8> as crate::ReprC>::CType>>>,
             Decode<'static>,
             Encode,
         );
@@ -439,13 +441,13 @@ mod tests {
             Niche<CType = AbiWideBox<<[ManuallyDrop<Box<u8>>] as crate::ReprC>::CType>>,
         );
         assert_impl_all!(Vec<ManuallyDrop<Box<u8>>>:
-            Niche<CType = crate::vec::abi::Vec<<ManuallyDrop<Box<u8>> as crate::ReprC>::CType>>,
+            Niche<CType = Native<crate::vec::abi::Vec<<ManuallyDrop<Box<u8>> as crate::ReprC>::CType>>>,
         );
         assert_impl_all!([ManuallyDrop<Box<u8>>; 2]:
             Niche<CType = [core::mem::ManuallyDrop<crate::boxed::abi::Box<u8>>; 2]>,
         );
         assert_impl_all!(Option<ManuallyDrop<Box<u8>>>:
-            ReprC<CType = crate::option::abi::OptionSome<<ManuallyDrop<Box<u8>> as crate::ReprC>::CType>>,
+            ReprC<CType = Native<crate::option::abi::OptionSome<<ManuallyDrop<Box<u8>> as crate::ReprC>::CType>>>,
         );
         assert_not_impl_any!(ManuallyDrop<Box<u8>>: CType);
 

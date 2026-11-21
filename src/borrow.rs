@@ -1,5 +1,6 @@
 //! A module for working with borrowed data.
 
+use crate::marker::Native;
 #[doc(hidden)]
 // TODO: Questionable export
 #[cfg(feature = "alloc")]
@@ -249,7 +250,7 @@ disjoint_impls! {
             let _ = store;
             *owner = Default::default();
             let value = owner.0.insert(self);
-            unsafe { crate::marker::Stable(AbiVec::from_raw_parts(value.as_mut_ptr().cast(), value.len(), value.capacity())) }
+            unsafe { AbiVec::from_raw_parts(value.as_mut_ptr().cast(), value.len(), value.capacity()) }
         }
     }
 
@@ -277,7 +278,7 @@ disjoint_impls! {
                 &mut owner.1,
                 |value, store, owner| unsafe { T::soft_encode_unchecked(value, store, owner) },
             );
-            unsafe { crate::marker::Stable(AbiVec::from_raw_parts(owner.0.as_mut_ptr(), owner.0.len(), owner.0.capacity())) }
+            unsafe { AbiVec::from_raw_parts(owner.0.as_mut_ptr(), owner.0.len(), owner.0.capacity()) }
         }
     }
 
@@ -297,16 +298,19 @@ disjoint_impls! {
         where
             Self: 'itm,
         {
+Native({
             unsafe {
                 BorrowedEncodeUnchecked::soft_encode_unchecked(StableOption::from(self), store, owner)
-                    .0
+
             }
-        }
+        })
+}
     }
     unsafe impl<R: BorrowedEncodeUnchecked + Niche, N: LayoutKind> BorrowedEncodeUnchecked for Option<R>
     where
         R: RustSpec<Niche = WithNiche<N>>,
-    {
+    Self: ReprC<CType = Native<AbiOptionSome<<R as ReprC>::CType>>>,
+{
         type Owner = Option<R::Owner>;
         type SoftStore = Option<R::SoftStore>;
 
@@ -319,6 +323,7 @@ disjoint_impls! {
         where
             Self: 'itm,
         {
+Native({
             match self {
                 Some(value) => AbiOptionSome(unsafe {
                     value.soft_encode_unchecked(store.insert(Default::default()), owner.insert(Default::default()))
@@ -329,7 +334,8 @@ disjoint_impls! {
                     AbiOptionSome(R::NICHE)
                 }
             }
-        }
+        })
+}
     }
     unsafe impl<
         R: BorrowedEncodeUnchecked<CType: crate::CType + Copy>,
@@ -337,7 +343,7 @@ disjoint_impls! {
         K: SizedKind,
     > BorrowedEncodeUnchecked for Result<R, E>
     where
-        Self: ReprC<CType = AbiResult<<R as ReprC>::CType, <E as ReprC>::CType>>,
+        Self: ReprC<CType = Native<AbiResult<<R as ReprC>::CType, <E as ReprC>::CType>>>,
         R: RustSpec<Size = RustSpecSized<K>>,
         E: RustSpec<Size = RustSpecSized<K>>,
     {
@@ -353,16 +359,18 @@ disjoint_impls! {
         where
             Self: 'itm,
         {
+Native({
             unsafe {
                 BorrowedEncodeUnchecked::soft_encode_unchecked(StableResult::from(self), store, owner)
-                    .0
+
             }
-        }
+        })
+}
     }
     unsafe impl<R: BorrowedEncodeUnchecked + Niche, E: ReprC<CType: CType + Sized>, N: LayoutKind> BorrowedEncodeUnchecked
         for Result<R, E>
     where
-        Self: ReprC<CType = AbiResultOk<<R as ReprC>::CType, <E as ReprC>::CType>>,
+        Self: ReprC<CType = Native<AbiResultOk<<R as ReprC>::CType, <E as ReprC>::CType>>>,
         R: RustSpec<Size = RustSpecSized<Gt<Zero>>, Niche = WithNiche<N>>,
         E: RustSpec<Size = RustSpecSized<Zero>>,
     {
@@ -378,6 +386,7 @@ disjoint_impls! {
         where
             Self: 'itm,
         {
+Native({
             match self {
                 Ok(ok) => AbiResultOk(
                     unsafe { ok.soft_encode_unchecked(store.insert(Default::default()), owner.insert(Default::default())) },
@@ -389,12 +398,13 @@ disjoint_impls! {
                     AbiResultOk(R::NICHE, PhantomData)
                 }
             }
-        }
+        })
+}
     }
     unsafe impl<R: ReprC<CType: CType + Sized>, E: BorrowedEncodeUnchecked + Niche, N: LayoutKind> BorrowedEncodeUnchecked
         for Result<R, E>
     where
-        Self: ReprC<CType = AbiResultErr<<R as ReprC>::CType, <E as ReprC>::CType>>,
+        Self: ReprC<CType = Native<AbiResultErr<<R as ReprC>::CType, <E as ReprC>::CType>>>,
         R: RustSpec<Size = RustSpecSized<Zero>>,
         E: RustSpec<Size = RustSpecSized<Gt<Zero>>, Niche = WithNiche<N>>,
     {
@@ -410,6 +420,7 @@ disjoint_impls! {
         where
             Self: 'itm,
         {
+Native({
             match self {
                 Ok(_) => {
                     *store = None;
@@ -421,7 +432,8 @@ disjoint_impls! {
                     PhantomData,
                 ),
             }
-        }
+        })
+}
     }
 }
 
@@ -620,7 +632,7 @@ disjoint_impls! {
                 &mut owner.2,
                 |value, store, owner| T::soft_encode(value, store, owner),
             );
-            unsafe { crate::marker::Stable(AbiVec::from_raw_parts(owner.1.as_mut_ptr(), owner.1.len(), owner.1.capacity())) }
+            unsafe { AbiVec::from_raw_parts(owner.1.as_mut_ptr(), owner.1.len(), owner.1.capacity()) }
         }
     }
 
@@ -647,7 +659,7 @@ disjoint_impls! {
                 &mut owner.1,
                 |value, store, owner| T::soft_encode(value, store, owner),
             );
-            unsafe { crate::marker::Stable(AbiVec::from_raw_parts(owner.0.as_mut_ptr(), owner.0.len(), owner.0.capacity())) }
+            unsafe { AbiVec::from_raw_parts(owner.0.as_mut_ptr(), owner.0.len(), owner.0.capacity()) }
         }
     }
 
@@ -711,7 +723,7 @@ disjoint_impls! {
     unsafe impl<R: BorrowedEncode> BorrowedEncode for Option<R>
     where
         R: RustSpec<Niche = WithoutNiche>,
-        Self: ReprC<CType = crate::option::abi::Option<<R as ReprC>::CType>>,
+        Self: ReprC<CType = Native<crate::option::abi::Option<<R as ReprC>::CType>>>,
     {
         type Store = <StableOption<R> as BorrowedEncode>::Store;
 
@@ -720,15 +732,17 @@ disjoint_impls! {
         where
             Self: 'itm,
         {
+Native({
             StableOption::from(self)
                 .soft_encode(store, owner)
-                .0
-        }
+
+        })
+}
     }
     unsafe impl<R: BorrowedEncode + Niche, N: LayoutKind> BorrowedEncode for Option<R>
     where
         R: RustSpec<Niche = WithNiche<N>>,
-        Self: ReprC<CType = AbiOptionSome<<R as ReprC>::CType>>,
+        Self: ReprC<CType = Native<AbiOptionSome<<R as ReprC>::CType>>>,
     {
         type Store = Option<R::Store>;
 
@@ -741,21 +755,23 @@ disjoint_impls! {
         where
             Self: 'itm,
         {
+Native({
             if let Some(value) = self {
                 let encoded = BorrowedEncode::soft_encode(value, store.insert(Default::default()), owner.insert(Default::default()));
                 debug_assert!(!R::is_niche(&encoded), "encoding produced NICHE value");
-                return AbiOptionSome(encoded);
+                return Native(AbiOptionSome(encoded));
             }
 
             *store = None;
                     *owner = None;
             AbiOptionSome(R::NICHE)
-        }
+        })
+}
     }
     unsafe impl<R: BorrowedEncode<CType: crate::CType + Copy>, E: BorrowedEncode<CType: crate::CType + Copy>, K: SizedKind>
         BorrowedEncode for Result<R, E>
     where
-        Self: ReprC<CType = AbiResult<<R as ReprC>::CType, <E as ReprC>::CType>>,
+        Self: ReprC<CType = Native<AbiResult<<R as ReprC>::CType, <E as ReprC>::CType>>>,
         R: RustSpec<Size = RustSpecSized<K>>,
         E: RustSpec<Size = RustSpecSized<K>>,
     {
@@ -770,14 +786,16 @@ disjoint_impls! {
         where
             Self: 'itm,
         {
+Native({
             StableResult::from(self)
                 .soft_encode(store, owner)
-                .0
-        }
+
+        })
+}
     }
     unsafe impl<R: BorrowedEncode + Niche, E: ReprC<CType: CType + Sized>, N: LayoutKind> BorrowedEncode for Result<R, E>
     where
-        Self: ReprC<CType = AbiResultOk<<R as ReprC>::CType, <E as ReprC>::CType>>,
+        Self: ReprC<CType = Native<AbiResultOk<<R as ReprC>::CType, <E as ReprC>::CType>>>,
         R: RustSpec<Size = RustSpecSized<Gt<Zero>>, Niche = WithNiche<N>>,
         E: RustSpec<Size = RustSpecSized<Zero>>,
     {
@@ -792,6 +810,7 @@ disjoint_impls! {
         where
             Self: 'itm,
         {
+Native({
             match self {
                 Ok(ok) => AbiResultOk(
                     BorrowedEncode::soft_encode(ok, store.insert(Default::default()), owner.insert(Default::default())),
@@ -799,11 +818,12 @@ disjoint_impls! {
                 ),
                 Err(_) => AbiResultOk(R::NICHE, PhantomData),
             }
-        }
+        })
+}
     }
     unsafe impl<R: ReprC<CType: CType + Sized>, E: BorrowedEncode + Niche, N: LayoutKind> BorrowedEncode for Result<R, E>
     where
-        Self: ReprC<CType = AbiResultErr<<R as ReprC>::CType, <E as ReprC>::CType>>,
+        Self: ReprC<CType = Native<AbiResultErr<<R as ReprC>::CType, <E as ReprC>::CType>>>,
         R: RustSpec<Size = RustSpecSized<Zero>>,
         E: RustSpec<Size = RustSpecSized<Gt<Zero>>, Niche = WithNiche<N>>,
     {
@@ -818,6 +838,7 @@ disjoint_impls! {
         where
             Self: 'itm,
         {
+Native({
             match self {
                 Ok(_) => AbiResultErr(E::NICHE, PhantomData),
                 Err(err) => AbiResultErr(
@@ -825,7 +846,8 @@ disjoint_impls! {
                     PhantomData,
                 ),
             }
-        }
+        })
+}
     }
 }
 
@@ -950,9 +972,11 @@ disjoint_impls! {
             source: Self::CType,
             store: &'itm mut Self::Store,
         ) -> Option<Self> {
+let source = source.0;
+
             unsafe {
                 <StableOption<R> as BorrowedDecode<'d>>::soft_decode(
-                    crate::marker::Stable(source),
+                    source,
                     store,
                 )
             }
@@ -964,9 +988,11 @@ disjoint_impls! {
             source: Self::CType,
             store: &'itm mut Self::Store,
         ) -> Self {
+let source = source.0;
+
             unsafe {
                 <StableOption<R> as BorrowedDecode<'d>>::soft_decode_unchecked(
-                    crate::marker::Stable(source),
+                    source,
                     store,
                 )
             }
@@ -976,7 +1002,8 @@ disjoint_impls! {
     unsafe impl<'d, R: BorrowedDecode<'d> + Niche, N: LayoutKind> BorrowedDecode<'d> for Option<R>
     where
         R: RustSpec<Niche = WithNiche<N>>,
-    {
+    Self: ReprC<CType = Native<AbiOptionSome<<R as ReprC>::CType>>>,
+{
         type Store = Option<<R as BorrowedDecode<'d>>::Store>;
 
         #[inline(always)]
@@ -984,6 +1011,8 @@ disjoint_impls! {
             source: Self::CType,
             store: &'itm mut Self::Store,
         ) -> Option<Self> {
+let source = source.0;
+
             if R::is_niche(&source.0) {
                 *store = None;
                 return Some(None);
@@ -997,6 +1026,8 @@ disjoint_impls! {
             source: Self::CType,
             store: &'itm mut Self::Store,
         ) -> Self {
+let source = source.0;
+
             if R::is_niche(&source.0) {
                 *store = None;
                 return None;
@@ -1012,7 +1043,7 @@ disjoint_impls! {
         K: SizedKind,
     > BorrowedDecode<'d> for Result<R, E>
     where
-        Self: ReprC<CType = AbiResult<<R as ReprC>::CType, <E as ReprC>::CType>>,
+        Self: ReprC<CType = Native<AbiResult<<R as ReprC>::CType, <E as ReprC>::CType>>>,
         R: RustSpec<Size = RustSpecSized<K>>,
         E: RustSpec<Size = RustSpecSized<K>>,
     {
@@ -1023,9 +1054,11 @@ disjoint_impls! {
             source: Self::CType,
             store: &'itm mut Self::Store,
         ) -> Option<Self> {
+let source = source.0;
+
             unsafe {
                 <StableResult<R, E> as BorrowedDecode<'d>>::soft_decode(
-                    crate::marker::Stable(source),
+                    source,
                     store,
                 )
             }
@@ -1037,9 +1070,11 @@ disjoint_impls! {
             source: Self::CType,
             store: &'itm mut Self::Store,
         ) -> Self {
+let source = source.0;
+
             unsafe {
                 <StableResult<R, E> as BorrowedDecode<'d>>::soft_decode_unchecked(
-                    crate::marker::Stable(source),
+                    source,
                     store,
                 )
             }
@@ -1049,7 +1084,7 @@ disjoint_impls! {
     unsafe impl<'d, R: BorrowedDecode<'d> + Niche, E: Default + ReprC<CType: CType + Sized>, N: LayoutKind> BorrowedDecode<'d>
         for Result<R, E>
     where
-        Self: ReprC<CType = AbiResultOk<<R as ReprC>::CType, <E as ReprC>::CType>>,
+        Self: ReprC<CType = Native<AbiResultOk<<R as ReprC>::CType, <E as ReprC>::CType>>>,
         R: RustSpec<Size = RustSpecSized<Gt<Zero>>, Niche = WithNiche<N>>,
         E: RustSpec<Size = RustSpecSized<Zero>>,
     {
@@ -1060,6 +1095,8 @@ disjoint_impls! {
             source: Self::CType,
             store: &'itm mut Self::Store,
         ) -> Option<Self> {
+let source = source.0;
+
             if R::is_niche(&source.0) {
                 return Some(Err(E::default()));
             }
@@ -1072,6 +1109,8 @@ disjoint_impls! {
             source: Self::CType,
             store: &'itm mut Self::Store,
         ) -> Self {
+let source = source.0;
+
             if R::is_niche(&source.0) {
                 return Err(E::default());
             }
@@ -1082,7 +1121,7 @@ disjoint_impls! {
     unsafe impl<'d, R: Default + ReprC<CType: CType + Sized>, E: BorrowedDecode<'d> + Niche, N: LayoutKind> BorrowedDecode<'d>
         for Result<R, E>
     where
-        Self: ReprC<CType = AbiResultErr<<R as ReprC>::CType, <E as ReprC>::CType>>,
+        Self: ReprC<CType = Native<AbiResultErr<<R as ReprC>::CType, <E as ReprC>::CType>>>,
         R: RustSpec<Size = RustSpecSized<Zero>>,
         E: RustSpec<Size = RustSpecSized<Gt<Zero>>, Niche = WithNiche<N>>,
     {
@@ -1093,6 +1132,8 @@ disjoint_impls! {
             source: Self::CType,
             store: &'itm mut Self::Store,
         ) -> Option<Self> {
+let source = source.0;
+
             if E::is_niche(&source.0) {
                 return Some(Ok(R::default()));
             }
@@ -1105,6 +1146,8 @@ disjoint_impls! {
             source: Self::CType,
             store: &'itm mut Self::Store,
         ) -> Self {
+let source = source.0;
+
             if E::is_niche(&source.0) {
                 return Ok(R::default());
             }
@@ -1455,6 +1498,8 @@ pub(crate) use __impl_borrowed_identity;
 
 #[cfg(all(test, feature = "alloc", feature = "derive"))]
 mod tests {
+    use crate::marker::Native;
+
     use alloc::{boxed::Box, vec::Vec};
     use core::{
         cell::Cell,
@@ -1672,7 +1717,9 @@ mod tests {
     #[test]
     fn borrowed_container_decode_rejects_bad_headers_and_values() {
         use crate::{borrow::decode, marker::Borrowed, vec::abi::Vec as AbiVec};
-        assert!(unsafe { decode::<alloc::vec::Vec<u8>>(Borrowed(AbiVec::null())) }.is_none());
+        assert!(
+            unsafe { decode::<alloc::vec::Vec<u8>>(Borrowed(Native(AbiVec::null()))) }.is_none()
+        );
         assert!(unsafe { decode::<Box<u8>>(Borrowed(crate::boxed::abi::Box::null())) }.is_none());
         let mut foreign = alloc::vec![co3::primitive::abi::bool(1), co3::primitive::abi::bool(2)];
         let header = unsafe {
@@ -1682,7 +1729,7 @@ mod tests {
                 foreign.capacity(),
             )
         };
-        assert!(unsafe { decode::<alloc::vec::Vec<bool>>(Borrowed(header)) }.is_none());
+        assert!(unsafe { decode::<alloc::vec::Vec<bool>>(Borrowed(Native(header))) }.is_none());
         assert_eq!(foreign[1].0, 2);
         let invalid = unsafe {
             AbiVec::<<bool as crate::ReprC>::CType>::from_raw_parts(
@@ -1691,7 +1738,7 @@ mod tests {
                 foreign.capacity(),
             )
         };
-        assert!(unsafe { decode::<alloc::vec::Vec<bool>>(Borrowed(invalid)) }.is_none());
+        assert!(unsafe { decode::<alloc::vec::Vec<bool>>(Borrowed(Native(invalid))) }.is_none());
     }
 
     #[test]
@@ -1949,13 +1996,13 @@ mod tests {
             value: crate::marker::Borrowed<<alloc::vec::Vec<(u8,)> as co3::ReprC>::CType>,
         ) -> u8 {
             assert_eq!(value.0.len(), 1);
-            unsafe { (*value.0.as_ptr()).0 }
+            unsafe { (*value.0.as_ptr()).0.0 }
         }
         #[unsafe(export_name = "co3_unit_owned_box_tuple")]
         extern "C" fn boxed(
             value: crate::marker::Borrowed<<Box<(u8,)> as co3::ReprC>::CType>,
         ) -> u8 {
-            unsafe { (*value.0.as_ptr()).0 }
+            unsafe { (*value.0.as_ptr()).0.0 }
         }
         crate::ffi! {
             #![unsafe(extern("C"))]

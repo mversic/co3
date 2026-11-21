@@ -1,6 +1,7 @@
 // Unlike static_assertions' generic helper, this helper carries the
 // reference-mapping prerequisite of SoftEncodeRef and SoftEncodeRefUnchecked.
 use co3::CType;
+use co3::marker::Native;
 
 trait TransparentCarrier: Copy {
     type Payload: Copy;
@@ -21,7 +22,7 @@ impl<T: CType, E: CType + Copy> TransparentCarrier for co3::result::abi::ResultE
     type Payload = E;
 }
 
-impl<T: CType + TransparentCarrier> TransparentCarrier for co3::marker::Stable<T> {
+impl<T: CType + TransparentCarrier> TransparentCarrier for Native<T> {
     type Payload = T::Payload;
 }
 
