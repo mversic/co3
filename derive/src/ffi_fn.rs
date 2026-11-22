@@ -15,7 +15,7 @@ use crate::{
     generate::OwnershipMode,
     parse::FailureMode,
     symbol_name_value,
-    utils::{cfg_attrs, co3_path, is_drop_impl, soft_for_arg},
+    utils::{cfg_attrs, co3_path, is_drop_impl, peel_grouped_type, soft_for_arg},
 };
 
 fn export_definition_attrs(attrs: &[syn::Attribute]) -> TokenStream {
@@ -483,15 +483,8 @@ fn inferred_non_option_unpack_part(arg_ty: &Type, part: u8) -> syn::Result<Type>
 
     if let Type::Reference(reference) = arg_ty {
         let wide_ty = &reference.elem;
-        let interior_mutable = crate::known_type::recognize(peel_grouped_type(wide_ty))
-            .is_some_and(|known| {
-                matches!(
-                    known.kind,
-                    crate::known_type::Kind::Cell | crate::known_type::Kind::UnsafeCell
-                )
-            });
         return Ok(if part == 1 {
-            if reference.mutability.is_some() || interior_mutable {
+            if reference.mutability.is_some() {
                 parse_quote!(*mut <<<#wide_ty as co3::wide::Wide>::Header as co3::wide::WideHeader>::Data as co3::ReprC>::CType)
             } else {
                 parse_quote!(*const <<<#wide_ty as co3::wide::Wide>::Header as co3::wide::WideHeader>::Data as co3::ReprC>::CType)
@@ -521,16 +514,6 @@ fn inferred_non_option_unpack_part(arg_ty: &Type, part: u8) -> syn::Result<Type>
             "the {position} `_` unpack argument is only supported for two-element tuples, references or raw pointers to `Wide` types, and `Box` or `NonNull` pointers to `Wide` types"
         ),
     ))
-}
-
-pub(crate) fn peel_grouped_type(mut ty: &Type) -> &Type {
-    loop {
-        ty = match ty {
-            Type::Paren(paren) => &paren.elem,
-            Type::Group(group) => &group.elem,
-            _ => return ty,
-        };
-    }
 }
 
 pub(crate) fn option_inner_type(ty: &Type) -> Option<&Type> {
@@ -799,7 +782,7 @@ pub fn gen_impl_definition(
             if impl_.generics.params.is_empty() && item.sig.generics.params.is_empty() {
                 fn_return_ty(&item.sig).map(|ty| {
                     let mut ty = ty.clone();
-                    ConcreteSelfType(self_ty).visit_type_mut(&mut ty);
+                    crate::utils::ConcreteSelfType(self_ty).visit_type_mut(&mut ty);
                     let check = gen_return_borrow_check(&ty, item.attrs.iter().any(is_by_val_attr));
                     let cfg = cfg_attrs(&item.attrs);
                     quote! { #(#cfg)* const _: () = { #check }; }
@@ -879,21 +862,6 @@ pub fn gen_impl_definition(
         const _: () = {
             #(#definitions)*
         };
-    }
-}
-
-struct ConcreteSelfType<'a>(&'a Type);
-
-impl VisitMut for ConcreteSelfType<'_> {
-    fn visit_type_mut(&mut self, ty: &mut Type) {
-        if let Type::Path(path) = ty
-            && path.qself.is_none()
-            && path.path.is_ident("Self")
-        {
-            *ty = self.0.clone();
-        } else {
-            syn::visit_mut::visit_type_mut(self, ty);
-        }
     }
 }
 
@@ -1525,6 +1493,20 @@ impl VisitMut for SelfConcretizer<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shared_cell_unpack_preserves_const_pointer() {
+        for ty in [
+            syn::parse_quote!(&core::cell::UnsafeCell<[u8]>),
+            syn::parse_quote!(&core::cell::Cell<[u8]>),
+            syn::parse_quote!(&Alias),
+        ] {
+            let part = super::inferred_non_option_unpack_part(&ty, 1).unwrap();
+            assert!(
+                matches!(part, syn::Type::Ptr(p) if matches!(p.mutability, syn::PointerMutability::Const(_)))
+            );
+        }
+    }
 
     #[test]
     fn self_paths_are_concretized_without_trait_qualification() {

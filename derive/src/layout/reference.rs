@@ -62,35 +62,18 @@ pub(super) fn gen_stable_direct_mut_impls(input: &syn::DeriveInput) -> TokenStre
     let predicates = where_clause.as_ref().map(|clause| &clause.predicates);
     let speculative = speculative_marker(input.generics.params.is_empty());
 
-    // The reference encoder uses the source's sized C carrier.
-    let fields: Vec<_> = match &input.data {
-        syn::Data::Struct(data) => data.fields.iter().collect(),
-        syn::Data::Enum(data) => data
-            .variants
-            .iter()
-            .flat_map(|variant| variant.fields.iter())
-            .collect(),
-        syn::Data::Union(_) => unreachable!(),
-    };
-    let field_bounds = fields
-        .into_iter()
-        .map(|field| FieldType::new(&field.ty, &input.generics))
-        .filter(|field| !field.phantom)
-        .map(|field| field.bound(quote!(co3::ReprC<CType: Sized>)))
-        .collect::<Vec<_>>();
-
     // The selected reference carrier distinguishes the branches. Do not repeat
     // the Layout/Trap conditions already used by native reference selection.
-    let encoders = [(true, true), (true, false), (false, true)];
-    let implementations = encoders.into_iter().map(|(unchecked, robust)| {
+    let encoders = [true, false];
+    let implementations = encoders.into_iter().map(|unchecked| {
         let (trait_name, move_trait, store_name, method, _) =
             encoder_names(true, unchecked);
         let unsafe_fn = unchecked.then(|| quote!(unsafe));
         let output = encoder_output(quote!(&'_ršč mut Self));
-        let carrier = if robust {
-            quote!(co3::reference::abi::RefMut<'_ršč, <Self as co3::ReprC>::CType>)
+        let carrier_bound = if unchecked {
+            quote!(co3::ReprC<CType: co3::reference::abi::RefMutCarrier<Pointee = <Self as co3::ReprC>::CType>>)
         } else {
-            quote!(co3::reference::abi::SoftRefMut<<Self as co3::ReprC>::CType>)
+            quote!(co3::ReprC<CType = co3::reference::abi::RefMut<'_ršč, <Self as co3::ReprC>::CType>>)
         };
         let abi_bound = if unchecked {
             quote!(co3::marker::AbiCompatible)
@@ -108,7 +91,6 @@ pub(super) fn gen_stable_direct_mut_impls(input: &syn::DeriveInput) -> TokenStre
                     + co3::ReprC<CType: co3::CType + Sized>
                     + co3::convert::DecodeMove<'_ršč, Store: co3::convert::EmptyStore + '_ršč> + '_ršč,
                 &'_ršč mut Self: co3::ReprC<CType = co3::reference::abi::SoftRefMut<<Self as co3::ReprC>::CType>> + co3::marker::AbiCompatible,
-                #(#field_bounds,)*
                 #predicates
             {
                 type #store_name = co3::sync::RefMutSizedEncodeStore<'_ršč, Self, <Self as #move_trait>::#store_name>;
@@ -126,9 +108,7 @@ pub(super) fn gen_stable_direct_mut_impls(input: &syn::DeriveInput) -> TokenStre
             where
                 #speculative Self: #abi_bound
                     + co3::ReprC<CType: co3::CType + Sized> + Sized + '_ršč,
-                &'_ršč mut Self: co3::ReprC<CType = #carrier>
-                    + #abi_bound,
-                #(#field_bounds,)*
+                &'_ršč mut Self: #carrier_bound + #abi_bound,
                 #predicates
             {
                 type #store_name = ();
@@ -137,7 +117,7 @@ pub(super) fn gen_stable_direct_mut_impls(input: &syn::DeriveInput) -> TokenStre
                     // Do not delegate back to EncodeMove for &mut Self: its stored
                     // branch requires SoftEncodeMut and would create a trait-solver cycle.
                     let encoded = unsafe {
-                        <#carrier>::from_raw(core::ptr::from_mut(self).cast())
+                        co3::reference::abi::RefMutCarrier::from_raw(core::ptr::from_mut(self).cast())
                     };
                     #validation
                     encoded
@@ -238,6 +218,7 @@ pub(super) fn gen_sized_decode_impls(
     repr: Option<&super::attr::ReprKind>,
     attrs: &super::ReprCAttrs,
     variant_attrs: &[super::VariantReprCAttrs],
+    equalities: &[syn::WherePredicate],
 ) -> TokenStream {
     let transparent = matches!(repr, Some(super::attr::ReprKind::Transparent))
         && !attrs.is_identity
@@ -267,9 +248,9 @@ pub(super) fn gen_sized_decode_impls(
     {
         gen_transparent_decode_ref(input, field, variant)
     } else {
-        gen_structural_decode(input, repr, attrs, variant_attrs, false)
+        gen_structural_decode(input, repr, attrs, variant_attrs, false, equalities)
     };
-    let mutable = gen_structural_decode(input, repr, attrs, variant_attrs, true);
+    let mutable = gen_structural_decode(input, repr, attrs, variant_attrs, true, equalities);
     quote! {
         #[allow(clippy::missing_safety_doc)]
         const _: () = {
@@ -316,25 +297,19 @@ fn gen_transparent_decode_ref(
     let field_bound = FieldType::new(ty, &input.generics).bound(quote!(
         co3::ReprC<CType: Sized + '_co3_decode> + Sized + '_co3_decode
     ));
-    let field_impls = [true, false].into_iter().map(|stable| {
-        let (layout, carrier) = if stable {
-            (quote!(co3::rust_spec::Stable), quote!(co3::reference::abi::Ref<'d, <R as co3::ReprC>::CType>))
-        } else {
-            (quote!(__Co3Unstable), quote!(co3::reference::abi::SoftRef<<R as co3::ReprC>::CType>))
-        };
-        quote! {
-            impl<'d, R> __Co3TransparentFieldDecode<'d, R> for #layout
+    let field_impl = quote! {
+            impl<'d, R, L> __Co3TransparentFieldDecode<'d, R> for L
             where
                 R: co3::ReprC<CType: Sized + 'd>
-                    + co3::rust_spec::RustSpec<Layout = #layout> + Sized + 'd,
+                    + co3::rust_spec::RustSpec<Layout = L> + Sized + 'd,
                 &'d R: co3::convert::DecodeMove<'d>
-                    + co3::ReprC<CType = #carrier>,
+                    + co3::ReprC<CType: co3::reference::abi::RefCarrier<Pointee = R::CType>>,
             {
                 unsafe fn decode<'itm: 'd>(
                     source: &'d R::CType,
                     store: &'itm mut <&'d R as co3::convert::DecodeMove<'d>>::Store,
                 ) -> Option<&'d R> {
-                    let carrier = <#carrier>::from_ref(source);
+                    let carrier = unsafe { co3::reference::abi::RefCarrier::from_raw(core::ptr::from_ref(source)) };
                     unsafe { <&'d R as co3::convert::DecodeMove<'d>>::soft_decode(carrier, store) }
                 }
 
@@ -342,12 +317,11 @@ fn gen_transparent_decode_ref(
                     source: &'d R::CType,
                     store: &'itm mut <&'d R as co3::convert::DecodeMove<'d>>::Store,
                 ) -> &'d R {
-                    let carrier = <#carrier>::from_ref(source);
+                    let carrier = unsafe { co3::reference::abi::RefCarrier::from_raw(core::ptr::from_ref(source)) };
                     unsafe { <&'d R as co3::convert::DecodeMove<'d>>::soft_decode_unchecked(carrier, store) }
                 }
             }
-        }
-    });
+    };
     quote! {
         const _: () = {
             use co3::convert::SoftDecodeRef;
@@ -367,7 +341,7 @@ fn gen_transparent_decode_ref(
                 ) -> &'d R;
             }
 
-            #(#field_impls)*
+            #field_impl
 
             #[doc(hidden)]
             pub struct __Co3TransparentDecodeStore<R, S>(S, core::marker::PhantomData<fn() -> R>);
@@ -464,6 +438,7 @@ fn gen_structural_decode(
     attrs: &super::ReprCAttrs,
     variant_attrs: &[super::VariantReprCAttrs],
     mutable: bool,
+    equalities: &[syn::WherePredicate],
 ) -> TokenStream {
     use super::attr::ReprKind;
     // Identity carriers are stable and already use direct reference decoding.
@@ -699,6 +674,7 @@ fn gen_structural_decode(
             #speculative <Self as co3::rust_spec::RustSpec>::Drop: __Co3NonCustomDrop,
             &'_dšč #mutability Self: co3::ReprC<CType = #reference>,
             #writeback
+            #(#equalities,)*
             #(#bounds)*
             #predicates
         {
@@ -738,17 +714,11 @@ fn gen_shared_field_encoders() -> TokenStream {
         } else {
             quote!(__Co3EncodeFieldUnchecked<'a>)
         };
-        let implementations = [true, false].into_iter().map(|stable| {
-            let carrier = if stable {
-                quote!(co3::reference::abi::Ref<'a, <R as co3::ReprC>::CType>)
-            } else {
-                quote!(co3::reference::abi::SoftRef<<R as co3::ReprC>::CType>)
-            };
             let encode = if unchecked { encoding_call(quote!(<&'a R as #move_trait>::#move_method(self, store)), true) } else { quote!(co3::convert::EncodeMove::soft_encode(self, store)) };
-            quote! {
+        let implementation = quote! {
                 unsafe impl<'a, R: co3::ReprC<CType: co3::CType + Copy> + 'a> #name<'a> for R
                 where
-                    &'a R: #move_trait + co3::ReprC<CType = #carrier>,
+                    &'a R: #move_trait + co3::ReprC<CType: co3::reference::abi::RefCarrier<Pointee = <R as co3::ReprC>::CType>>,
                 {
                     type #store_name = <&'a R as #move_trait>::#store_name;
                     #unsafe_fn fn #method<'itm>(&'a self, store: &'itm mut Self::#store_name) -> Self::CType
@@ -757,62 +727,52 @@ fn gen_shared_field_encoders() -> TokenStream {
                         let carrier = #encode;
                         // The exact shared carrier permits reading initialized storage;
                         // Copy prevents moving ownership out of the borrowed field.
-                        unsafe { carrier.as_ptr().read() }
+                        unsafe { co3::reference::abi::RefCarrier::as_ptr(&carrier).read() }
                     }
                 }
             }
-        });
+        ;
         quote! {
-            co3::disjoint_impls! {
                 pub unsafe trait #name<'a>: #supertrait {
                     type #store_name: co3::convert::Store + Default;
                     #unsafe_fn fn #method<'itm>(&'a self, store: &'itm mut Self::#store_name) -> Self::CType
                     where 'a: 'itm;
                 }
-                #(#implementations)*
-            }
+                #implementation
         }
     });
     quote!(#(#traits)*)
 }
 
 fn gen_shared_field_decoder() -> TokenStream {
-    let implementations = [true, false].into_iter().map(|stable| {
-        let (layout, carrier) = if stable {
-            (quote!(co3::rust_spec::Stable), quote!(co3::reference::abi::Ref<'d, <R as co3::ReprC>::CType>))
-        } else {
-            (quote!(__Co3Unstable), quote!(co3::reference::abi::SoftRef<<R as co3::ReprC>::CType>))
-        };
-        quote! {
+    let layout = quote!(<R as co3::rust_spec::RustSpec>::Layout);
+    let implementation = quote! {
             unsafe impl<'d, R: co3::ReprC<CType: co3::CType + Sized + 'd> + 'd> __Co3DecodeField<'d> for R
             where
-                R: co3::rust_spec::RustSpec<Layout = #layout>,
+                R: co3::rust_spec::RustSpec,
                 &'d R: co3::convert::DecodeMove<'d, Store: co3::convert::Store + Default + Sized>
-                    + co3::ReprC<CType = #carrier>,
+                    + co3::ReprC<CType: co3::reference::abi::RefCarrier<Pointee = R::CType>>,
                 co3::sync::DecodedField<'d, R, <&'d R as co3::convert::DecodeMove<'d>>::Store, #layout>:
                     co3::sync::TakeDecoded<Value = R>,
             {
                 type Store = <&'d R as co3::convert::DecodeMove<'d>>::Store;
                 unsafe fn decode_field<'itm: 'd>(source: &'d Self::CType, store: &'itm mut Self::Store) -> Option<Self> {
-                    let carrier = <#carrier>::from_ref(source);
+                    let carrier = unsafe { co3::reference::abi::RefCarrier::from_raw(core::ptr::from_ref(source)) };
                     unsafe { co3::sync::DecodedField::<R, _, #layout>::decode(carrier, store) }
                 }
                 unsafe fn decode_field_unchecked<'itm: 'd>(source: &'d Self::CType, store: &'itm mut Self::Store) -> Self {
-                    let carrier = <#carrier>::from_ref(source);
+                    let carrier = unsafe { co3::reference::abi::RefCarrier::from_raw(core::ptr::from_ref(source)) };
                     unsafe { co3::sync::DecodedField::<R, _, #layout>::decode_unchecked(carrier, store) }
                 }
             }
-        }
-    });
+    };
     quote! {
-        co3::disjoint_impls! {
             pub unsafe trait __Co3DecodeField<'d>: co3::ReprC<CType: Sized + 'd> + Sized + 'd {
                 type Store: co3::convert::Store + Default;
                 unsafe fn decode_field<'itm: 'd>(source: &'d Self::CType, store: &'itm mut Self::Store) -> Option<Self>;
                 unsafe fn decode_field_unchecked<'itm: 'd>(source: &'d Self::CType, store: &'itm mut Self::Store) -> Self;
             }
-            #(#implementations)*
-        }
+            #implementation
     }
 }
 

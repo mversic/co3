@@ -1,41 +1,4 @@
 //! ABI carriers and conversion traits for Rust references.
-use crate::{CType, ReprC};
-
-/// Shared carrier operations used by internal conversion helpers.
-///
-/// # Safety
-///
-/// Implementations must preserve the raw pointer ABI and shared access contract.
-pub(crate) unsafe trait RefCarrier<R: ?Sized>: CType + Copy {
-    fn as_ptr(&self) -> *const R::CType
-    where
-        R: ReprC;
-    /// # Safety
-    /// The pointer must satisfy the carrier's validity and lifetime contract.
-    unsafe fn from_shared_ptr(data: *const R::CType) -> Self
-    where
-        R: ReprC;
-    /// # Safety
-    /// The result must satisfy the destination carrier's raw constructor contract.
-    unsafe fn cast_shared<U: ReprC<CType: Sized> + ?Sized, Target: RefCarrier<U>>(self) -> Target
-    where
-        R: ReprC,
-    {
-        unsafe { Target::from_shared_ptr(self.as_ptr().cast()) }
-    }
-}
-
-/// Operations shared by ordinary and soft thin mutable carriers.
-///
-/// # Safety
-/// Implementations must preserve the pointer ABI and the indicated access contract.
-pub(crate) unsafe trait RefMutCarrier<R: ReprC + ?Sized>: CType + Copy {
-    fn as_ptr(&self) -> *mut R::CType;
-    /// # Safety
-    /// The pointer must satisfy the destination carrier's lifetime and aliasing contract.
-    unsafe fn from_mut_ptr(data: *mut R::CType) -> Self;
-}
-
 macro_rules! impl_thin_pointer_traits {
     ($ty:ident, [$($params:tt)*], [$($args:tt)*]) => {
         impl<$($params)*> Copy for $ty<$($args)*> {}
@@ -69,8 +32,8 @@ pub mod abi {
     use core::cell::UnsafeCell;
 
     use rust_spec::RustSpec;
+    use sealed::sealed;
 
-    use super::{RefCarrier, RefMutCarrier};
     use crate::{
         CFnArg, CFnReturn, CType, ReprC,
         convert::{
@@ -78,6 +41,39 @@ pub mod abi {
         },
         marker::AbiCompatible,
     };
+
+    /// Shared carrier operations used by internal conversion helpers.
+    ///
+    /// # Safety
+    ///
+    /// Implementations must preserve the raw pointer ABI and shared access contract.
+    #[sealed]
+    #[doc(hidden)]
+    pub unsafe trait RefCarrier: CType + Copy {
+        type Pointee: CType + ?Sized;
+
+        fn as_ptr(&self) -> *const Self::Pointee;
+
+        /// # Safety
+        /// The pointer must satisfy the carrier's validity and lifetime contract.
+        unsafe fn from_raw(data: *const Self::Pointee) -> Self;
+    }
+
+    /// Operations shared by ordinary and soft thin mutable carriers.
+    ///
+    /// # Safety
+    /// Implementations must preserve the pointer ABI and the indicated access contract.
+    #[sealed]
+    #[doc(hidden)]
+    pub unsafe trait RefMutCarrier: CType + Copy {
+        type Pointee: CType + ?Sized;
+
+        fn as_ptr(&self) -> *mut Self::Pointee;
+
+        /// # Safety
+        /// The pointer must satisfy the destination carrier's lifetime and aliasing contract.
+        unsafe fn from_raw(data: *mut Self::Pointee) -> Self;
+    }
 
     /// A thin shared reference pointer carrier with the same ABI as `*const T`.
     ///
@@ -371,39 +367,51 @@ pub mod abi {
     impl_ref_pointer_methods! { Ref, ['a, T: CType + ?Sized], ['a, T], ['a,], [], const, [lifetime: core::marker::PhantomData,] }
     impl_ref_pointer_methods! { RefMut, ['a, T: CType + ?Sized], ['a, T], ['a,], [], mut, [lifetime: core::marker::PhantomData,] }
 
-    unsafe impl<R: ReprC + ?Sized> RefCarrier<R> for SoftRef<R::CType> {
-        fn as_ptr(&self) -> *const R::CType {
+    #[sealed]
+    unsafe impl<C: CType + ?Sized> RefCarrier for SoftRef<C> {
+        type Pointee = C;
+
+        fn as_ptr(&self) -> *const C {
             self.data
         }
-        unsafe fn from_shared_ptr(data: *const R::CType) -> Self {
+        unsafe fn from_raw(data: *const C) -> Self {
             unsafe { Self::from_raw(data) }
         }
     }
-    unsafe impl<'a, R: ReprC + ?Sized> RefCarrier<R> for Ref<'a, R::CType> {
-        fn as_ptr(&self) -> *const R::CType {
+    #[sealed]
+    unsafe impl<'a, C: CType + ?Sized> RefCarrier for Ref<'a, C> {
+        type Pointee = C;
+
+        fn as_ptr(&self) -> *const C {
             self.data
         }
-        unsafe fn from_shared_ptr(data: *const R::CType) -> Self {
+        unsafe fn from_raw(data: *const C) -> Self {
             unsafe { Self::from_raw(data) }
         }
     }
 
-    unsafe impl<R: ReprC + ?Sized> RefMutCarrier<R> for SoftRefMut<R::CType> {
-        fn as_ptr(&self) -> *mut R::CType {
+    #[sealed]
+    unsafe impl<C: CType + ?Sized> RefMutCarrier for SoftRefMut<C> {
+        type Pointee = C;
+
+        fn as_ptr(&self) -> *mut C {
             self.data
         }
-        unsafe fn from_mut_ptr(data: *mut R::CType) -> Self {
+        unsafe fn from_raw(data: *mut C) -> Self {
             unsafe { Self::from_raw(data) }
         }
     }
-    unsafe impl<'a, R: ReprC + ?Sized> RefMutCarrier<R> for RefMut<'a, R::CType>
+    #[sealed]
+    unsafe impl<'a, C: CType + ?Sized> RefMutCarrier for RefMut<'a, C>
     where
         Self: CType,
     {
-        fn as_ptr(&self) -> *mut R::CType {
+        type Pointee = C;
+
+        fn as_ptr(&self) -> *mut C {
             self.data
         }
-        unsafe fn from_mut_ptr(data: *mut R::CType) -> Self {
+        unsafe fn from_raw(data: *mut C) -> Self {
             unsafe { Self::from_raw(data) }
         }
     }
@@ -475,8 +483,6 @@ pub mod abi {
 
 #[cfg(test)]
 mod tests {
-    use crate::marker::Native;
-
     use core::cell::UnsafeCell;
 
     use static_assertions::assert_impl_all;
@@ -485,6 +491,7 @@ mod tests {
     use crate::{
         CType, ReprC,
         convert::{Decode, Encode},
+        marker::Native,
         niche::Niche,
     };
 

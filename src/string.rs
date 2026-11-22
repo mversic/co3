@@ -1,24 +1,23 @@
 //! Stable UTF-8 strings and their C-compatible representation.
 
-use crate::marker::Native;
 use alloc::{boxed::Box, vec::Vec};
 use core::ptr::NonNull;
 
 use rust_spec::RustSpec;
 
 use crate::{
-    CFnArg, CFnReturn,
+    CFnArg, CFnReturn, CType, ReprC,
     borrow::{
         BorrowedDecode, BorrowedEncode, BorrowedEncodeUnchecked, ToOwned, borrowed_decode_slice,
     },
     boxed::OwnedBoxCarrier,
-    convert::{Decode, DecodeMove, Encode, EncodeMove, EncodeMoveUnchecked},
+    convert::{AbiCompatibleValidate, Decode, DecodeMove, Encode, EncodeMove, EncodeMoveUnchecked},
+    marker::{AbiCompatible, Native},
     niche::Niche,
     primitive::primitive_derive,
     vec::{self, Vec as StableVec},
     wide::{self, Wide},
 };
-use crate::{CType, ReprC, convert::AbiCompatibleValidate, marker::AbiCompatible};
 
 /// An owned UTF-8 string with a stable pointer, length, and capacity layout.
 #[derive(RustSpec, Clone, Default, PartialEq, Eq, PartialOrd, Ord)]
@@ -404,13 +403,12 @@ unsafe impl<'d> BorrowedDecode<'d> for Box<str> {
 
 #[doc(hidden)]
 pub mod abi {
-    use crate::marker::Native;
-
     use super::{
         AbiCompatible, Box, CFnArg, CFnReturn, CType, Decode, DecodeMove, Encode, EncodeMove,
         EncodeMoveUnchecked, NonNull, OwnedBoxCarrier, ReprC, RustSpec, primitive_derive, vec,
         wide,
     };
+    use crate::marker::Native;
     /// Owned UTF-8 string carrier, including the capacity of its allocation.
     ///
     /// The carrier permits any byte values. Decoding as a `String` checks UTF-8.

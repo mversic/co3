@@ -1,10 +1,10 @@
-use co3::marker::Native;
 use std::{cmp::Ordering, ffi::CStr};
 
 use co3::{
     ReprC,
     cmp::abi::Ordering as Co3Ordering,
     encode, ffi,
+    marker::Native,
     niche::Niche,
     option::abi,
     reference::abi::{Ref, SoftRef},

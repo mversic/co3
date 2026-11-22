@@ -8,6 +8,31 @@ use syn::{
     visit_mut::VisitMut,
 };
 
+pub(crate) fn peel_grouped_type(mut ty: &Type) -> &Type {
+    loop {
+        ty = match ty {
+            Type::Paren(paren) => &paren.elem,
+            Type::Group(group) => &group.elem,
+            _ => return ty,
+        };
+    }
+}
+
+pub(crate) struct ConcreteSelfType<'a>(pub(crate) &'a Type);
+
+impl VisitMut for ConcreteSelfType<'_> {
+    fn visit_type_mut(&mut self, ty: &mut Type) {
+        if let Type::Path(path) = ty
+            && path.qself.is_none()
+            && path.path.is_ident("Self")
+        {
+            *ty = self.0.clone();
+        } else {
+            syn::visit_mut::visit_type_mut(self, ty);
+        }
+    }
+}
+
 const MAX_TUPLE_ARITY: usize = 12;
 
 /// Match a bare built-in name, a supported full path, or a relative module suffix.

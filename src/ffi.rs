@@ -13,7 +13,6 @@ use rust_spec::RustSpec;
 
 #[cfg(feature = "alloc")]
 use crate::borrow::{self, ToOwned};
-
 use crate::{
     CFnArg, CFnReturn, CType, ReprC,
     convert::{Decode, DecodeMove, Encode, EncodeMove, EncodeMoveUnchecked},
@@ -674,8 +673,6 @@ unsafe impl borrow::BorrowedEncode for alloc::ffi::CString {
 
 #[cfg(test)]
 mod tests {
-    use crate::marker::Native;
-
     #[cfg(all(feature = "alloc", feature = "derive"))]
     use alloc::string::String;
     #[cfg(all(feature = "alloc", feature = "derive"))]
@@ -690,7 +687,6 @@ mod tests {
     use static_assertions::{assert_impl_all, assert_not_impl_any};
 
     use super::*;
-    use crate::convert::Decode;
     #[cfg(all(feature = "alloc", feature = "derive"))]
     use crate::{
         Error, ffi,
@@ -702,6 +698,7 @@ mod tests {
         string::abi::String as AbiString,
         tuple::abi::Tuple3 as AbiTuple3,
     };
+    use crate::{convert::Decode, marker::Native};
 
     #[test]
     fn c_int_checked_length_conversion() {

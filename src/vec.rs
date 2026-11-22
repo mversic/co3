@@ -1,8 +1,6 @@
 //! Stable vector ownership and its robust C-compatible representation.
 
-use crate::marker::Native;
 use alloc::boxed::Box;
-
 use core::{
     hash::Hash,
     mem::ManuallyDrop,
@@ -12,21 +10,21 @@ use core::{
 
 use rust_spec::RustSpec;
 
+use crate::{
+    CFnArg, CFnReturn, CType, ReprC,
+    convert::{
+        AbiCompatibleValidate, Decode, DecodeMove, Encode, EncodeMove, EncodeMoveUnchecked,
+        EncodeUnchecked,
+    },
+    marker::{AbiCompatible, Native, Zeroable},
+    wide::impl_identity_carrier,
+};
 #[cfg(feature = "alloc")]
 use crate::{
     borrow::{
         self, borrowed_decode_slice, decode_borrowed_elements, decode_borrowed_elements_unchecked,
     },
     stored::map_vec,
-};
-
-use crate::{
-    CFnArg, CFnReturn, CType, ReprC,
-    convert::AbiCompatibleValidate,
-    convert::{Decode, DecodeMove, Encode, EncodeMove, EncodeMoveUnchecked, EncodeUnchecked},
-    marker::AbiCompatible,
-    marker::Zeroable,
-    wide::impl_identity_carrier,
 };
 
 /// A vector with a stable three-field representation.
@@ -503,10 +501,8 @@ impl<R: ReprC<CType: CType + Sized>> crate::niche::Niche for alloc::vec::Vec<R> 
 
 #[doc(hidden)]
 pub mod abi {
-    use crate::marker::Native;
-
     use super::*;
-    use crate::{boxed::OwnedBoxCarrier, wide};
+    use crate::{boxed::OwnedBoxCarrier, marker::Native, wide};
 
     /// An owned allocation represented by its data pointer, length, and capacity.
     /// A null pointer is reserved as a niche and does not represent a vector.
@@ -708,12 +704,13 @@ mod tests {
     fn derived_carrier_spec_preserves_header_and_pointee_properties() {
         use core::cell::UnsafeCell;
 
+        use static_assertions::assert_impl_all;
+
         use crate::rust_spec::{
             self, RustSpec, Stable,
             layout::Robust,
             mutability::{Exclusive, WithInterior, WithoutInterior},
         };
-        use static_assertions::assert_impl_all;
 
         assert_impl_all!(abi::Vec<()>: RustSpec<
             Layout = Stable,

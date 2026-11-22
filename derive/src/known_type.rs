@@ -248,7 +248,6 @@ pub(crate) fn recognize_path(path: &TypePath) -> Option<KnownType<'_>> {
             Kind::String => Some(parse_quote!(co3::string::String)),
             Kind::Result => Some(parse_quote!(co3::result::Result<(), ()>)),
             Kind::NonZero => Some(parse_quote!(co3::marker::NonZero<u8>)),
-            Kind::Box if name == "Box" => Some(parse_quote!(co3::boxed::abi::Box<()>)),
             _ => None,
         },
         canonical_name,

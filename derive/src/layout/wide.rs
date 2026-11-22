@@ -1,6 +1,6 @@
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
-use syn::parse_quote;
+use syn::{parse_quote, visit_mut::VisitMut};
 
 use super::{
     ReprKind,
@@ -41,8 +41,10 @@ pub(super) fn wide_tail_type<'a>(
 
 pub(crate) fn expand(
     input: &syn::DeriveInput,
-    repr: Option<&ReprKind>,
+    repr: &super::attr::Repr,
+    recursive_header: Option<&super::inference::RecursiveFields>,
 ) -> syn::Result<TokenStream> {
+    let kind = repr.kind.as_ref();
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
     let predicates = where_clause.as_ref().map(|w| &w.predicates);
 
@@ -50,12 +52,12 @@ pub(crate) fn expand(
         return Ok(quote! {});
     };
 
-    let Some(field_ty) = wide_tail_type(&data.fields, repr, &input.generics) else {
+    let Some(field_ty) = wide_tail_type(&data.fields, kind, &input.generics) else {
         return Ok(quote! {});
     };
 
     let name = &input.ident;
-    let is_transparent = matches!(repr, Some(ReprKind::Transparent));
+    let is_transparent = matches!(kind, Some(ReprKind::Transparent));
 
     let header_ty = if is_transparent {
         quote!(<#field_ty as co3::wide::Wide>::Header)
@@ -70,7 +72,8 @@ pub(crate) fn expand(
         let predicate = wide_usize_predicate(field_ty, &input.generics);
         quote!(#predicate,)
     });
-    let data_def = (!is_transparent).then(|| gen_data_def(input, &data.fields));
+    let data_def =
+        (!is_transparent).then(|| gen_data_def(input, &data.fields, repr, recursive_header));
 
     Ok(quote! {
         #data_def
@@ -124,77 +127,80 @@ fn gen_data_struct_ty(input: &syn::DeriveInput) -> TokenStream {
     quote! { #name <#(#args),*> }
 }
 
-fn gen_data_def(input: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
-    let name = gen_data_struct_name(&input.ident);
-
-    let attrs = input
+fn gen_data_def(
+    input: &syn::DeriveInput,
+    fields: &syn::Fields,
+    repr: &super::attr::Repr,
+    recursive_header: Option<&super::inference::RecursiveFields>,
+) -> TokenStream {
+    let mut header = input.clone();
+    header.ident = gen_data_struct_name(&input.ident);
+    header
         .attrs
-        .iter()
-        .filter(|attr| attr.path().is_ident("repr") || attr.path().is_ident("cfg"));
+        .retain(|attr| attr.path().is_ident("repr") || attr.path().is_ident("cfg"));
+    header.generics = data_generics(fields, &input.generics);
+    // In a header field, Self still denotes the original, potentially wide record.
+    let name = &input.ident;
+    let (_, args, _) = input.generics.split_for_impl();
+    let own = parse_quote!(#name #args);
+    crate::utils::ConcreteSelfType(&own).visit_derive_input_mut(&mut header);
+
+    let syn::Data::Struct(data) = &mut header.data else {
+        unreachable!()
+    };
+    for f in &mut data.fields {
+        f.vis = syn::Visibility::Inherited;
+        f.attrs
+            .retain(|attr| attr.path().is_ident("cfg") || attr.path().is_ident("cfg_attr"));
+    }
+    let tail = data
+        .fields
+        .iter_mut()
+        .next_back()
+        .expect("wide record has a tail");
+    tail.ty = if recursive_header.is_some()
+        && let syn::Type::Slice(s) = &tail.ty
+    {
+        let elem = &s.elem;
+        parse_quote!([#elem; 0])
+    } else {
+        data_field_ty(&tail.ty, true)
+    };
+
+    let fields_methods =
+        gen_fields_methods(&header.ident, &header.generics, &data.fields, false, false);
+    let header_impl = gen_identity_header_impl(&header.ident, &header.generics);
     let derives = regular_derives(input);
-
-    let vis = &input.vis;
-    let fields_len = fields.len();
-
-    let generics = data_generics(fields, &input.generics);
-    let (impl_generics, _, where_clause) = generics.split_for_impl();
-    let predicates = where_clause.as_ref().map(|w| &w.predicates);
-    let header_impl = gen_identity_header_impl(&name, &generics);
-    let mut data_fields = fields.clone();
-    for (index, field) in data_fields.iter_mut().enumerate() {
-        field.ty = data_field_ty(&field.ty, index == fields_len - 1);
-        field.vis = syn::Visibility::Inherited;
-    }
-    let fields_methods = gen_fields_methods(&name, &generics, &data_fields, false, false);
-
-    let suffix =
-        match fields {
-            syn::Fields::Named(fields) => {
-                let fields = fields.named.iter().enumerate().map(|(index, field)| {
-                    let attrs = field.attrs.iter().filter(|attr| {
-                        attr.path().is_ident("cfg") || attr.path().is_ident("cfg_attr")
-                    });
-                    let name = &field.ident;
-
-                    let is_last_field = index == fields_len - 1;
-                    let ty = data_field_ty(&field.ty, is_last_field);
-
-                    quote! { #(#attrs)* #name: #ty }
-                });
-
-                quote! {
-                    where #predicates
-                    { #(#fields,)* }
-                }
-            }
-            syn::Fields::Unnamed(fields) => {
-                let fields = fields.unnamed.iter().enumerate().map(|(index, field)| {
-                    let attrs = field.attrs.iter().filter(|attr| {
-                        attr.path().is_ident("cfg") || attr.path().is_ident("cfg_attr")
-                    });
-                    let is_last_field = index == fields_len - 1;
-                    let ty = data_field_ty(&field.ty, is_last_field);
-
-                    quote! { #(#attrs)* #ty }
-                });
-
-                quote! {
-                    ( #(#fields,)*)
-                    where #predicates;
-                }
-            }
-            syn::Fields::Unit => quote! {;},
+    let definition = if let Some(recursion) = recursive_header {
+        let mut header_input = header.clone();
+        let predicates = &mut header_input.generics.make_where_clause().predicates;
+        predicates.extend(recursion.tail_bounds.iter().cloned());
+        predicates.extend(super::ctype::projected_field_bounds(
+            &input.generics,
+            &recursion.types(),
+            &recursion.carriers,
+        ));
+        let attrs = super::ReprCAttrs {
+            is_wide_data: true,
+            ..Default::default()
         };
-
-    quote! {
-        #[derive(#(#derives, )* co3::rust_spec::RustSpec, co3::ReprC)]
-        #[repr_c(__wide_data)]
-        #(#attrs)*
-        #vis struct #name #impl_generics #suffix
-
-        #fields_methods
-        #header_impl
-    }
+        let impls = super::item::derive_item(
+            repr.kind.as_ref(),
+            repr.alignment.as_ref(),
+            &header_input,
+            &attrs,
+            &[],
+            &super::inference::RecursiveFields::analyze(
+                &header_input,
+                repr.kind.as_ref(),
+                Some(&recursion.carriers),
+            ),
+        );
+        quote!(#[derive(#(#derives, )* co3::rust_spec::RustSpec)] #header #impls)
+    } else {
+        quote!(#[derive(#(#derives, )* co3::rust_spec::RustSpec, co3::ReprC)] #[repr_c(__wide_data)] #header)
+    };
+    quote!(#definition #fields_methods #header_impl)
 }
 
 pub(super) fn data_generics(fields: &syn::Fields, generics: &syn::Generics) -> syn::Generics {

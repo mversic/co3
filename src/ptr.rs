@@ -1,41 +1,14 @@
 //! C-compatible representations and conversions for [`core::ptr`].
 use core::ptr::NonNull;
 
-use rust_spec::RustSpec;
-
 use crate::{
     ReprC,
-    convert::AbiCompatibleValidate,
-    convert::{Decode, DecodeMove, Encode, EncodeMove, EncodeMoveUnchecked, EncodeUnchecked},
-    marker::AbiCompatible,
-    marker::NonZero,
+    convert::{
+        AbiCompatibleValidate, Decode, DecodeMove, Encode, EncodeMove, EncodeMoveUnchecked,
+        EncodeUnchecked,
+    },
+    marker::{AbiCompatible, NonZero},
 };
-
-// Stable-Rust description of pointer metadata. Thin pointees use unit; wide
-// pointees use the metadata guaranteed by the unsafe Wide contract.
-pub(crate) trait PointerMetadata {
-    type Metadata;
-}
-impl<T: RustSpec + ?Sized> PointerMetadata for T
-where
-    T::Size: MetadataFor<T>,
-{
-    type Metadata = <T::Size as MetadataFor<T>>::Metadata;
-}
-pub(crate) trait MetadataFor<T: ?Sized> {
-    type Metadata;
-}
-impl<T: ?Sized, K: rust_spec::size::SizedKind> MetadataFor<T> for rust_spec::size::Sized<K> {
-    type Metadata = ();
-}
-impl<T: ?Sized> MetadataFor<T> for rust_spec::size::ExternTypeLike {
-    type Metadata = ();
-}
-impl<T: crate::wide::Wide + ?Sized, K: rust_spec::size::MetadataKind> MetadataFor<T>
-    for rust_spec::size::MetaSized<K>
-{
-    type Metadata = (K, T::Metadata);
-}
 
 crate::borrow::__impl_borrowed_identity!([T: ?Sized] NonNull<T>);
 
@@ -53,10 +26,7 @@ where
 impl<T: ReprC + ?Sized> ReprC for NonNull<T> {
     type CType = NonZero<*mut T::CType>;
 }
-unsafe impl<T: AbiCompatible + PointerMetadata + ?Sized> EncodeMove for NonNull<T>
-where
-    T::CType: PointerMetadata<Metadata = <T as PointerMetadata>::Metadata>,
-{
+unsafe impl<T: AbiCompatible + ?Sized> EncodeMove for NonNull<T> {
     type Store = <*mut T as EncodeMove>::Store;
 
     #[inline(always)]
@@ -67,10 +37,7 @@ where
         unsafe { self.soft_encode_unchecked(store) }
     }
 }
-unsafe impl<T: AbiCompatible + PointerMetadata + ?Sized> EncodeMoveUnchecked for NonNull<T>
-where
-    T::CType: PointerMetadata<Metadata = <T as PointerMetadata>::Metadata>,
-{
+unsafe impl<T: AbiCompatible + ?Sized> EncodeMoveUnchecked for NonNull<T> {
     type SoftStore = ();
 
     unsafe fn soft_encode_unchecked<'itm>(self, (): &'itm mut ()) -> Self::CType
@@ -80,10 +47,7 @@ where
         NonZero(unsafe { <*mut T>::soft_encode_unchecked(self.as_ptr(), &mut ()) })
     }
 }
-unsafe impl<'d, T: AbiCompatible + PointerMetadata + ?Sized> DecodeMove<'d> for NonNull<T>
-where
-    T::CType: PointerMetadata<Metadata = <T as PointerMetadata>::Metadata>,
-{
+unsafe impl<'d, T: AbiCompatible + ?Sized> DecodeMove<'d> for NonNull<T> {
     type Store = <*mut T as DecodeMove<'d>>::Store;
 
     #[inline(always)]
@@ -105,39 +69,22 @@ where
     }
 }
 
-impl<T: AbiCompatible + PointerMetadata + ?Sized> Decode<'_> for NonNull<T> where
-    T::CType: PointerMetadata<Metadata = <T as PointerMetadata>::Metadata>
-{
-}
-impl<T: AbiCompatible + PointerMetadata + ?Sized> EncodeUnchecked for NonNull<T> where
-    T::CType: PointerMetadata<Metadata = <T as PointerMetadata>::Metadata>
-{
-}
-impl<T: AbiCompatible + PointerMetadata + ?Sized> Encode for NonNull<T> where
-    T::CType: PointerMetadata<Metadata = <T as PointerMetadata>::Metadata>
-{
-}
+impl<T: AbiCompatible + ?Sized> Decode<'_> for NonNull<T> {}
+impl<T: AbiCompatible + ?Sized> EncodeUnchecked for NonNull<T> {}
+impl<T: AbiCompatible + ?Sized> Encode for NonNull<T> {}
 
-unsafe impl<T: AbiCompatible + PointerMetadata + ?Sized> AbiCompatibleValidate for NonNull<T>
-where
-    T::CType: PointerMetadata<Metadata = <T as PointerMetadata>::Metadata>,
-{
+unsafe impl<T: AbiCompatible + ?Sized> AbiCompatibleValidate for NonNull<T> {
     #[inline(always)]
     unsafe fn is_valid(target: &Self::CType) -> bool {
         !target.0.is_null()
     }
 }
-unsafe impl<T: AbiCompatible + PointerMetadata + ?Sized> AbiCompatible for NonNull<T> where
-    T::CType: PointerMetadata<Metadata = <T as PointerMetadata>::Metadata>
-{
-}
+unsafe impl<T: AbiCompatible + ?Sized> AbiCompatible for NonNull<T> {}
 
 #[cfg(test)]
 mod tests {
-    use crate::marker::Native;
-
     use super::*;
-    use crate::CType;
+    use crate::{CType, marker::Native};
 
     #[test]
     fn nonnull_carrier_preserves_nonnull_source_and_null_niche() {

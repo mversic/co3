@@ -1,11 +1,11 @@
 //! Operators
 
+use conversion::{DecodeFnReturn, EncodeFnArg};
+
 use crate::{
     CFnArg, CFnReturn, CType,
     convert::{EmptyStore, Store},
 };
-
-use conversion::{DecodeFnReturn, EncodeFnArg};
 
 mod conversion {
     use disjoint_impls::disjoint_impls;

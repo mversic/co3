@@ -1,6 +1,5 @@
 //! Module providing ABI compatible functionality
 
-use crate::marker::Native;
 #[cfg(feature = "alloc")]
 use alloc::boxed::Box;
 use core::{
@@ -22,9 +21,10 @@ use rust_spec::{
 use crate::boxed::abi::Box as AbiBox;
 use crate::{
     CType, ReprC,
+    marker::Native,
     niche::Niche,
     option::abi::OptionSome as AbiOptionSome,
-    reference::{RefCarrier, RefMutCarrier},
+    reference::abi::{RefCarrier, RefMutCarrier},
     result::abi::{ResultErr as AbiResultErr, ResultOk as AbiResultOk},
     wide::Wide as _,
 };
@@ -199,7 +199,7 @@ unsafe impl<R: AbiCompatible + RustSpec + ?Sized> AbiCompatible for &R
 where
     Self: RustSpec<Layout = Stable>,
     <R as RustSpec>::Mutability: InteriorTrap<Trap = Robust>,
-    Self: ReprC<CType: RefCarrier<R>>,
+    Self: ReprC<CType: RefCarrier<Pointee = <R as ReprC>::CType>>,
 {
 }
 
@@ -207,7 +207,7 @@ unsafe impl<R: AbiCompatibleValidate + RustSpec + ?Sized> AbiCompatibleValidate 
 where
     Self: RustSpec<Layout = Stable>,
     <R as RustSpec>::Mutability: InteriorTrap<Trap = Robust>,
-    Self: ReprC<CType: RefCarrier<R>>,
+    Self: ReprC<CType: RefCarrier<Pointee = <R as ReprC>::CType>>,
 {
     #[inline(always)]
     unsafe fn is_valid(target: &Self::CType) -> bool {
@@ -223,7 +223,7 @@ where
 
 unsafe impl<R: AbiCompatibleValidate + ?Sized> AbiCompatibleValidate for &mut R
 where
-    Self: RustSpec<Layout = Stable> + ReprC<CType: RefMutCarrier<R>>,
+    Self: RustSpec<Layout = Stable> + ReprC<CType: RefMutCarrier<Pointee = <R as ReprC>::CType>>,
 {
     #[inline(always)]
     unsafe fn is_valid(target: &Self::CType) -> bool {
@@ -237,7 +237,7 @@ where
     }
 }
 unsafe impl<R: AbiCompatible + ?Sized> AbiCompatible for &mut R where
-    Self: RustSpec<Layout = Stable> + ReprC<CType: RefMutCarrier<R>>
+    Self: RustSpec<Layout = Stable> + ReprC<CType: RefMutCarrier<Pointee = <R as ReprC>::CType>>
 {
 }
 
@@ -357,8 +357,6 @@ pub(crate) unsafe fn transmute_owned<S, T>(source: S) -> T {
 
 #[cfg(test)]
 mod tests {
-    use crate::marker::Native;
-
     #[cfg(feature = "alloc")]
     use alloc::vec::Vec;
     use core::cell::{Cell, UnsafeCell};
@@ -374,7 +372,7 @@ mod tests {
             AbiCompatibleValidate, Decode, DecodeMove, Encode, EncodeMove, EncodeMoveUnchecked,
             Store,
         },
-        marker::{AbiCompatible, NonZero},
+        marker::{AbiCompatible, Native, NonZero},
         reference::abi::Ref,
         wide::{
             Wide,

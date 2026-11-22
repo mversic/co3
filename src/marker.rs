@@ -1,9 +1,9 @@
 //! Primitive traits and types representing basic properties of types.
-pub use crate::abi::AbiCompatible;
 use core::marker::PhantomData;
 
 use rust_spec::RustSpec;
 
+pub use crate::abi::AbiCompatible;
 use crate::{
     CFnArg, CFnReturn, CType, ReprC,
     convert::{

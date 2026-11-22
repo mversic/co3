@@ -1,6 +1,5 @@
 //! Conversion between C-compatible representations and ABI arguments.
 
-use crate::marker::Native;
 use core::{
     cell::{Cell, UnsafeCell},
     marker::PhantomData,
@@ -12,11 +11,14 @@ use disjoint_impls::disjoint_impls;
 
 use crate::{
     CType, ReprC,
-    marker::NonZero,
+    marker::{Native, NonZero},
     option::abi::OptionSome as AbiOptionSome,
     result::abi::{ResultErr as AbiResultErr, ResultOk as AbiResultOk},
     tuple::abi::Tuple2 as AbiTuple2,
-    wide::{PointeeData, Wide, WideHeader, WideRefCarrier, WideRefMutCarrier},
+    wide::{
+        PointeeData, Wide, WideHeader,
+        abi::{WideRefCarrier, WideRefMutCarrier},
+    },
 };
 #[cfg(feature = "alloc")]
 use crate::{boxed::Box, wide::abi::WideBox as AbiWideBox};
@@ -67,13 +69,13 @@ impl<R, U> Unpack2<*const PointeeData<R::CType>, U> for &R
 where
     R: ReprC<CType: Wide<Header: WideHeader<Data: CType>, Metadata: TryInto<U>>> + Wide + ?Sized,
     U: CType,
-    Self: ReprC<CType: WideRefCarrier<R, Pointer = *const PointeeData<R::CType>>>,
+    Self: ReprC<CType: WideRefCarrier<Pointee = <R as ReprC>::CType>>,
 {
     type Error = <<R::CType as Wide>::Metadata as TryInto<U>>::Error;
 
     #[inline(always)]
     fn unpack(value: Self::CType) -> Result<(*const PointeeData<R::CType>, U), Self::Error> {
-        Ok((value.as_ptr(), value.metadata().try_into()?))
+        Ok((value.data(), value.metadata().try_into()?))
     }
 }
 
@@ -81,7 +83,7 @@ impl<R, U> Pack2<*const PointeeData<R::CType>, U> for &R
 where
     R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + Wide + ?Sized,
     U: CType + TryInto<<R::CType as Wide>::Metadata>,
-    Self: ReprC<CType: WideRefCarrier<R, Pointer = *const PointeeData<R::CType>>>,
+    Self: ReprC<CType: WideRefCarrier<Pointee = <R as ReprC>::CType>>,
 {
     type Error = <U as TryInto<<R::CType as Wide>::Metadata>>::Error;
 
@@ -90,7 +92,7 @@ where
         data: *const PointeeData<R::CType>,
         metadata: U,
     ) -> Result<Self::CType, Self::Error> {
-        Ok(unsafe { Self::CType::from_parts(data, metadata.try_into()?) })
+        Ok(unsafe { Self::CType::from_raw_parts(data, metadata.try_into()?) })
     }
 }
 
@@ -98,7 +100,7 @@ impl<R, U> Unpack2<*mut PointeeData<R::CType>, U> for &mut R
 where
     R: ReprC<CType: Wide<Header: WideHeader<Data: CType>, Metadata: TryInto<U>>> + Wide + ?Sized,
     U: CType,
-    Self: ReprC<CType: WideRefMutCarrier<R>>,
+    Self: ReprC<CType: WideRefMutCarrier<Pointee = <R as ReprC>::CType>>,
 {
     type Error = <<R::CType as Wide>::Metadata as TryInto<U>>::Error;
 
@@ -111,7 +113,7 @@ impl<R, U> Pack2<*mut PointeeData<R::CType>, U> for &mut R
 where
     R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + Wide + ?Sized,
     U: CType + TryInto<<R::CType as Wide>::Metadata>,
-    Self: ReprC<CType: WideRefMutCarrier<R>>,
+    Self: ReprC<CType: WideRefMutCarrier<Pointee = <R as ReprC>::CType>>,
 {
     type Error = <U as TryInto<<R::CType as Wide>::Metadata>>::Error;
 

@@ -186,7 +186,7 @@ impl<'ast> Visit<'ast> for TypeChecks {
                         .to_owned()
                 }
                 crate::known_type::Kind::Box if name == "Box" => {
-                    "`Box` must resolve to `co3::boxed::Box` or `co3::boxed::abi::Box`".to_owned()
+                    "`Box` must resolve to `co3::boxed::Box`".to_owned()
                 }
                 _ => format!("`{name}` must resolve to `{}`", known.canonical_name),
             };
@@ -228,12 +228,28 @@ mod tests {
             )
         );
         assert!(checks.contains("`u32` must resolve to `core::primitive::u32`"));
-        assert!(
-            checks.contains("`Box` must resolve to `co3::boxed::Box` or `co3::boxed::abi::Box`")
-        );
+        assert!(checks.contains("`Box` must resolve to `co3::boxed::Box`"));
         assert!(checks.contains("core :: mem :: MaybeUninit < () >"));
         assert!(checks.contains("`MaybeUninit` must resolve to `core::mem::MaybeUninit`"));
         assert!(!checks.contains("check :: < T >"));
+    }
+
+    #[test]
+    fn box_identity_excludes_abi_carriers() {
+        let item = parse_quote!(
+            struct Node {
+                next: Box<Node>,
+            }
+        );
+        let checks = TypeChecks::for_derive(&item).to_string();
+        assert!(checks.contains("impl ExactType for co3 :: boxed :: Box"));
+        assert!(!checks.contains("impl ExactType for co3 :: boxed :: abi :: Box"));
+        assert!(
+            crate::known_type::recognize(&parse_quote!(Box<u8>))
+                .unwrap()
+                .alternate
+                .is_none()
+        );
     }
 
     #[test]

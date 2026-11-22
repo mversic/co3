@@ -5,9 +5,9 @@ use rust_spec::{RustSpec, Stable};
 
 use crate::{
     CFnArg, CFnReturn, CType, ReprC,
-    convert::AbiCompatibleValidate,
     convert::{
-        Decode, DecodeMove, EmptyStore, Encode, EncodeMove, EncodeMoveUnchecked, EncodeUnchecked,
+        AbiCompatibleValidate, Decode, DecodeMove, EmptyStore, Encode, EncodeMove,
+        EncodeMoveUnchecked, EncodeUnchecked,
     },
     marker::AbiCompatible,
     niche::Niche,
@@ -239,8 +239,6 @@ unsafe impl<T: EmptyStore> EmptyStore for MaybeUninit<T> {}
 
 #[cfg(test)]
 mod tests {
-    use crate::marker::Native;
-
     #[cfg(feature = "alloc")]
     use alloc::{boxed::Box, string::String, vec::Vec};
 
@@ -254,7 +252,7 @@ mod tests {
     use super::*;
     #[cfg(feature = "alloc")]
     use crate::{boxed::abi::Box as AbiBox, wide::abi::WideBox as AbiWideBox};
-    use crate::{option::abi::Option as AbiOption, reference::abi::Ref};
+    use crate::{marker::Native, option::abi::Option as AbiOption, reference::abi::Ref};
 
     #[test]
     #[cfg(feature = "alloc")]

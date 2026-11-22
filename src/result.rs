@@ -1,5 +1,4 @@
 //! C-compatible representation of [`core::result::Result`].
-use crate::marker::Native;
 use core::{marker::PhantomData, mem::MaybeUninit, ops::Add};
 
 use rust_spec::{
@@ -11,12 +10,12 @@ use rust_spec::{
 
 use crate::{
     CFnArg, CFnReturn, CType, ReprC, Thin,
-    convert::AbiCompatibleValidate,
     convert::{
-        Decode, DecodeMove, EmptyStore, Encode, EncodeMove, EncodeMoveUnchecked, EncodeUnchecked,
-        SoftEncodeRef, SoftEncodeRefUnchecked,
+        AbiCompatibleValidate, Decode, DecodeMove, EmptyStore, Encode, EncodeMove,
+        EncodeMoveUnchecked, EncodeUnchecked, SoftEncodeRef, SoftEncodeRefUnchecked,
     },
-    marker::AbiCompatible,
+    marker::{AbiCompatible, Native},
+    reference::abi::RefCarrier,
     sync::RefSizedEncodeStore,
 };
 
@@ -267,8 +266,8 @@ unsafe impl<'a, T: ReprC<CType: Copy> + 'a, E: ReprC<CType: Copy> + 'a, __Interi
 where
     &'a Self: crate::ReprC<CType = crate::reference::abi::SoftRef<<Self as ReprC>::CType>>,
     Self: RustSpec<Mutability = Exclusive<__Interior>, Size: Thin> + 'a,
-    &'a T: EncodeMoveUnchecked<CType: crate::reference::RefCarrier<T>>,
-    &'a E: EncodeMoveUnchecked<CType: crate::reference::RefCarrier<E>>,
+    &'a T: EncodeMoveUnchecked<CType: RefCarrier<Pointee = <T as ReprC>::CType>>,
+    &'a E: EncodeMoveUnchecked<CType: RefCarrier<Pointee = <E as ReprC>::CType>>,
 {
     type SoftStore = RefSizedEncodeStore<
         Self,
@@ -309,8 +308,8 @@ unsafe impl<'a, T: ReprC<CType: Copy> + 'a, E: ReprC<CType: Copy> + 'a, __Interi
 where
     &'a Self: crate::ReprC<CType = crate::reference::abi::SoftRef<<Self as ReprC>::CType>>,
     Self: RustSpec<Mutability = Exclusive<__Interior>, Size: Thin> + 'a,
-    &'a T: EncodeMove<CType: crate::reference::RefCarrier<T>>,
-    &'a E: EncodeMove<CType: crate::reference::RefCarrier<E>>,
+    &'a T: EncodeMove<CType: RefCarrier<Pointee = <T as ReprC>::CType>>,
+    &'a E: EncodeMove<CType: RefCarrier<Pointee = <E as ReprC>::CType>>,
 {
     type Store = RefSizedEncodeStore<
         Self,
@@ -756,8 +755,9 @@ pub mod abi {
 
 #[cfg(test)]
 mod tests {
-    use super::abi::Result as AbiResult;
     use core::mem::MaybeUninit;
+
+    use super::abi::Result as AbiResult;
 
     const CONST_RESULT: Option<Result<u32, u16>> = AbiResult::<u32, u16>::Err(4).into_result();
 

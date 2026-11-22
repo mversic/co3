@@ -1,4 +1,3 @@
-use co3::marker::Native;
 use core::{
     marker::PhantomData,
     mem::MaybeUninit,
@@ -6,7 +5,10 @@ use core::{
 };
 
 use co3::{
-    CFnArg, CFnReturn, CType, ReprC, marker::AbiCompatible, rust_spec::RustSpec, wide::Wide,
+    CFnArg, CFnReturn, CType, ReprC,
+    marker::{AbiCompatible, Native},
+    rust_spec::RustSpec,
+    wide::Wide,
 };
 use static_assertions::{
     assert_impl_all, assert_not_impl_any, assert_type_eq_all, assert_type_ne_all,

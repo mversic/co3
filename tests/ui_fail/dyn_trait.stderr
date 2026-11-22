@@ -99,7 +99,7 @@ help: the following other types implement trait `co3::stored::_::DecodeMove_cfg0
    | /     unsafe impl<'d, 'r: 'd, R: AbiCompatibleValidate + ?Sized> DecodeMove<'d>
    | |         for &'r R
    | |     where
-   | |         Self: RustSpec<Layout = Stable> + ReprC<CType: crate::CType + RefCarrier<R>>,
+   | |         Self: RustSpec<Layout = Stable> + ReprC<CType: crate::CType + RefCarrier<Pointee = <R as ReprC>::CType>>,
    | |         R: RustSpec<Layout = Stable, Size: Thin>,
    | |         <R as RustSpec>::Mutability: InteriorTrap<Trap = Robust>,
    | |_________________________________________________________________^ `&'r R` implements `co3::stored::_::DecodeMove_cfg0<'d, Stable, Stable, <R as RustSpec>::Mutability, _TŠČ1>`

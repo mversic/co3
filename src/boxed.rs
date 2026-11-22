@@ -9,8 +9,7 @@ use rust_spec::RustSpec;
 use crate::{
     CFnArg, CFnReturn, CType, ReprC,
     convert::{Decode, DecodeMove, Encode, EncodeMove, EncodeMoveUnchecked},
-    marker::AbiCompatible,
-    marker::Zeroable,
+    marker::{AbiCompatible, Zeroable},
     reference::impl_thin_pointer_traits,
     wide::{impl_carrier_borrow, impl_identity_carrier},
 };

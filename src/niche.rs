@@ -1,6 +1,5 @@
 //! Logic related to the conversion of [`Option<T>`] to and from FFI-compatible representation
 
-use crate::marker::Native;
 #[cfg(feature = "alloc")]
 use alloc::boxed::Box;
 
@@ -13,6 +12,7 @@ use rust_spec::{
 
 use crate::{
     CType, ReprC,
+    marker::Native,
     option::abi::{Option as AbiOption, OptionSome as AbiOptionSome},
     reference::abi::{Ref, RefMut, SoftRef, SoftRefMut},
     tuple::abi::Tuple2 as AbiTuple2,
@@ -287,8 +287,6 @@ impl<R: Niche, const N: usize> Niche for [R; N] {
 
 #[cfg(test)]
 mod tests {
-    use crate::marker::Native;
-
     #[cfg(feature = "alloc")]
     use alloc::string::String;
     use core::{mem::ManuallyDrop, num::NonZero, ptr::NonNull};
@@ -299,6 +297,7 @@ mod tests {
     use crate::{
         CType,
         convert::{Decode, Encode},
+        marker::Native,
     };
 
     #[test]

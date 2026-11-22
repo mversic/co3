@@ -1,6 +1,6 @@
-use co3::marker::Native;
 use co3::{
     ReprC,
+    marker::Native,
     option::{Option as StableOption, abi::Option as AbiOption},
     rust_spec::RustSpec,
 };

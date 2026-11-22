@@ -2,6 +2,7 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use syn::{parse_quote, visit::Visit};
 
+use super::inference::RecursiveFields;
 use crate::{
     layout::{
         attr::ReprKind,
@@ -14,7 +15,7 @@ use crate::{
             wide_usize_predicate,
         },
     },
-    utils::{co3_path, speculative_marker},
+    utils::{co3_path, peel_grouped_type, speculative_marker},
 };
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -44,12 +45,7 @@ impl TailClass {
 }
 
 fn tail_type_param<'a>(ty: &syn::Type, generics: &'a syn::Generics) -> Option<&'a syn::TypeParam> {
-    match ty {
-        syn::Type::Paren(paren) => return tail_type_param(&paren.elem, generics),
-        syn::Type::Group(group) => return tail_type_param(&group.elem, generics),
-        _ => {}
-    }
-    let syn::Type::Path(path) = ty else {
+    let syn::Type::Path(path) = peel_grouped_type(ty) else {
         return None;
     };
     let ident = path
@@ -86,9 +82,7 @@ pub(super) fn classify_tail(ty: &syn::Type, generics: &syn::Generics) -> TailCla
             TailClass::Sized
         };
     }
-    match ty {
-        syn::Type::Paren(ty) => classify_tail(&ty.elem, generics),
-        syn::Type::Group(ty) => classify_tail(&ty.elem, generics),
+    match peel_grouped_type(ty) {
         syn::Type::Slice(_) => TailClass::Unsized(UnsizedTail::SliceLike),
         syn::Type::TraitObject(_) => TailClass::Unsized(UnsizedTail::DynTraitLike),
         syn::Type::Reference(_) | syn::Type::Ptr(_) | syn::Type::Array(_) | syn::Type::Never(_) => {
@@ -175,7 +169,7 @@ pub(super) fn gen_fieldless_enum_ctype(
     };
     // Keep the normal non-ZST CFnArg size guard. In particular, a one-variant
     // fieldless enum is represented by `EnumCType(())` and must not become a CFnArg.
-    let impls = gen_struct_ctype_impls::<false>(&ctype, false, alignment, false);
+    let impls = gen_struct_ctype_impls::<false>(&ctype, false, alignment, false, &[]);
     let is_valid_tag = if matches!(tag_type, syn::Type::Tuple(_)) {
         quote!(true)
     } else {
@@ -190,7 +184,7 @@ pub(super) fn gen_fieldless_enum_ctype(
         .iter()
         .map(|field| &field.ty)
         .collect::<Vec<_>>();
-    let type_spec_impl = gen_type_spec(&ctype.ident, &ctype.generics, &fields, alignment);
+    let type_spec_impl = gen_type_spec(&ctype.ident, &ctype.generics, &fields, alignment, &[]);
     let primitive_constructor = match tag_type {
         syn::Type::Path(path) => {
             let primitive = path.path.get_ident().expect("primitive enum tag type");
@@ -247,6 +241,7 @@ pub(super) fn gen_item_ctype(
     input: &syn::DeriveInput,
     generate_spec: bool,
     generate_wide: bool,
+    recursion: &RecursiveFields,
 ) -> TokenStream {
     let vis = &input.vis;
     let name = &input.ident;
@@ -261,6 +256,7 @@ pub(super) fn gen_item_ctype(
             &data.fields,
             generate_spec,
             generate_wide,
+            recursion,
         ),
         syn::Data::Enum(data) if is_transparent_enum_repr(repr, &data.variants) => {
             let Some(first_variant) = data.variants.first() else {
@@ -275,6 +271,7 @@ pub(super) fn gen_item_ctype(
                 &first_variant.fields,
                 generate_spec,
                 false,
+                recursion,
             );
             let constructor = gen_transparent_enum_constructor(name, generics, first_variant);
             quote! { #carrier #constructor }
@@ -703,8 +700,22 @@ fn derive_ctype_struct(
     fields: &syn::Fields,
     generate_spec: bool,
     generate_wide: bool,
+    recursion: &RecursiveFields,
 ) -> TokenStream {
-    let ctype_def = gen_ctype_struct_item(repr, alignment, vis, name, generics, fields);
+    let carriers = &recursion.carriers;
+    // The fixed header shares the already verified prefix of the enclosing companion.
+    let stored_carriers = recursion.header_prefix.unwrap_or(carriers);
+    let ctype_def = gen_ctype_struct_item(
+        repr,
+        alignment,
+        vis,
+        name,
+        generics,
+        fields,
+        stored_carriers,
+    );
+    let recursive_checks =
+        gen_recursive_carrier_checks(name, &ctype_def.generics, fields, recursion);
     let known_unsized_tail = fields
         .iter()
         .next_back()
@@ -716,14 +727,21 @@ fn derive_ctype_struct(
         known_unsized_tail,
         false,
     );
-    let ctype_impls =
-        gen_struct_ctype_impls::<true>(&ctype_def, generate_spec, alignment, known_unsized_tail);
-    let wide_impl = generate_wide.then(|| gen_ctype_wide_impl(repr, &ctype_def, fields, generics));
+    let ctype_impls = gen_struct_ctype_impls::<true>(
+        &ctype_def,
+        generate_spec,
+        alignment,
+        known_unsized_tail,
+        carriers,
+    );
+    let wide_impl = generate_wide
+        .then(|| gen_ctype_wide_impl(repr, &ctype_def, fields, generics, recursion.wide_header));
     let header_impl =
         (!generate_spec).then(|| gen_identity_header_impl(&ctype_def.ident, &ctype_def.generics));
 
     quote! {
         #ctype_def
+        #recursive_checks
         #fields_methods
         #ctype_impls
         #wide_impl
@@ -837,11 +855,91 @@ pub(super) fn gen_fields_methods(
     }
 }
 
+fn gen_recursive_carrier_checks(
+    name: &syn::Ident,
+    generics: &syn::Generics,
+    fields: &syn::Fields,
+    recursion: &RecursiveFields,
+) -> TokenStream {
+    // Type-check each shortcut against ReprC after defining the companion.
+    // This also checks imports that resolve to a different supported wrapper.
+    let (impl_generics, args, where_clause) = generics.split_for_impl();
+    let requirements = &recursion.source_bounds;
+    let predicates = where_clause.map(|w| &w.predicates);
+    let checks = fields
+        .iter()
+        .zip(&recursion.carriers)
+        .filter_map(|(source, inferred)| {
+            let ty = &source.ty;
+            let carrier = inferred.as_ref()?;
+            Some(quote!(check::<#ty, #carrier>();))
+        })
+        .collect::<Vec<_>>();
+    let vector_selector = recursion.selectors.vec.then(|| {
+        quote! {
+            extern crate alloc as __co3_recursive_alloc;
+            pub trait __Co3SelectVec {
+                type Niche;
+                type Carrier<C: co3::CType>;
+                type AbiRequirement;
+            }
+            impl<T> __Co3SelectVec for __co3_recursive_alloc::vec::Vec<T> {
+                type Niche = co3::rust_spec::niche::WithNiche<__Co3Unstable>;
+                type Carrier<C: co3::CType> = __Co3Native<co3::vec::abi::Vec<C>>;
+                type AbiRequirement = Self;
+            }
+            impl<T> __Co3SelectVec for co3::vec::Vec<T> {
+                type Niche = co3::rust_spec::niche::WithNiche<co3::rust_spec::Stable>;
+                type Carrier<C: co3::CType> = co3::vec::abi::Vec<C>;
+                type AbiRequirement = ();
+            }
+        }
+    });
+    let option_selector = recursion.selectors.option.then(|| quote! {
+        pub trait __Co3SelectOption<Niche> {
+            type Carrier<Tagged, NativeTagged, NativeSome>;
+        }
+        impl __Co3SelectOption<co3::rust_spec::niche::WithoutNiche> for core::option::Option<()> {
+            type Carrier<T, N, S> = N;
+        }
+        impl<L: co3::rust_spec::layout::LayoutKind> __Co3SelectOption<co3::rust_spec::niche::WithNiche<L>> for core::option::Option<()> {
+            type Carrier<T, N, S> = S;
+        }
+        impl<Niche> __Co3SelectOption<Niche> for co3::option::Option<()> {
+            type Carrier<T, N, S> = T;
+        }
+    });
+    let reference_selector = recursion.selectors.reference.then(|| quote! {
+        pub trait __Co3SelectRef<Direct, Soft> { type Carrier; }
+        impl<D, S> __Co3SelectRef<D, S> for co3::rust_spec::Stable { type Carrier = D; }
+        impl<D, S> __Co3SelectRef<D, S> for __Co3Unstable { type Carrier = S; }
+        impl<D, S> __Co3SelectRef<D, S> for (co3::rust_spec::Stable, co3::rust_spec::layout::Robust) { type Carrier = D; }
+        impl<D, S> __Co3SelectRef<D, S> for (co3::rust_spec::Stable, co3::rust_spec::layout::NonRobust) { type Carrier = S; }
+        impl<D, S, Trap> __Co3SelectRef<D, S> for (__Co3Unstable, Trap) { type Carrier = S; }
+    });
+    let check_carriers = (!checks.is_empty()).then(|| {
+        quote! {
+            const _: () = {
+                #[allow(dead_code)]
+                trait CheckRecursiveCarriers { fn check(); }
+                impl #impl_generics CheckRecursiveCarriers for #name #args where #(#requirements,)* #predicates {
+                    fn check() {
+                        fn check<R: co3::ReprC<CType = C> + ?Sized, C: co3::CType + ?Sized>() {}
+                        #(#checks)*
+                    }
+                }
+            };
+        }
+    });
+    quote!(#option_selector #vector_selector #reference_selector #check_carriers)
+}
+
 fn gen_ctype_wide_impl(
     repr: Option<&ReprKind>,
     ctype: &syn::ItemStruct,
     source_fields: &syn::Fields,
     source_generics: &syn::Generics,
+    recursive: bool,
 ) -> TokenStream {
     let Some(source_field_ty) = wide_tail_type(source_fields, repr, source_generics) else {
         return quote! {};
@@ -880,6 +978,9 @@ fn gen_ctype_wide_impl(
 
     let data_ty = if is_transparent {
         quote!(<<#source_field_ty as co3::wide::Wide>::Header as co3::ReprC>::CType)
+    } else if recursive {
+        let header = gen_ctype_name(&data_name);
+        quote!(#header #ty_generics)
     } else {
         quote!(<#data_name #ty_generics as co3::ReprC>::CType)
     };
@@ -937,7 +1038,7 @@ fn derive_repr_c_data_enum_ctype(
         }
     };
 
-    let ctype_impls = gen_struct_ctype_impls::<false>(&ctype_def, true, alignment, false);
+    let ctype_impls = gen_struct_ctype_impls::<false>(&ctype_def, true, alignment, false, &[]);
     let fields_methods = gen_fields_methods(
         &ctype_def.ident,
         &ctype_def.generics,
@@ -1016,6 +1117,7 @@ fn gen_ctype_struct_item(
     name: &syn::Ident,
     generics: &syn::Generics,
     fields: &syn::Fields,
+    carriers: &[Option<syn::Type>],
 ) -> syn::ItemStruct {
     let (impl_generics, _, where_clause) = generics.split_for_impl();
     let predicates = where_clause.as_ref().map(|w| &w.predicates);
@@ -1024,11 +1126,17 @@ fn gen_ctype_struct_item(
     let repr = gen_ctype_repr_attr(repr, alignment);
 
     let field_types = fields.iter().map(|f| &f.ty).collect::<Vec<_>>();
-    let extern_c_bounds = gen_extern_c_bounds_for_ctype(generics, &field_types);
+    let extern_c_bounds = projected_field_bounds(generics, &field_types, carriers);
 
-    let field_c_tys = fields
+    let field_c_tys = field_types
         .iter()
-        .map(|field| lowered_field_ty(&field.ty))
+        .enumerate()
+        .map(
+            |(index, ty)| match carriers.get(index).and_then(Option::as_ref) {
+                Some(carrier) => quote!(#carrier),
+                None => lowered_field_ty(ty),
+            },
+        )
         .collect::<Vec<_>>();
 
     let ctype = match fields {
@@ -1135,7 +1243,7 @@ fn gen_variant_struct(
         .predicates
         .extend(gen_sized_extern_c_bounds_for_ctype(generics, &field_types));
 
-    let mut ctype = gen_ctype_struct_item(repr, None, vis, &name, &variant_generics, &fields);
+    let mut ctype = gen_ctype_struct_item(repr, None, vis, &name, &variant_generics, &fields, &[]);
     let unwrapped = ctype.clone();
     if tag_type.is_some() {
         for field in ctype.fields.iter_mut().skip(1) {
@@ -1151,9 +1259,9 @@ fn gen_variant_struct(
         tag_type.is_some(),
     );
     let ctype_impls = if tag_type.is_some() {
-        gen_struct_ctype_impls::<false>(&ctype, true, None, false)
+        gen_struct_ctype_impls::<false>(&ctype, true, None, false, &[])
     } else {
-        gen_struct_ctype_impls::<true>(&ctype, true, None, false)
+        gen_struct_ctype_impls::<true>(&ctype, true, None, false, &[])
     };
     quote! { #ctype #fields_methods #ctype_impls }
 }
@@ -1224,13 +1332,14 @@ fn gen_struct_ctype_impls<const GEN_PARTIAL_EQ: bool>(
     generate_spec: bool,
     alignment: Option<&syn::LitInt>,
     known_unsized_tail: bool,
+    carriers: &[Option<syn::Type>],
 ) -> TokenStream {
     let fields = ctype.fields.iter().map(|f| &f.ty).collect::<Vec<_>>();
     let copy_impls = gen_copy_impls(&ctype.ident, &ctype.generics, &fields, known_unsized_tail);
     let partial_eq_impl = GEN_PARTIAL_EQ.then(|| gen_struct_partial_eq(ctype));
     let robust_impls = gen_robust_impls(&ctype.ident, &ctype.generics, &fields, known_unsized_tail);
-    let type_spec_impl =
-        generate_spec.then(|| gen_type_spec(&ctype.ident, &ctype.generics, &fields, alignment));
+    let type_spec_impl = generate_spec
+        .then(|| gen_type_spec(&ctype.ident, &ctype.generics, &fields, alignment, carriers));
     quote! {
         #copy_impls
         #partial_eq_impl
@@ -1280,7 +1389,7 @@ fn gen_union_ctype_impls(ctype: &syn::ItemUnion, alignment: Option<&syn::LitInt>
 
     let copy_impls = gen_copy_impls(&ctype.ident, &ctype.generics, &fields, false);
     let robust_impls = gen_robust_impls(&ctype.ident, &ctype.generics, &fields, false);
-    let type_spec_impl = gen_type_spec(&ctype.ident, &ctype.generics, &fields, alignment);
+    let type_spec_impl = gen_type_spec(&ctype.ident, &ctype.generics, &fields, alignment, &[]);
     quote! {
         #copy_impls
         #robust_impls
@@ -1364,36 +1473,45 @@ fn gen_type_spec(
     generics: &syn::Generics,
     fields: &[&syn::Type],
     repr_alignment: Option<&syn::LitInt>,
+    carriers: &[Option<syn::Type>],
 ) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     let predicates = where_clause.as_ref().map(|w| &w.predicates);
-    let (size, size_bounds) = gen_field_family(
-        generics,
-        fields,
-        quote! { core::ops::Add },
-        quote! { Size },
-        quote! { co3::rust_spec::size::Sized<co3::rust_spec::Zero> },
+    // Only explicit recursive lowerings have a known pointer-bearing representation.
+    // Tagged Option preserves its payload alignment, and wide carriers here use usize metadata.
+    let inferred = |i: usize| carriers.get(i).is_some_and(Option::is_some);
+    let field_family = |operator, axis, identity, recursive_axis| {
+        gen_field_family(generics, fields, operator, axis, identity, |i| {
+            inferred(i).then_some(&recursive_axis)
+        })
+    };
+    let (size, size_bounds) = field_family(
+        quote!(core::ops::Add),
+        quote!(Size),
+        quote!(co3::rust_spec::size::Sized<co3::rust_spec::Zero>),
+        quote!(co3::rust_spec::size::Sized<co3::rust_spec::Gt<co3::rust_spec::Zero>>),
     );
-    let (mut alignment, alignment_bounds) = gen_field_family(
-        generics,
-        fields,
-        quote! { co3::rust_spec::Max },
-        quote! { __Alignment },
-        quote! { co3::rust_spec::One },
+    let (mut alignment, alignment_bounds) = field_family(
+        quote!(co3::rust_spec::Max),
+        quote!(__Alignment),
+        quote!(co3::rust_spec::One),
+        quote!(<core::primitive::usize as co3::rust_spec::RustSpec>::__Alignment),
     );
     if repr_alignment.is_some_and(|alignment| alignment.base10_digits() != "1") {
         alignment = quote!(co3::rust_spec::Gt<co3::rust_spec::One>);
     }
-    let (mutability, mutability_bounds) = gen_field_family(
-        generics,
-        fields,
-        quote! { core::ops::Add },
-        quote! { Mutability },
-        quote! { co3::rust_spec::mutability::Exclusive<co3::rust_spec::mutability::WithoutInterior> },
+    // Following an edge back to this record reaches the same ordinary fields.
+    // The recognized pointer carriers add no interior-mutable storage of their own.
+    let (mutability, mutability_bounds) = field_family(
+        quote!(core::ops::Add),
+        quote!(Mutability),
+        quote!(co3::rust_spec::mutability::Exclusive<co3::rust_spec::mutability::WithoutInterior>),
+        quote!(co3::rust_spec::mutability::Exclusive<co3::rust_spec::mutability::WithoutInterior>),
     );
     let rust_spec_bounds = field_types(fields, generics)
-        .filter(|field| field.concrete)
-        .flat_map(|field| {
+        .enumerate()
+        .filter(|(i, field)| !inferred(*i) && field.concrete)
+        .flat_map(|(_, field)| {
             gen_hrtb_projection_bounds(field.ty, generics, quote! { co3::rust_spec::RustSpec })
         });
 
@@ -1419,67 +1537,43 @@ fn gen_type_spec(
     }
 }
 
-fn gen_field_family(
+fn gen_field_family<'a>(
     generics: &syn::Generics,
     fields: &[&syn::Type],
     operator: TokenStream,
     axis: TokenStream,
     identity: TokenStream,
+    inferred: impl Fn(usize) -> Option<&'a TokenStream>,
 ) -> (TokenStream, Vec<TokenStream>) {
-    let (concrete_family, parametrized_family, mut bounds) =
-        gen_field_family_parts(operator.clone(), axis, generics, fields);
-
-    let family = match (concrete_family, parametrized_family) {
-        (Some(concrete), Some(parametrized)) => {
-            bounds.push(quote! { #concrete: #operator<#parametrized> });
-            quote! { <#concrete as #operator<#parametrized>>::Output }
+    let mut bounds = Vec::new();
+    let mut concrete = Vec::new();
+    let mut generic = Vec::new();
+    for (index, field) in field_types(fields, generics).enumerate() {
+        let ty = field.ty;
+        let projection = quote!(<#ty as co3::rust_spec::RustSpec>::#axis);
+        if let Some(known) = inferred(index) {
+            concrete.push(known.clone());
+        } else if field.concrete {
+            concrete.push(projection);
+        } else {
+            bounds.push(quote!(#ty: co3::rust_spec::RustSpec));
+            generic.push(projection);
         }
-        (Some(concrete), None) => concrete,
-        (None, Some(parametrized)) => parametrized,
+    }
+    let mut combine = |left: TokenStream, right: TokenStream, needs_bound: bool| {
+        if needs_bound {
+            bounds.push(quote!(#left: #operator<#right>));
+        }
+        quote!(<#left as #operator<#right>>::Output)
+    };
+    let concrete = concrete.into_iter().reduce(|a, b| combine(a, b, false));
+    let generic = generic.into_iter().reduce(|a, b| combine(a, b, true));
+    let family = match (concrete, generic) {
+        (Some(a), Some(b)) => combine(a, b, true),
+        (Some(a), None) | (None, Some(a)) => a,
         (None, None) => identity,
     };
-
     (family, bounds)
-}
-
-fn gen_field_family_parts(
-    operator: TokenStream,
-    axis: TokenStream,
-    generics: &syn::Generics,
-    fields: &[&syn::Type],
-) -> (Option<TokenStream>, Option<TokenStream>, Vec<TokenStream>) {
-    let mut bounds = Vec::new();
-    let (concrete_fields, parametrized_fields): (Vec<_>, Vec<_>) =
-        field_types(fields, generics).partition(|field| field.concrete);
-
-    let mut concrete_fields = concrete_fields.into_iter().map(|field| field.ty);
-    let concrete_family = concrete_fields.next().map(|first| {
-        let mut family = quote! { <#first as co3::rust_spec::RustSpec>::#axis };
-
-        for field in concrete_fields {
-            let field_family = quote! { <#field as co3::rust_spec::RustSpec>::#axis };
-            family = quote! { <#family as #operator<#field_family>>::Output };
-        }
-
-        family
-    });
-
-    let mut parametrized_fields = parametrized_fields.into_iter().map(|field| field.ty);
-    let parametrized_family = parametrized_fields.next().map(|first| {
-        bounds.push(quote! { #first: co3::rust_spec::RustSpec });
-        let mut family = quote! { <#first as co3::rust_spec::RustSpec>::#axis };
-
-        for field in parametrized_fields {
-            let field_family = quote! { <#field as co3::rust_spec::RustSpec>::#axis };
-            bounds.push(quote! { #field: co3::rust_spec::RustSpec });
-            bounds.push(quote! { #family: #operator<#field_family> });
-            family = quote! { <#family as #operator<#field_family>>::Output };
-        }
-
-        family
-    });
-
-    (concrete_family, parametrized_family, bounds)
 }
 
 fn gen_identity_codec_impls(
@@ -1795,17 +1889,26 @@ pub(super) fn gen_extern_c_bounds_for_ctype(
     generics: &syn::Generics,
     fields: &[&syn::Type],
 ) -> Vec<syn::WherePredicate> {
-    let Some((last, fields)) = fields.split_last() else {
-        return Vec::new();
-    };
+    projected_field_bounds(generics, fields, &[])
+}
 
-    let mut bounds = gen_sized_extern_c_bounds_for_ctype(generics, fields);
-    bounds.extend(gen_field_ctype_bounds(
-        FieldType::new(last, generics),
-        generics,
-        quote!(co3::ReprC),
-    ));
-    bounds
+pub(super) fn projected_field_bounds(
+    generics: &syn::Generics,
+    fields: &[&syn::Type],
+    carriers: &[Option<syn::Type>],
+) -> Vec<syn::WherePredicate> {
+    field_types(fields, generics)
+        .enumerate()
+        .filter(|(i, _)| carriers.get(*i).is_none_or(Option::is_none))
+        .flat_map(|(i, field)| {
+            let bound = if i + 1 == fields.len() {
+                quote!(co3::ReprC)
+            } else {
+                quote!(co3::ReprC<CType: Sized>)
+            };
+            gen_field_ctype_bounds(field, generics, bound)
+        })
+        .collect()
 }
 
 pub(super) fn gen_copy_extern_c_bounds_for_ctype(
@@ -1910,6 +2013,158 @@ fn gen_hrtb_projection_bounds(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn recursive_carrier_properties_do_not_require_the_companion() {
+        let generics = syn::parse_quote!(<T>);
+        let ordinary = syn::parse_quote!(T);
+        let recursive_fields: Vec<syn::Type> = vec![
+            syn::parse_quote!(*const NodeCType<T>),
+            syn::parse_quote!(*mut NodeCType<T>),
+            syn::parse_quote!(co3::boxed::abi::Box<NodeCType<T>>),
+            syn::parse_quote!(co3::wide::abi::WideBox<NodeCType<T>>),
+            syn::parse_quote!(co3::marker::NonZero<*mut NodeCType<T>>),
+            syn::parse_quote!(co3::vec::abi::Vec<NodeCType<T>>),
+            syn::parse_quote!(
+                __Co3Native<co3::option::abi::OptionSome<co3::boxed::abi::Box<NodeCType<T>>>>
+            ),
+        ];
+        for recursive in recursive_fields {
+            let implementation: syn::ItemImpl = syn::parse2(super::gen_type_spec(
+                &syn::parse_quote!(NodeCType),
+                &generics,
+                &[&ordinary, &recursive],
+                None,
+                &[None, Some(recursive.clone())],
+            ))
+            .unwrap();
+            let predicates = implementation.generics.where_clause.unwrap().predicates;
+            assert!(!quote::quote!(#predicates).to_string().contains("NodeCType"));
+        }
+    }
+
+    #[test]
+    fn recursive_mutability_is_added_to_other_fields() {
+        let ident = syn::parse_quote!(NodeCType);
+        let generics = syn::Generics::default();
+        let recursive = syn::parse_quote!(co3::boxed::abi::Box<NodeCType>);
+        let cell = syn::parse_quote!(<core::cell::UnsafeCell<u32> as co3::ReprC>::CType);
+        let implementation: syn::ItemImpl = syn::parse2(super::gen_type_spec(
+            &ident,
+            &generics,
+            &[&recursive, &cell],
+            None,
+            &[Some(recursive.clone()), None],
+        ))
+        .unwrap();
+        let mutability = implementation
+            .items
+            .iter()
+            .find_map(|item| match item {
+                syn::ImplItem::Type(item) if item.ident == "Mutability" => Some(&item.ty),
+                _ => None,
+            })
+            .unwrap();
+        let expected: syn::Type = syn::parse_quote!(
+            <co3::rust_spec::mutability::Exclusive<co3::rust_spec::mutability::WithoutInterior>
+                as core::ops::Add<
+                    <<core::cell::UnsafeCell<u32> as co3::ReprC>::CType
+                        as co3::rust_spec::RustSpec>::Mutability
+                >>::Output
+        );
+        assert_eq!(mutability, &expected);
+    }
+
+    #[test]
+    fn recursive_references_select_by_layout_and_mutable_references_also_by_trap() {
+        let own = syn::parse_quote!(Node<'a>);
+        let companion = syn::parse_quote!(NodeCType<'a>);
+        let generics = syn::parse_quote!(<'a>);
+        let lower = |ty, tail| {
+            crate::layout::inference::recursive_reference_carrier(
+                &ty, &own, &companion, tail, &generics,
+            )
+        };
+        let shared = syn::parse_quote!(&'a Node<'a>);
+        let exclusive = syn::parse_quote!(&'a mut Node<'a>);
+        let layout = quote::quote!(<Node<'a> as co3::rust_spec::RustSpec>::Layout);
+        let trap = quote::quote!(<Node<'a> as co3::rust_spec::RustSpec>::Trap);
+        assert_eq!(
+            lower(shared, TailClass::Sized),
+            Some(syn::parse_quote!(
+                <#layout as __Co3SelectRef<co3::reference::abi::Ref<'a, NodeCType<'a>>,
+                    co3::reference::abi::SoftRef<NodeCType<'a>>>>::Carrier
+            ))
+        );
+        assert_eq!(
+            lower(exclusive, TailClass::Unsized(UnsizedTail::SliceLike)),
+            Some(syn::parse_quote!(
+                <(#layout, #trap) as __Co3SelectRef<co3::wide::abi::WideRef<'a, NodeCType<'a>>,
+                    co3::wide::abi::SoftWideRefMut<NodeCType<'a>>>>::Carrier
+            ))
+        );
+        assert_eq!(
+            lower(syn::parse_quote!(&'a mut Self), TailClass::Unknown),
+            None
+        );
+    }
+
+    #[test]
+    fn recursive_box_carrier_uses_the_record_tail() {
+        let ty = syn::parse_quote!(Box<Node>);
+        let lower = |tail| {
+            crate::layout::inference::recursive_carrier(
+                &ty,
+                &syn::parse_quote!(Node),
+                &syn::parse_quote!(NodeCType),
+                tail,
+            )
+        };
+        assert_eq!(
+            lower(TailClass::Sized),
+            Some(syn::parse_quote!(co3::boxed::abi::Box<NodeCType>))
+        );
+        assert_eq!(
+            lower(TailClass::Unsized(UnsizedTail::SliceLike)),
+            Some(syn::parse_quote!(co3::wide::abi::WideBox<NodeCType>))
+        );
+        assert_eq!(lower(TailClass::Unknown), None);
+    }
+
+    #[test]
+    fn recursive_lowering_preserves_pointer_kind_and_falls_back_on_ambiguity() {
+        let own = syn::parse_quote!(Node<T>);
+        let companion = syn::parse_quote!(NodeCType<T>);
+        let lower = |ty| {
+            crate::layout::inference::recursive_carrier(&ty, &own, &companion, TailClass::Sized)
+        };
+        assert_eq!(
+            lower(syn::parse_quote!(*const Node<T>)),
+            Some(syn::parse_quote!(*const NodeCType<T>))
+        );
+        assert_eq!(
+            lower(syn::parse_quote!(core::ptr::NonNull<Node<T>>)),
+            Some(syn::parse_quote!(co3::marker::NonZero<*mut NodeCType<T>>))
+        );
+        let payload = quote::quote!(co3::boxed::abi::Box<NodeCType<T>>);
+        let tagged = quote::quote!(co3::option::abi::Option<#payload>);
+        assert_eq!(
+            lower(syn::parse_quote!(std::option::Option<Box<Node<T>>>)),
+            Some(syn::parse_quote!(
+                <std::option::Option<()> as __Co3SelectOption<co3::rust_spec::niche::WithNiche<co3::rust_spec::Stable>>>::Carrier<
+                    #tagged, __Co3Native<#tagged>, __Co3Native<co3::option::abi::OptionSome<#payload>>
+                >
+            ))
+        );
+        assert_eq!(lower(syn::parse_quote!(Box<Node<u8>>)), None);
+        assert_eq!(lower(syn::parse_quote!(&Node<T>)), None);
+        assert_eq!(
+            lower(syn::parse_quote!(Vec<Node<T>>)),
+            Some(syn::parse_quote!(
+                <Vec<()> as __Co3SelectVec>::Carrier<NodeCType<T>>
+            ))
+        );
+    }
+
     use syn::parse_quote;
 
     use super::{TailClass, UnsizedTail, classify_tail};

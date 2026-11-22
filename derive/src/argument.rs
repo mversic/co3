@@ -11,7 +11,7 @@ use syn::{
 
 use crate::{
     ffi_fn,
-    utils::{cfg_attrs, co3_path, receiver_ty, soft_for_arg},
+    utils::{cfg_attrs, co3_path, peel_grouped_type, receiver_ty, soft_for_arg},
 };
 
 pub(crate) struct Argument<'a> {
@@ -240,21 +240,19 @@ impl UnpackSyntax {
         };
         let inferred_source = inferred
             .then(|| {
-                ffi_fn::option_inner_type(ffi_fn::peel_grouped_type(ty))
+                let ty = peel_grouped_type(ty);
+                ffi_fn::option_inner_type(ty)
                     .map(|inner| parse_quote!(core::option::Option<#inner>))
+                    .or_else(|| ffi_fn::inferred_result_type(ty).map(|(source, _)| source))
                     .or_else(|| {
-                        ffi_fn::inferred_result_type(ffi_fn::peel_grouped_type(ty))
-                            .map(|(source, _)| source)
-                    })
-                    .or_else(|| {
-                        ffi_fn::transparent_unpack_inner_type(ffi_fn::peel_grouped_type(ty)).map(
-                            |(name, inner)| match name.to_string().as_str() {
+                        ffi_fn::transparent_unpack_inner_type(ty).map(|(name, inner)| {
+                            match name.to_string().as_str() {
                                 "ManuallyDrop" => parse_quote!(core::mem::ManuallyDrop<#inner>),
                                 "Cell" => parse_quote!(core::cell::Cell<#inner>),
                                 "UnsafeCell" => parse_quote!(core::cell::UnsafeCell<#inner>),
                                 _ => unreachable!("unrecognized transparent unpack wrapper"),
-                            },
-                        )
+                            }
+                        })
                     })
             })
             .flatten();

@@ -1,5 +1,6 @@
-use co3::marker::Native;
 use core::cell::Cell;
+
+use co3::marker::Native;
 
 #[test]
 fn stable_interior_vec_direct_encoding_transfers_allocation() {

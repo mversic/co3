@@ -2,6 +2,7 @@
 use alloc::{borrow::ToOwned, boxed::Box, vec::Vec};
 #[cfg(feature = "alloc")]
 use core::marker::PhantomData;
+
 use rust_spec::Unstable;
 
 #[cfg(feature = "alloc")]

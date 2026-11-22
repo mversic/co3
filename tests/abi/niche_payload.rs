@@ -1,8 +1,8 @@
-use co3::marker::Native;
 use core::num::NonZeroU8;
 
 use co3::{
     ReprC,
+    marker::Native,
     ops::CFn1,
     option::{self, OptionSome},
     result::{self, ResultErr, ResultOk},

@@ -1,9 +1,9 @@
-use co3::marker::Native;
 use co3::{
     ReprC,
     boxed::Box,
     ffi,
     ffi::{c_int, c_long},
+    marker::Native,
     niche::Niche,
     raw,
     rust_spec::RustSpec,

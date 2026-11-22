@@ -1,6 +1,5 @@
 //! A module for working with borrowed data.
 
-use crate::marker::Native;
 #[doc(hidden)]
 // TODO: Questionable export
 #[cfg(feature = "alloc")]
@@ -25,7 +24,7 @@ use rust_spec::{Stable, Unstable};
 use crate::{
     CType, ReprC,
     convert::{DecodeMove, EmptyStore, EncodeMove, EncodeMoveUnchecked, Store},
-    marker::Borrowed,
+    marker::{Borrowed, Native},
     niche::Niche,
     option::{Option as StableOption, abi::OptionSome as AbiOptionSome},
     result::{
@@ -1498,15 +1497,13 @@ pub(crate) use __impl_borrowed_identity;
 
 #[cfg(all(test, feature = "alloc", feature = "derive"))]
 mod tests {
-    use crate::marker::Native;
-
     use alloc::{boxed::Box, vec::Vec};
     use core::{
         cell::Cell,
         sync::atomic::{AtomicUsize, Ordering},
     };
 
-    use crate::{ReprC, Store, rust_spec::RustSpec};
+    use crate::{ReprC, Store, marker::Native, rust_spec::RustSpec};
 
     // Deliberately not Clone: borrowing converts each field on the original type.
     #[derive(RustSpec, ReprC)]

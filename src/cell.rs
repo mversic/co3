@@ -46,8 +46,6 @@ unsafe impl<T: CFnReturn> CFnReturn for Cell<T> {}
 
 #[cfg(test)]
 mod tests {
-    use crate::marker::Native;
-
     #[cfg(feature = "alloc")]
     use alloc::{boxed::Box, vec::Vec};
     use core::{mem::ManuallyDrop, num::NonZero};
@@ -57,7 +55,11 @@ mod tests {
     use super::*;
     #[cfg(feature = "alloc")]
     use crate::{boxed::abi::Box as AbiBox, wide::abi::WideBox as AbiWideBox};
-    use crate::{marker::AbiCompatible, niche::Niche, option::abi::Option as AbiOption};
+    use crate::{
+        marker::{AbiCompatible, Native},
+        niche::Niche,
+        option::abi::Option as AbiOption,
+    };
 
     #[test]
     fn cell_preserves_its_constructor_in_the_carrier() {

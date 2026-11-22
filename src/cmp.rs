@@ -6,13 +6,12 @@ use rust_spec::RustSpec;
 use crate::{
     CFnArg, CFnReturn, CType, ReprC,
     abi::transmute_owned,
-    convert::AbiCompatibleValidate,
     convert::{
-        Decode, DecodeMove, Encode, EncodeMove, EncodeMoveUnchecked, SoftDecodeMut, SoftDecodeRef,
-        SoftEncodeMut, SoftEncodeMutUnchecked, SoftEncodeRef, SoftEncodeRefUnchecked,
+        AbiCompatibleValidate, Decode, DecodeMove, Encode, EncodeMove, EncodeMoveUnchecked,
+        SoftDecodeMut, SoftDecodeRef, SoftEncodeMut, SoftEncodeMutUnchecked, SoftEncodeRef,
+        SoftEncodeRefUnchecked,
     },
-    marker::AbiCompatible,
-    marker::Zeroable,
+    marker::{AbiCompatible, Zeroable},
     niche::Niche,
     primitive::{fieldless_enum_derive, primitive_derive},
 };
@@ -334,12 +333,10 @@ pub mod abi {
 
 #[cfg(test)]
 mod tests {
-    use crate::marker::Native;
-
     use static_assertions::{assert_impl_all, assert_type_eq_all};
 
     use super::*;
-    use crate::{decode, encode, option::abi::OptionSome as AbiOptionSome};
+    use crate::{decode, encode, marker::Native, option::abi::OptionSome as AbiOptionSome};
 
     #[test]
     fn reverse_reference_codecs_dispatch_stable_inner() {

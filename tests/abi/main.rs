@@ -1,7 +1,6 @@
 // Unlike static_assertions' generic helper, this helper carries the
 // reference-mapping prerequisite of SoftEncodeRef and SoftEncodeRefUnchecked.
-use co3::CType;
-use co3::marker::Native;
+use co3::{CType, marker::Native};
 
 trait TransparentCarrier: Copy {
     type Payload: Copy;
@@ -66,6 +65,7 @@ mod raw_pointer;
 mod raw_selected;
 mod raw_tagged_dispatch;
 mod raw_wrapper_abi;
+mod recursive;
 mod reference_decode;
 mod reference_ownership;
 mod regular_drop;

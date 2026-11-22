@@ -14,9 +14,11 @@ mod attr;
 pub(crate) mod borrow;
 mod ctype;
 mod fields;
+mod inference;
 mod item;
 mod niche;
 mod nul_terminated;
+mod recursive;
 mod reference;
 mod wide;
 
@@ -403,11 +405,46 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
     let type_checks =
         (!repr_c_attrs.is_wide_data).then(|| crate::type_checks::TypeChecks::for_derive(input));
 
+    let recursion = inference::RecursiveFields::analyze(input, repr_attr, None);
+    if let Some(ty) = recursion.wide_raw_pointer {
+        return Err(syn::Error::new_spanned(
+            ty,
+            "recursive wide raw pointers are unsupported",
+        ));
+    }
     let tokens = match &input.data {
         syn::Data::Struct(_) => {
-            let item = derive_item(repr_attr, repr_alignment, input, &repr_c_attrs, &[]);
+            let mut bounded;
+            let carrier_input = if repr_c_attrs.is_identity
+                || repr_c_attrs.is_wide_data
+                || recursion.tail_bounds.is_empty()
+            {
+                input
+            } else {
+                bounded = input.clone();
+                bounded
+                    .generics
+                    .make_where_clause()
+                    .predicates
+                    .extend(recursion.tail_bounds.iter().cloned());
+                &bounded
+            };
+            let item = derive_item(
+                repr_attr,
+                repr_alignment,
+                carrier_input,
+                &repr_c_attrs,
+                &[],
+                &recursion,
+            );
             let wide = (!repr_c_attrs.is_wide_data)
-                .then(|| wide::expand(input, repr_attr))
+                .then(|| {
+                    wide::expand(
+                        input,
+                        &repr,
+                        (!repr_c_attrs.is_identity && recursion.wide_header).then_some(&recursion),
+                    )
+                })
                 .transpose()?;
             let nul_terminated = (!repr_c_attrs.is_wide_data)
                 .then(|| nul_terminated::expand(input, repr_attr))
@@ -429,6 +466,7 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
                     input,
                     &repr_c_attrs,
                     &variant_attrs,
+                    &recursion,
                 )
             } else if data
                 .variants
@@ -443,6 +481,7 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
                     input,
                     &repr_c_attrs,
                     &variant_attrs,
+                    &recursion,
                 )
             }
         }
@@ -452,7 +491,7 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
     if let Some(errors) = errors {
         Err(errors)
     } else {
-        let ctype_impl = gen_source_ctype_impl(input, &repr_c_attrs);
+        let ctype_impl = gen_source_ctype_impl(input, &repr_c_attrs, &recursion);
         let body = quote! {
             #type_checks
             #zero_discriminant_check
@@ -488,34 +527,28 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
     }
 }
 
-fn gen_source_ctype_impl(input: &syn::DeriveInput, attrs: &ReprCAttrs) -> TokenStream {
+fn gen_source_ctype_impl(
+    input: &syn::DeriveInput,
+    attrs: &ReprCAttrs,
+    recursion: &inference::RecursiveFields,
+) -> TokenStream {
     if attrs.is_identity || attrs.is_wide_data {
         return quote! {};
     }
 
-    let field_types = match &input.data {
-        syn::Data::Struct(data) => data
-            .fields
-            .iter()
-            .map(|field| &field.ty)
-            .collect::<Vec<_>>(),
-        syn::Data::Enum(data) => data
-            .variants
-            .iter()
-            .flat_map(|variant| variant.fields.iter().map(|field| &field.ty))
-            .collect::<Vec<_>>(),
-        syn::Data::Union(_) => return quote! {},
-    };
     let name = &input.ident;
     let generics = &input.generics;
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     let predicates = where_clause.as_ref().map(|clause| &clause.predicates);
     let speculative = speculative_marker(generics.params.is_empty());
     let (last_field_sized_bound, omit_c_fn_impls) =
-        ctype::c_fn_last_field_bounds(&field_types, generics);
-    let field_bounds = field_types
+        ctype::c_fn_last_field_bounds(&recursion.types(), generics);
+    let field_bounds = recursion
+        .fields
         .iter()
-        .map(|field_type| {
+        .filter(|f| !f.raw_self_pointer)
+        .map(|f| {
+            let field_type = f.ty;
             let speculative = fields::FieldType::new(field_type, generics)
                 .concrete
                 .then_some(quote!(for<'_co3_field>));

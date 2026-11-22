@@ -58,7 +58,6 @@
 //! assert_eq!(encode(none_value_3).0, abi::Option::None());
 //! ```
 
-use crate::marker::Native;
 use rust_spec::{
     RustSpec,
     mutability::{Exclusive, ExclusiveKind},
@@ -66,13 +65,13 @@ use rust_spec::{
 
 use crate::{
     CFnArg, CFnReturn, CType, ReprC, Store,
-    convert::AbiCompatibleValidate,
     convert::{
-        Decode, DecodeMove, Encode, EncodeMove, EncodeMoveUnchecked, SoftEncodeRef,
-        SoftEncodeRefUnchecked,
+        AbiCompatibleValidate, Decode, DecodeMove, Encode, EncodeMove, EncodeMoveUnchecked,
+        SoftEncodeRef, SoftEncodeRefUnchecked,
     },
-    marker::AbiCompatible,
+    marker::{AbiCompatible, Native},
     niche::Niche,
+    reference::abi::RefCarrier,
 };
 
 macro_rules! impl_tuple {
@@ -288,7 +287,7 @@ macro_rules! impl_tuple {
         where
             Self: RustSpec + ReprC<CType = Native<abi::$carrier<$(<$ty as ReprC>::CType),*>>>,
             &'d Self: ReprC<CType = crate::reference::abi::SoftRef<<Self as ReprC>::CType>>,
-            $(&'d $ty: DecodeMove<'d> + ReprC<CType: crate::reference::RefCarrier<$ty>>,)+
+            $(&'d $ty: DecodeMove<'d> + ReprC<CType: RefCarrier<Pointee = <$ty as ReprC>::CType>>,)+
             $(crate::sync::DecodedField<
                 'd, $ty, <&'d $ty as DecodeMove<'d>>::Store, <$ty as RustSpec>::Layout,
             >: crate::sync::TakeDecoded<Value = $ty>,)+
@@ -299,7 +298,7 @@ macro_rules! impl_tuple {
                 store.decode(|fields| Some(($(
                     unsafe {
                         crate::decoded::decode_ref_field::<$ty>(
-                            crate::reference::RefCarrier::from_shared_ptr(&source.0.$idx),
+                            RefCarrier::from_raw(&source.0.$idx),
                             &mut fields.$idx,
                         )
                     }?,
@@ -310,7 +309,7 @@ macro_rules! impl_tuple {
                 store.decode(|fields| Some(($(
                     unsafe {
                         crate::decoded::decode_ref_field_unchecked::<$ty>(
-                            crate::reference::RefCarrier::from_shared_ptr(&source.0.$idx),
+                            RefCarrier::from_raw(&source.0.$idx),
                             &mut fields.$idx,
                         )
                     },
@@ -322,7 +321,7 @@ macro_rules! impl_tuple {
         where
             Self: RustSpec + ReprC<CType = abi::$carrier<$(<$ty as ReprC>::CType),*>>,
             &'d Self: ReprC<CType = crate::reference::abi::SoftRef<<Self as ReprC>::CType>>,
-            $(&'d $ty: DecodeMove<'d> + ReprC<CType: crate::reference::RefCarrier<$ty>>,)+
+            $(&'d $ty: DecodeMove<'d> + ReprC<CType: RefCarrier<Pointee = <$ty as ReprC>::CType>>,)+
             $(crate::sync::DecodedField<
                 'd, $ty, <&'d $ty as DecodeMove<'d>>::Store, <$ty as RustSpec>::Layout,
             >: crate::sync::TakeDecoded<Value = $ty>,)+
@@ -333,7 +332,7 @@ macro_rules! impl_tuple {
                 store.decode(|fields| Some($ffi_ty($(
                     unsafe {
                         crate::decoded::decode_ref_field::<$ty>(
-                            crate::reference::RefCarrier::from_shared_ptr(&source.$idx),
+                            RefCarrier::from_raw(&source.$idx),
                             &mut fields.$idx,
                         )
                     }?,
@@ -344,7 +343,7 @@ macro_rules! impl_tuple {
                 store.decode(|fields| Some($ffi_ty($(
                     unsafe {
                         crate::decoded::decode_ref_field_unchecked::<$ty>(
-                            crate::reference::RefCarrier::from_shared_ptr(&source.$idx),
+                            RefCarrier::from_raw(&source.$idx),
                             &mut fields.$idx,
                         )
                     },
@@ -408,7 +407,7 @@ macro_rules! impl_tuple {
         where
         &'a Self: crate::ReprC<CType = crate::reference::abi::SoftRef<<Self as ReprC>::CType>>,
             Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin>,
-            $(&'a $ty: EncodeMove + ReprC<CType: crate::reference::RefCarrier<$ty>>),*
+            $(&'a $ty: EncodeMove + ReprC<CType: RefCarrier<Pointee = <$ty as ReprC>::CType>>),*
         {
             type Store = crate::sync::RefSizedEncodeStore<Self, ($(<&'a $ty as EncodeMove>::Store,)*)>;
             #[expect(non_snake_case)]
@@ -426,7 +425,7 @@ macro_rules! impl_tuple {
         where
         &'a Self: crate::ReprC<CType = crate::reference::abi::SoftRef<<Self as ReprC>::CType>>,
             Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin>,
-            $(&'a $ty: EncodeMove + ReprC<CType: crate::reference::RefCarrier<$ty>>),*
+            $(&'a $ty: EncodeMove + ReprC<CType: RefCarrier<Pointee = <$ty as ReprC>::CType>>),*
         {
             type Store = crate::sync::RefSizedEncodeStore<Self, ($(<&'a $ty as EncodeMove>::Store,)*)>;
             #[expect(non_snake_case)]
@@ -444,7 +443,7 @@ macro_rules! impl_tuple {
         where
         &'a Self: crate::ReprC<CType = crate::reference::abi::SoftRef<<Self as ReprC>::CType>>,
             Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin>,
-            $(&'a $ty: EncodeMoveUnchecked + ReprC<CType: crate::reference::RefCarrier<$ty>>),*
+            $(&'a $ty: EncodeMoveUnchecked + ReprC<CType: RefCarrier<Pointee = <$ty as ReprC>::CType>>),*
         {
             type SoftStore = crate::sync::RefSizedEncodeStore<Self, ($(<&'a $ty as EncodeMoveUnchecked>::SoftStore,)*)>;
             #[expect(non_snake_case)]
@@ -462,7 +461,7 @@ macro_rules! impl_tuple {
         where
         &'a Self: crate::ReprC<CType = crate::reference::abi::SoftRef<<Self as ReprC>::CType>>,
             Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin>,
-            $(&'a $ty: EncodeMoveUnchecked + ReprC<CType: crate::reference::RefCarrier<$ty>>),*
+            $(&'a $ty: EncodeMoveUnchecked + ReprC<CType: RefCarrier<Pointee = <$ty as ReprC>::CType>>),*
         {
             type SoftStore = crate::sync::RefSizedEncodeStore<Self, ($(<&'a $ty as EncodeMoveUnchecked>::SoftStore,)*)>;
             #[expect(non_snake_case)]

@@ -970,8 +970,6 @@ pub unsafe fn soft_decode_unchecked<'d, T: Decode<'d>>(
 
 #[cfg(test)]
 mod tests {
-    use crate::marker::Native;
-
     use core::{
         cell::{Cell, UnsafeCell},
         cmp::Reverse,
@@ -984,7 +982,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        marker::{Borrowed, NonZero},
+        marker::{Borrowed, Native, NonZero},
         option::abi::Option as AbiOption,
         reference::abi::SoftRefMut,
         wide::abi::SoftWideRefMut as AbiSoftWideRefMut,

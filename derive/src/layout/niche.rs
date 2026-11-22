@@ -36,6 +36,7 @@ pub fn gen_struct_niche_ir(
     generics: &syn::Generics,
     fields: &syn::Fields,
     niche_value: Option<&syn::Expr>,
+    equalities: &[syn::WherePredicate],
 ) -> TokenStream {
     if fields
         .iter()
@@ -145,6 +146,7 @@ pub fn gen_struct_niche_ir(
             #last_field_sized
             #inferred_niche_bounds
             #(#copy_bounds)*
+            #(#equalities,)*
             #custom_niche_bounds
             #(#extern_c_bounds,)*
         },
@@ -212,6 +214,7 @@ pub fn gen_enum_niche_ir(
     generics: &syn::Generics,
     variants: &syn::punctuated::Punctuated<syn::Variant, syn::Token![,]>,
     transparent: bool,
+    equalities: &[syn::WherePredicate],
 ) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
@@ -227,7 +230,7 @@ pub fn gen_enum_niche_ir(
             return quote! {};
         }
 
-        return gen_struct_niche_ir(enum_name, generics, &variant.fields, None);
+        return gen_struct_niche_ir(enum_name, generics, &variant.fields, None, equalities);
     }
     let tag_ty = enum_tag_type(repr, variants.len());
     if is_exhaustive_enum(variants.len(), &tag_ty) {

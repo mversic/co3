@@ -12,12 +12,12 @@ use rust_spec::{
 
 use crate::{
     CFnArg, CFnReturn, CType, ReprC, Thin,
-    convert::AbiCompatibleValidate,
     convert::{
-        Decode, DecodeMove, EmptyStore, Encode, EncodeMove, EncodeMoveUnchecked, EncodeUnchecked,
-        SoftEncodeRef, SoftEncodeRefUnchecked,
+        AbiCompatibleValidate, Decode, DecodeMove, EmptyStore, Encode, EncodeMove,
+        EncodeMoveUnchecked, EncodeUnchecked, SoftEncodeRef, SoftEncodeRefUnchecked,
     },
     marker::AbiCompatible,
+    reference::abi::RefCarrier,
     sync::RefSizedEncodeStore,
 };
 
@@ -215,7 +215,7 @@ unsafe impl<'a, T: ReprC<CType: Copy> + 'a, __Interior: ExclusiveKind> SoftEncod
 where
     &'a Self: crate::ReprC<CType = crate::reference::abi::SoftRef<<Self as ReprC>::CType>>,
     Self: RustSpec<Mutability = Exclusive<__Interior>, Size: Thin> + 'a,
-    &'a T: EncodeMoveUnchecked<CType: crate::reference::RefCarrier<T>>,
+    &'a T: EncodeMoveUnchecked<CType: RefCarrier<Pointee = <T as ReprC>::CType>>,
 {
     type SoftStore =
         RefSizedEncodeStore<Self, core::option::Option<<&'a T as EncodeMoveUnchecked>::SoftStore>>;
@@ -244,7 +244,7 @@ unsafe impl<'a, T: ReprC<CType: Copy> + 'a, __Interior: ExclusiveKind> SoftEncod
 where
     &'a Self: crate::ReprC<CType = crate::reference::abi::SoftRef<<Self as ReprC>::CType>>,
     Self: RustSpec<Mutability = Exclusive<__Interior>, Size: Thin> + 'a,
-    &'a T: EncodeMove<CType: crate::reference::RefCarrier<T>>,
+    &'a T: EncodeMove<CType: RefCarrier<Pointee = <T as ReprC>::CType>>,
 {
     type Store = RefSizedEncodeStore<Self, core::option::Option<<&'a T as EncodeMove>::Store>>;
 
@@ -669,12 +669,10 @@ pub mod abi {
 
 #[cfg(test)]
 mod tests {
-    use crate::marker::Native;
-
     use core::mem::MaybeUninit;
 
     use super::abi::{self, Option as AbiOption};
-    use crate::reference::abi::SoftRefMut;
+    use crate::{marker::Native, reference::abi::SoftRefMut};
 
     const CONST_OPTION: Option<Option<u32>> = AbiOption::<u32>::Some(7).into_option();
 

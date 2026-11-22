@@ -10,13 +10,15 @@ use crate::{
             either_variant_name, gen_either_name, gen_identity_borrow_impls, gen_item_borrow_impls,
         },
         ctype::{
-            c_fn_last_field_bounds, classify_tail, gen_ctype_name, gen_extern_c_bounds_for_ctype,
-            gen_fieldless_enum_ctype, gen_identity_repr_c_impls, gen_item_ctype,
-            gen_variant_struct_name,
+            c_fn_last_field_bounds, classify_tail, gen_ctype_name, gen_fieldless_enum_ctype,
+            gen_identity_repr_c_impls, gen_item_ctype, gen_variant_struct_name,
+            projected_field_bounds,
         },
         enum_tag_type, enum_variant_tag_exprs,
         fields::{FieldType, field_types},
-        infer_repr, is_exhaustive_enum, is_phantom_data, is_transparent_enum_repr,
+        infer_repr,
+        inference::{RecursiveCompatibility, RecursiveFields},
+        is_exhaustive_enum, is_phantom_data, is_transparent_enum_repr,
         niche::{gen_enum_niche_ir, gen_struct_niche_ir},
         primitive_tag_type,
         reference::{encoder_names, encoder_output, group_aggregate_ref_impls},
@@ -30,6 +32,7 @@ pub(super) fn derive_item(
     input: &syn::DeriveInput,
     attrs: &ReprCAttrs,
     variant_attrs: &[VariantReprCAttrs],
+    recursion: &RecursiveFields,
 ) -> TokenStream {
     if matches!(
         &input.data,
@@ -43,22 +46,17 @@ pub(super) fn derive_item(
     let has_unsized_tail = matches!(&input.data, syn::Data::Struct(data)
         if data.fields.iter().next_back().is_some_and(|field|
             classify_tail(&field.ty, &input.generics).is_known_unsized()));
-    let sized_decode_impls = (!is_wide_data && !has_unsized_tail)
-        .then(|| super::reference::gen_sized_decode_impls(input, repr, attrs, variant_attrs));
+    let sized_decode_impls = (!is_wide_data && !has_unsized_tail).then(|| {
+        super::reference::gen_sized_decode_impls(
+            input,
+            repr,
+            attrs,
+            variant_attrs,
+            &recursion.equalities,
+        )
+    });
     if attrs.is_identity {
-        let fields = match &input.data {
-            syn::Data::Struct(data) => data
-                .fields
-                .iter()
-                .map(|field| &field.ty)
-                .collect::<Vec<_>>(),
-            syn::Data::Enum(data) => data
-                .variants
-                .iter()
-                .flat_map(|variant| variant.fields.iter().map(|field| &field.ty))
-                .collect::<Vec<_>>(),
-            syn::Data::Union(_) => unreachable!(),
-        };
+        let fields = recursion.types();
         let name = &input.ident;
         let mut identity_generics = input.generics.clone();
         for field in &fields {
@@ -109,19 +107,41 @@ pub(super) fn derive_item(
     } else {
         input
     };
-    let ctype_def = gen_item_ctype(repr, alignment, ctype_input, !is_wide_data, !is_wide_data);
+    let ctype_def = gen_item_ctype(
+        repr,
+        alignment,
+        ctype_input,
+        !is_wide_data,
+        !is_wide_data,
+        recursion,
+    );
+    // Apply the same source prerequisites used to verify an inferred carrier.
+    // Keep them off the companion, whose layout must be independent of the source.
+    if !recursion.source_bounds.is_empty() {
+        bounded_impl_input
+            .generics
+            .make_where_clause()
+            .predicates
+            .extend(recursion.source_bounds.iter().cloned());
+    }
+    let reference_input = if is_wide_data {
+        input
+    } else {
+        &bounded_impl_input
+    };
     let codec_impls = gen_item_codec_impls(
         repr,
         &bounded_impl_input,
-        input,
+        reference_input,
         attrs,
         variant_attrs,
         is_move,
+        recursion,
     );
-    let niche_impls = gen_item_niche_impls(repr, &bounded_impl_input, attrs);
+    let niche_impls = gen_item_niche_impls(repr, &bounded_impl_input, attrs, recursion);
     let repr_c_impls = repr
         .is_some()
-        .then(|| gen_item_repr_c_impls(repr, &bounded_impl_input, attrs, variant_attrs));
+        .then(|| gen_item_repr_c_impls(repr, &bounded_impl_input, attrs, variant_attrs, recursion));
 
     quote! {
         #ctype_def
@@ -138,6 +158,7 @@ fn gen_item_niche_impls(
     repr: Option<&ReprKind>,
     input: &syn::DeriveInput,
     attrs: &ReprCAttrs,
+    recursion: &RecursiveFields,
 ) -> TokenStream {
     match &input.data {
         syn::Data::Struct(data) => gen_struct_niche_ir(
@@ -145,10 +166,16 @@ fn gen_item_niche_impls(
             &input.generics,
             &data.fields,
             attrs.niche_value.as_ref(),
+            &recursion.equalities,
         ),
-        syn::Data::Enum(data) => {
-            gen_enum_niche_ir(repr, &input.ident, &input.generics, &data.variants, false)
-        }
+        syn::Data::Enum(data) => gen_enum_niche_ir(
+            repr,
+            &input.ident,
+            &input.generics,
+            &data.variants,
+            false,
+            &recursion.equalities,
+        ),
         syn::Data::Union(_) => unreachable!(),
     }
 }
@@ -166,6 +193,7 @@ fn gen_item_codec_impls(
     attrs: &ReprCAttrs,
     variant_attrs: &[VariantReprCAttrs],
     is_move: bool,
+    recursion: &RecursiveFields,
 ) -> TokenStream {
     let generate = |mode, input: &syn::DeriveInput| match &input.data {
         syn::Data::Struct(data) => gen_struct_codec_impls(
@@ -175,19 +203,25 @@ fn gen_item_codec_impls(
             &input.generics,
             &data.fields,
             attrs.is_valid.as_ref(),
+            recursion,
         ),
         syn::Data::Enum(data) => gen_enum_codec_impls(
             mode,
             repr,
-            &input.ident,
-            &input.generics,
+            input,
             &data.variants,
             variant_attrs,
             is_move,
+            recursion,
         ),
         syn::Data::Union(_) => unreachable!(),
     };
     let owned = generate(EncodeMode::Owned, input);
+    if recursion.header_prefix.is_some() {
+        // This is the fixed header of a recursive wide allocation. The wide
+        // conversion uses its field mapping and transfers the whole allocation.
+        return owned;
+    }
     let borrowed = (!attrs.is_wide_data).then(|| {
         gen_item_borrow_impls(
             reference_input,
@@ -222,7 +256,8 @@ fn gen_item_codec_impls(
         group_aggregate_ref_impls(generate(EncodeMode::Ref, reference_input), true)
     };
     let stable_mut = (!delegate_ref).then(|| super::reference::gen_stable_direct_mut_impls(input));
-    quote! { #owned #borrowed #references #stable_mut }
+    let values = super::recursive::name_stores(input, &recursion.stores, quote!(#owned #borrowed));
+    quote! { #values #references #stable_mut }
 }
 
 fn gen_item_repr_c_impls(
@@ -230,6 +265,7 @@ fn gen_item_repr_c_impls(
     input: &syn::DeriveInput,
     attrs: &ReprCAttrs,
     variant_attrs: &[VariantReprCAttrs],
+    recursion: &RecursiveFields,
 ) -> TokenStream {
     match &input.data {
         syn::Data::Struct(data) => gen_repr_c_struct_impls(
@@ -238,6 +274,7 @@ fn gen_item_repr_c_impls(
             &data.fields,
             attrs.is_valid.as_ref(),
             attrs.niche_value.as_ref(),
+            recursion,
         ),
         syn::Data::Enum(data) if is_transparent_enum_repr(repr, &data.variants) => {
             let variant = &data.variants[0];
@@ -251,7 +288,14 @@ fn gen_item_repr_c_impls(
                 }
             }
 
-            gen_repr_c_struct_impls(&input.ident, &generics, &variant.fields, is_valid, None)
+            gen_repr_c_struct_impls(
+                &input.ident,
+                &generics,
+                &variant.fields,
+                is_valid,
+                None,
+                recursion,
+            )
         }
         syn::Data::Enum(data) => gen_repr_c_data_enum_impls(
             repr,
@@ -259,6 +303,7 @@ fn gen_item_repr_c_impls(
             &input.generics,
             &data.variants,
             variant_attrs,
+            recursion,
         ),
         syn::Data::Union(_) => unreachable!(),
     }
@@ -271,6 +316,7 @@ fn gen_struct_codec_impls(
     generics: &syn::Generics,
     fields: &syn::Fields,
     is_valid: Option<&syn::ExprClosure>,
+    recursion: &RecursiveFields,
 ) -> TokenStream {
     let field_types = fields.iter().map(|field| &field.ty).collect::<Vec<_>>();
 
@@ -326,18 +372,28 @@ fn gen_struct_codec_impls(
         }
     };
 
-    gen_codec_impls(mode, is_move, name, generics, &field_types, codec_impls)
+    gen_codec_impls(
+        mode,
+        is_move,
+        name,
+        generics,
+        &field_types,
+        recursion,
+        codec_impls,
+    )
 }
 
 fn gen_enum_codec_impls(
     mode: EncodeMode,
     repr: Option<&ReprKind>,
-    name: &Ident,
-    generics: &syn::Generics,
+    input: &syn::DeriveInput,
     variants: &syn::punctuated::Punctuated<syn::Variant, syn::Token![,]>,
     variant_attrs: &[VariantReprCAttrs],
     is_move: bool,
+    recursion: &RecursiveFields,
 ) -> TokenStream {
+    let name = &input.ident;
+    let generics = &input.generics;
     let ctype_name = gen_ctype_name(name);
 
     if is_transparent_enum_repr(repr, variants) {
@@ -348,6 +404,7 @@ fn gen_enum_codec_impls(
             generics,
             variants,
             variant_attrs,
+            recursion,
         );
     }
     let tag_type = enum_tag_type(repr, variants.len());
@@ -633,7 +690,15 @@ fn gen_enum_codec_impls(
         decode_unchecked_impl,
     };
 
-    gen_codec_impls(mode, is_move, name, generics, &fields, codec_impls)
+    gen_codec_impls(
+        mode,
+        is_move,
+        name,
+        generics,
+        &fields,
+        recursion,
+        codec_impls,
+    )
 }
 
 fn gen_transparent_enum_codec_impls(
@@ -643,6 +708,7 @@ fn gen_transparent_enum_codec_impls(
     generics: &syn::Generics,
     variants: &syn::punctuated::Punctuated<syn::Variant, syn::Token![,]>,
     variant_attrs: &[VariantReprCAttrs],
+    recursion: &RecursiveFields,
 ) -> TokenStream {
     if variants.len() > 1 {
         return quote! {};
@@ -700,6 +766,7 @@ fn gen_transparent_enum_codec_impls(
         name,
         &bounded_generics,
         &field_types,
+        recursion,
         CodecImpls {
             encode_store,
             direct_store,
@@ -743,6 +810,7 @@ fn gen_repr_c_struct_impls(
     fields: &syn::Fields,
     is_valid: Option<&syn::ExprClosure>,
     niche_value: Option<&syn::Expr>,
+    recursion: &RecursiveFields,
 ) -> TokenStream {
     let field_types = fields.iter().map(|field| &field.ty).collect::<Vec<_>>();
     let field_vars = field_vars(fields);
@@ -777,7 +845,7 @@ fn gen_repr_c_struct_impls(
         #is_valid_body
     };
 
-    gen_repr_c_impls(name, generics, &field_types, is_valid_impl)
+    gen_repr_c_impls(name, generics, &field_types, recursion, is_valid_impl)
 }
 
 fn gen_repr_c_data_enum_impls(
@@ -786,6 +854,7 @@ fn gen_repr_c_data_enum_impls(
     generics: &syn::Generics,
     variants: &syn::punctuated::Punctuated<syn::Variant, syn::Token![,]>,
     variant_attrs: &[VariantReprCAttrs],
+    recursion: &RecursiveFields,
 ) -> TokenStream {
     let tag_type = enum_tag_type(repr, variants.len());
     let tag_values = enum_variant_tag_exprs(variants, &tag_type);
@@ -878,7 +947,7 @@ fn gen_repr_c_data_enum_impls(
     let predicates = &mut bounded_generics.make_where_clause().predicates;
     predicates.extend(gen_enum_union_copy_bounds(name, generics, variants));
 
-    gen_repr_c_impls(name, &bounded_generics, &fields, is_valid_impl)
+    gen_repr_c_impls(name, &bounded_generics, &fields, recursion, is_valid_impl)
 }
 
 fn gen_enum_union_copy_bounds(
@@ -893,16 +962,86 @@ fn gen_repr_c_impls(
     name: &Ident,
     generics: &syn::Generics,
     fields: &[&syn::Type],
+    recursion: &RecursiveFields,
     is_valid_body: TokenStream,
 ) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     let predicates = where_clause.as_ref().map(|w| &w.predicates);
-    let checked_transmute_bounds = gen_checked_transmute_bounds(generics, fields, false);
-    let validation_bounds = gen_checked_transmute_bounds(generics, fields, true);
-
+    let own = syn::parse_quote!(#name #ty_generics);
+    let mut recursive_fields = Vec::new();
+    let mut checked_transmute_bounds = Vec::new();
+    let mut validation_bounds = Vec::new();
+    for (index, field) in field_types(fields, generics).enumerate() {
+        let ty = field.ty;
+        if field.phantom {
+            continue;
+        }
+        if let Some(residual) = &recursion.fields[index].compatibility {
+            match residual {
+                RecursiveCompatibility::Vector => {
+                    // The stable vector depends on this impl. A native vector
+                    // retains the full field bound.
+                    let ty = parse_quote!(<#ty as __Co3SelectVec>::AbiRequirement);
+                    let requirement = FieldType::new(&ty, generics);
+                    checked_transmute_bounds
+                        .push(requirement.bound(quote!(co3::marker::AbiCompatible)));
+                    validation_bounds
+                        .push(requirement.bound(quote!(co3::convert::AbiCompatibleValidate)));
+                    if !field.concrete {
+                        let mutability: syn::WherePredicate = parse_quote!(#own: co3::rust_spec::RustSpec<
+                            Mutability: co3::rust_spec::mutability::PointerMutability>);
+                        checked_transmute_bounds.push(mutability.clone());
+                        validation_bounds.push(mutability);
+                    }
+                }
+                RecursiveCompatibility::Bounds(bounds) => {
+                    checked_transmute_bounds.extend(bounds.iter().cloned());
+                    validation_bounds.extend(bounds.iter().cloned());
+                }
+            }
+            recursive_fields.push(ty);
+            continue;
+        }
+        // A delegated validator takes the source field's projected CType.
+        // Its input must match the carrier stored in the companion.
+        if let Some(Some(carrier)) = recursion.carriers.get(index) {
+            validation_bounds.push(field.bound(quote!(co3::ReprC<CType = #carrier>)));
+        }
+        let sized = (index + 1 < fields.len()).then(|| quote!(<CType: Sized>));
+        checked_transmute_bounds.push(field.bound(quote!(co3::marker::AbiCompatible #sized)));
+        validation_bounds.push(field.bound(quote!(co3::convert::AbiCompatibleValidate #sized)));
+    }
+    let recursive_layout_bound = (!recursive_fields.is_empty()).then(|| {
+        let bound = FieldType::new(&own, generics).bound(quote!(
+            co3::rust_spec::RustSpec<Layout = co3::rust_spec::Stable>
+        ));
+        quote!(#bound,)
+    });
+    // Check the actual wrappers after the record impl is available. Putting
+    // this obligation on the impl itself would require proving it recursively.
+    let check_recursive_fields = (!recursive_fields.is_empty()).then(|| {
+        quote! {
+            const _: () = {
+                #[allow(dead_code)]
+                trait CheckRecursiveFields { fn check(); }
+                impl #impl_generics CheckRecursiveFields for #name #ty_generics where
+                    #recursive_layout_bound
+                    #(#checked_transmute_bounds,)*
+                    #predicates
+                {
+                    fn check() {
+                        fn check<T: co3::marker::AbiCompatible + ?Sized>() {}
+                        #(check::<#recursive_fields>();)*
+                    }
+                }
+            };
+        }
+    });
     quote! {
+        #check_recursive_fields
         unsafe impl #impl_generics co3::convert::AbiCompatibleValidate for #name #ty_generics
         where
+            #recursive_layout_bound
             #(#validation_bounds,)*
 
             #predicates
@@ -914,37 +1053,12 @@ fn gen_repr_c_impls(
         }
         unsafe impl #impl_generics co3::marker::AbiCompatible for #name #ty_generics
         where
+            #recursive_layout_bound
             #(#checked_transmute_bounds,)*
 
             #predicates
         {}
     }
-}
-
-fn gen_checked_transmute_bounds(
-    generics: &syn::Generics,
-    fields: &[&syn::Type],
-    validate: bool,
-) -> Vec<syn::WherePredicate> {
-    let Some((last, fields)) = fields.split_last() else {
-        return Vec::new();
-    };
-
-    let trait_ = if validate {
-        quote!(co3::convert::AbiCompatibleValidate)
-    } else {
-        quote!(co3::marker::AbiCompatible)
-    };
-    let mut predicates = field_types(fields, generics)
-        .filter(|field| !field.phantom)
-        .map(|field| field.bound(quote!(#trait_<CType: Sized>)))
-        .collect::<Vec<_>>();
-    let last = FieldType::new(last, generics);
-    if !last.phantom {
-        predicates.push(last.bound(trait_));
-    }
-
-    predicates
 }
 
 fn gen_record_is_valid(
@@ -1188,7 +1302,7 @@ pub(super) fn derive_fieldless_enum(
     };
     let niche_impl = tag_type
         .is_some()
-        .then(|| gen_enum_niche_ir(repr, name, &source_generics, variants, false));
+        .then(|| gen_enum_niche_ir(repr, name, &source_generics, variants, false, &[]));
 
     let borrow_impls = gen_item_borrow_impls(input, TokenStream::new());
     let tag_const_defs = tag_consts.iter().map(|(tag_name, value)| {
@@ -1554,6 +1668,7 @@ fn gen_codec_impls(
     name: &Ident,
     generics: &syn::Generics,
     fields: &[&syn::Type],
+    recursion: &RecursiveFields,
     codec_impls: CodecImpls,
 ) -> TokenStream {
     let CodecImpls {
@@ -1590,22 +1705,29 @@ fn gen_codec_impls(
     let carrier = quote!(#ctype_name #ty_generics);
     let reference_repr = quote!(co3::ReprC<CType = #carrier>);
 
-    let extern_c_bounds = gen_extern_c_bounds_for_ctype(generics, fields);
-
+    let extern_c_bounds = projected_field_bounds(generics, fields, &recursion.carriers);
+    let carrier_equalities = &recursion.equalities;
+    let ordinary_fields = &recursion.stores.marker_fields;
+    let codec_fields = &recursion.stores.codec_fields;
     let encode_move_bounds =
-        gen_field_encode_bounds(generics, fields, quote! { co3::convert::EncodeMove });
+        gen_field_encode_bounds(generics, codec_fields, quote! { co3::convert::EncodeMove });
     let direct_encode_bounds = gen_field_encode_bounds(
         generics,
-        fields,
+        codec_fields,
         quote! { co3::convert::EncodeMoveUnchecked },
     );
     let decode_move_bounds =
-        gen_field_decode_bounds(generics, fields, quote! { co3::convert::DecodeMove });
+        gen_field_decode_bounds(generics, codec_fields, quote! { co3::convert::DecodeMove });
 
-    let encode_bounds = gen_field_encode_bounds(generics, fields, quote! { co3::convert::Encode });
-    let direct_bounds =
-        gen_field_encode_bounds(generics, fields, quote! { co3::convert::EncodeUnchecked });
-    let decode_bounds = gen_field_decode_bounds(generics, fields, quote! { co3::convert::Decode });
+    let encode_bounds =
+        gen_field_encode_bounds(generics, ordinary_fields, quote! { co3::convert::Encode });
+    let direct_bounds = gen_field_encode_bounds(
+        generics,
+        ordinary_fields,
+        quote! { co3::convert::EncodeUnchecked },
+    );
+    let decode_bounds =
+        gen_field_decode_bounds(generics, ordinary_fields, quote! { co3::convert::Decode });
 
     let (sized_bound, omit_sized_impls) = c_fn_last_field_bounds(fields, generics);
     let mut decode_generics = generics.clone();
@@ -1643,14 +1765,13 @@ fn gen_codec_impls(
             let field_trait = if unchecked { quote!(__Co3EncodeFieldUnchecked) } else { quote!(__Co3EncodeField) };
             let field_bounds = field_types(fields, generics)
                 .filter(|field| !field.phantom)
-                .map(|field| field.bound(quote!(
-                    co3::ReprC<CType: co3::CType + Copy> + #field_trait<'_ršč>
-                )));
+                .map(|field| field.bound(quote!(#field_trait<'_ršč>)));
             quote! {
                 unsafe impl #ref_impl_generics #trait_name<'_ršč> for #name #ty_generics
                 where
                     #sized_bound
                     #(#repr_c_bounds,)*
+            #(#carrier_equalities,)*
                     #(#field_bounds,)*
                     #leading_predicates
                     #speculative Self: #reference_repr + '_ršč,
@@ -1685,12 +1806,18 @@ fn gen_codec_impls(
         return quote!(#(#implementations)*);
     }
 
+    let dispatch = codec_fields.len() != ordinary_fields.len();
+    let marker_encode =
+        dispatch.then(|| quote!(Self: co3::convert::EncodeMove + co3::convert::EncodeUnchecked,));
+    let marker_unchecked = dispatch.then(|| quote!(Self: co3::convert::EncodeMoveUnchecked,));
+    let marker_decode = dispatch.then(|| quote!(Self: co3::convert::DecodeMove<'_dšč>,));
     let sized_impls = (!omit_sized_impls).then(|| quote! {
         unsafe impl #impl_generics co3::convert::EncodeMove for #name #ty_generics
         where
             #sized_bound
 
             #(#repr_c_bounds,)*
+            #(#carrier_equalities,)*
             #(#encode_move_bounds,)*
 
             #predicates
@@ -1707,6 +1834,7 @@ fn gen_codec_impls(
             #sized_bound
 
             #(#repr_c_bounds,)*
+            #(#carrier_equalities,)*
             #(#direct_encode_bounds,)*
 
             #predicates
@@ -1722,6 +1850,7 @@ fn gen_codec_impls(
             #sized_bound
 
             #(#repr_c_bounds,)*
+            #(#carrier_equalities,)*
             #(#decode_move_bounds,)*
 
             #predicates
@@ -1742,6 +1871,8 @@ fn gen_codec_impls(
             #sized_bound
 
             #(#repr_c_bounds,)*
+            #(#carrier_equalities,)*
+            #marker_encode
             #(#encode_bounds,)*
 
             #predicates
@@ -1751,6 +1882,8 @@ fn gen_codec_impls(
             #sized_bound
 
             #(#repr_c_bounds,)*
+            #(#carrier_equalities,)*
+            #marker_unchecked
             #(#direct_bounds,)*
 
             #predicates
@@ -1760,6 +1893,8 @@ fn gen_codec_impls(
             #sized_bound
 
             #(#repr_c_bounds,)*
+            #(#carrier_equalities,)*
+            #marker_decode
             #(#decode_bounds,)*
 
             #predicates

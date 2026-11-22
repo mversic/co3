@@ -12,9 +12,9 @@ use alloc::{string::String, vec::Vec};
 use crate::convert::Owned;
 use crate::{
     CFnArg, CFnReturn, CType, ReprC,
-    convert::AbiCompatibleValidate,
     convert::{
-        Decode, DecodeMove, EmptyStore, Encode, EncodeMove, EncodeMoveUnchecked, EncodeUnchecked,
+        AbiCompatibleValidate, Decode, DecodeMove, EmptyStore, Encode, EncodeMove,
+        EncodeMoveUnchecked, EncodeUnchecked,
     },
     marker::AbiCompatible,
     niche::Niche,
@@ -162,7 +162,7 @@ macro_rules! raw_pointer_derive {
         impl<R: ReprC + ?Sized> ReprC for *$mutability R {
             type CType = *$mutability R::CType;
         }
-        unsafe impl<R: AbiCompatible + crate::ptr::PointerMetadata + ?Sized> EncodeMove for *$mutability R where R::CType: crate::ptr::PointerMetadata<Metadata = <R as crate::ptr::PointerMetadata>::Metadata> {
+        unsafe impl<R: AbiCompatible + ?Sized> EncodeMove for *$mutability R {
             type Store = ();
 
             #[inline(always)]
@@ -170,19 +170,19 @@ macro_rules! raw_pointer_derive {
             where
                 Self: 'itm,
             {
-                // Matching metadata and ABI-compatible pointees preserve the pointer representation.
+                // AbiCompatible guarantees compatible pointee and pointer representations.
                 unsafe { core::mem::transmute_copy(&self) }
             }
         }
-        unsafe impl<R: AbiCompatible + crate::ptr::PointerMetadata + ?Sized> EncodeMoveUnchecked for *$mutability R where R::CType: crate::ptr::PointerMetadata<Metadata = <R as crate::ptr::PointerMetadata>::Metadata> {
+        unsafe impl<R: AbiCompatible + ?Sized> EncodeMoveUnchecked for *$mutability R {
             type SoftStore = ();
 
             unsafe fn soft_encode_unchecked<'itm>(self, (): &'itm mut ()) -> Self::CType where Self: 'itm {
-                // Matching metadata and ABI-compatible pointees preserve the pointer representation.
+                // AbiCompatible guarantees compatible pointee and pointer representations.
                 unsafe { core::mem::transmute_copy(&self) }
             }
         }
-        unsafe impl<'d, R: AbiCompatible + crate::ptr::PointerMetadata + ?Sized> DecodeMove<'d> for *$mutability R where R::CType: crate::ptr::PointerMetadata<Metadata = <R as crate::ptr::PointerMetadata>::Metadata> {
+        unsafe impl<'d, R: AbiCompatible + ?Sized> DecodeMove<'d> for *$mutability R {
             type Store = ();
 
             #[inline(always)]
@@ -191,23 +191,17 @@ macro_rules! raw_pointer_derive {
             }
         }
 
-        impl<R: AbiCompatible + crate::ptr::PointerMetadata + ?Sized> Encode for *$mutability R where R::CType: crate::ptr::PointerMetadata<Metadata = <R as crate::ptr::PointerMetadata>::Metadata> {}
-        impl<R: AbiCompatible + crate::ptr::PointerMetadata + ?Sized> $crate::convert::EncodeUnchecked for *$mutability R where R::CType: crate::ptr::PointerMetadata<Metadata = <R as crate::ptr::PointerMetadata>::Metadata> {}
-        impl<R: AbiCompatible + crate::ptr::PointerMetadata + ?Sized> Decode<'_> for *$mutability R where R::CType: crate::ptr::PointerMetadata<Metadata = <R as crate::ptr::PointerMetadata>::Metadata> {}
+        impl<R: AbiCompatible + ?Sized> Encode for *$mutability R {}
+        impl<R: AbiCompatible + ?Sized> $crate::convert::EncodeUnchecked for *$mutability R {}
+        impl<R: AbiCompatible + ?Sized> Decode<'_> for *$mutability R {}
 
-        unsafe impl<R: AbiCompatible + crate::ptr::PointerMetadata + ?Sized> $crate::convert::AbiCompatibleValidate for *$mutability R
-        where
-            R::CType: crate::ptr::PointerMetadata<Metadata = <R as crate::ptr::PointerMetadata>::Metadata>,
-        {
+        unsafe impl<R: AbiCompatible + ?Sized> $crate::convert::AbiCompatibleValidate for *$mutability R {
             #[inline(always)]
             unsafe fn is_valid(_: &Self::CType) -> bool {
                 true
             }
         }
-unsafe impl<R: AbiCompatible + crate::ptr::PointerMetadata + ?Sized> AbiCompatible for *$mutability R
-        where
-            R::CType: crate::ptr::PointerMetadata<Metadata = <R as crate::ptr::PointerMetadata>::Metadata>,
-        {}
+unsafe impl<R: AbiCompatible + ?Sized> AbiCompatible for *$mutability R {}
 
         unsafe impl<R: CType + ?Sized> CType for *$mutability R {}
         unsafe impl<R: CType> CFnArg for *$mutability R {}
@@ -678,8 +672,6 @@ pub mod abi {
 
 #[cfg(test)]
 mod tests {
-    use crate::marker::Native;
-
     #[cfg(feature = "alloc")]
     use alloc::{boxed::Box, vec::Vec};
     use core::cmp::Ordering;
@@ -690,8 +682,8 @@ mod tests {
     #[cfg(feature = "alloc")]
     use crate::{boxed::abi::Box as AbiBox, wide::abi::WideBox as AbiWideBox};
     use crate::{
-        cmp::abi::Ordering as COrdering, convert::Encode, option::abi::Option as AbiOption,
-        reference::abi::Ref,
+        cmp::abi::Ordering as COrdering, convert::Encode, marker::Native,
+        option::abi::Option as AbiOption, reference::abi::Ref,
     };
 
     #[test]
