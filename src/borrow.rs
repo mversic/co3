@@ -1606,7 +1606,7 @@ mod tests {
     }
 
     // The validator deliberately checks that it receives the original Box field.
-    #[allow(clippy::borrowed_box)]
+    #[expect(clippy::borrowed_box)]
     fn nonzero_box(value: &Box<u32>) -> bool {
         **value != 0
     }

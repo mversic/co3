@@ -70,19 +70,24 @@ fn builder_panic_cancels_pending_mutable_writeback() {
     assert_eq!(source, 1);
 }
 
-fn sync_after_move<S: co3::convert::Store>(store: S) -> Option<()> {
-    let moved = Box::new(store);
-    co3::convert::Store::sync(*moved)
-}
-
 #[test]
-fn stores_can_move_before_writeback() {
-    let mut values = [1_u32, 2];
-    let mut store = ();
+fn store_can_move_after_pointer_writes_before_sync() {
+    let mut values = [false, true];
+    let original = values.as_mut_ptr().cast::<()>();
+    let mut store = Default::default();
     let encoded = co3::soft_encode(&mut values[..], &mut store);
-    unsafe { encoded.as_ptr().cast_mut().cast::<u32>().write(3) };
-    assert_eq!(sync_after_move(store), Some(()));
-    assert_eq!(values, [3, 2]);
+    assert_ne!(encoded.as_ptr().cast::<()>(), original);
+    unsafe {
+        encoded.as_ptr().write(co3::encode(true));
+        encoded.as_ptr().add(1).write(co3::encode(false));
+    }
+
+    let synced = {
+        let moved = Box::new(store);
+        co3::convert::Store::sync(*moved)
+    };
+    assert_eq!(synced, Some(()));
+    assert_eq!(values, [true, false]);
 }
 
 #[test]

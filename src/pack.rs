@@ -402,7 +402,7 @@ mod tests {
         let mut cell = UnsafeCell::new([1u8, 2, 3]);
         let original: &mut UnsafeCell<[u8]> = &mut cell;
 
-        let carrier: crate::wide::abi::WideRef<'_, <UnsafeCell<[u8]> as crate::ReprC>::CType> =
+        let carrier: crate::wide::abi::WideRefMut<'_, <UnsafeCell<[u8]> as crate::ReprC>::CType> =
             crate::encode(original);
         let (data, len) =
             <&mut UnsafeCell<[u8]> as Unpack2<*mut u8, usize>>::unpack(carrier).unwrap();

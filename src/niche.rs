@@ -165,9 +165,9 @@ disjoint_impls! {
     }
     impl<'a, R: ReprC<CType: crate::CType + Wide<Header: WideHeader<Data: CType>>> + ?Sized> Niche for &'a mut R
     where
-        Self: ReprC<CType = AbiWideRef<'a, <R as ReprC>::CType>>,
+        Self: ReprC<CType = AbiWideRefMut<'a, <R as ReprC>::CType>>,
     {
-        const NICHE: Self::CType = AbiWideRef::null();
+        const NICHE: Self::CType = AbiWideRefMut::null();
 
         fn is_niche(value: &Self::CType) -> bool {
             value.as_ptr().is_null()

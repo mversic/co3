@@ -930,7 +930,7 @@ crate::primitive::with_fn_types! { define_mutable_encoders, {
                 > + 'a,
         > SoftEncodeMut<'a> for [T]
         where
-            &'a mut Self: ReprC<CType = crate::wide::abi::WideRef<'a, <Self as ReprC>::CType>>
+            &'a mut Self: ReprC<CType = crate::wide::abi::WideRefMut<'a, <Self as ReprC>::CType>>
                 + EncodeMoveUnchecked<SoftStore = ()>
                 + EncodeMove<Store = ()>,
         {
@@ -1578,7 +1578,7 @@ mod tests {
             let inner = unsafe { co3::encode_unchecked(&mut self.0) };
             unsafe {
                 co3::wide::abi::SoftWideRefMut::<Self::CType>::from_raw_parts_mut(
-                    inner.as_ptr().cast_mut(),
+                    inner.as_ptr(),
                     inner.metadata(),
                 )
             }
@@ -1596,7 +1596,7 @@ mod tests {
             let inner = co3::encode(&mut self.0);
             unsafe {
                 co3::wide::abi::SoftWideRefMut::<Self::CType>::from_raw_parts_mut(
-                    inner.as_ptr().cast_mut(),
+                    inner.as_ptr(),
                     inner.metadata(),
                 )
             }

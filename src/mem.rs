@@ -376,7 +376,7 @@ mod tests {
             Encode,
         );
         assert_impl_all!(&mut [ManuallyDrop<u8>]:
-            Niche<CType = crate::wide::abi::WideRef<'static, <[ManuallyDrop<u8>] as crate::ReprC>::CType>>,
+            Niche<CType = crate::wide::abi::WideRefMut<'static, <[ManuallyDrop<u8>] as crate::ReprC>::CType>>,
             Decode<'static>,
             Encode,
         );

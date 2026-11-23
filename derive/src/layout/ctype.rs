@@ -130,10 +130,12 @@ pub(super) fn c_fn_last_field_bounds(
 }
 
 fn lowered_field_ty(field_ty: &syn::Type) -> TokenStream {
-    if is_phantom_data(field_ty) {
-        return quote!(#field_ty);
+    if let Some(known) = crate::known_type::recognize(field_ty)
+        .filter(|known| known.kind == crate::known_type::Kind::PhantomData)
+    {
+        let inner = known.inner.unwrap();
+        return quote!(core::marker::PhantomData<<#inner as co3::ReprC>::CType>);
     }
-
     quote!(<#field_ty as co3::ReprC>::CType)
 }
 
@@ -207,7 +209,7 @@ pub(super) fn gen_fieldless_enum_ctype(
                     Self(#niche_tag)
                 }
 
-                #[allow(dead_code)]
+                #[allow(dead_code, reason = "generated helper usage depends on the derived type")]
                 pub(crate) const fn is_niche(&self) -> bool {
                     self.tag() == Self::niche().tag()
                 }
@@ -544,11 +546,11 @@ fn gen_enum_variant_constructors(
             quote!(Self { #variant_name: #body })
         };
         quote! {
-            #[allow(dead_code)]
+            #[allow(dead_code, reason = "generated helper usage depends on the derived type")]
             const fn niche() -> Self {
                 #niche_value
             }
-            #[allow(dead_code)]
+            #[allow(dead_code, reason = "generated helper usage depends on the derived type")]
             pub(crate) const fn is_niche(&self) -> bool {
                 self.tag() == Self::niche().tag()
             }
@@ -835,7 +837,7 @@ pub(super) fn gen_fields_methods(
             ///
             /// The caller must uphold the validity, ownership, and aliasing
             /// requirements of this generated struct.
-            #[allow(clippy::too_many_arguments)]
+            #[allow(clippy::too_many_arguments, reason = "constructor arity follows the source fields")]
             pub unsafe fn from_fields(#(#arg_names: #arg_types),*) -> Self
             where
                 #last_field_sized_bound
@@ -920,7 +922,7 @@ fn gen_recursive_carrier_checks(
     let check_carriers = (!checks.is_empty()).then(|| {
         quote! {
             const _: () = {
-                #[allow(dead_code)]
+                #[allow(dead_code, reason = "generated helper usage depends on the derived type")]
                 trait CheckRecursiveCarriers { fn check(); }
                 impl #impl_generics CheckRecursiveCarriers for #name #args where #(#requirements,)* #predicates {
                     fn check() {
@@ -1553,7 +1555,9 @@ fn gen_field_family<'a>(
         let projection = quote!(<#ty as co3::rust_spec::RustSpec>::#axis);
         if let Some(known) = inferred(index) {
             concrete.push(known.clone());
-        } else if field.concrete {
+        } else if field.concrete || field.phantom {
+            // Marker layout does not depend on its type argument. Keeping this
+            // known avoids shadowing its fixed RustSpec axes with generic bounds.
             concrete.push(projection);
         } else {
             bounds.push(quote!(#ty: co3::rust_spec::RustSpec));
@@ -1926,7 +1930,10 @@ fn gen_field_ctype_bounds(
     bound: TokenStream,
 ) -> Vec<syn::WherePredicate> {
     if field.phantom {
-        Vec::new()
+        let known = crate::known_type::recognize(field.ty).unwrap();
+        super::fields::phantom_mapping_bound(known.inner.unwrap(), generics)
+            .into_iter()
+            .collect()
     } else if field.concrete {
         gen_hrtb_projection_bounds(field.ty, generics, bound)
     } else {
@@ -2098,7 +2105,7 @@ mod tests {
         assert_eq!(
             lower(exclusive, TailClass::Unsized(UnsizedTail::SliceLike)),
             Some(syn::parse_quote!(
-                <(#layout, #trap) as __Co3SelectRef<co3::wide::abi::WideRef<'a, NodeCType<'a>>,
+                <(#layout, #trap) as __Co3SelectRef<co3::wide::abi::WideRefMut<'a, NodeCType<'a>>,
                     co3::wide::abi::SoftWideRefMut<NodeCType<'a>>>>::Carrier
             ))
         );

@@ -170,26 +170,30 @@ To see what `CO3` is capable of and what using it looks like in practice, check 
 
 ## Related Projects
 
+Check the [framework comparison](comparisons/README.md) for full feature comparison.
+
 ### ABI-stable Rust-to-Rust interop
 
 * [abi_stable](https://docs.rs/abi_stable/latest/abi_stable/)
 * [stabby](https://github.com/ZettaScaleLabs/stabby)
 
 Both crates let independently compiled Rust components share ABI-stable types and check compatibility when binding a library or symbol.
-`CO3` can also connect two Rust components: each side uses its ordinary Rust types, and `CO3` maps them to an agreed C ABI.
+
+Since this is assumed to be Rust-to-Rust interop only, the compatibility checks do not validate argument or return values at decode and do not protect against data corruption that violates Rust validity invariants. For example, a zero byte supplied as `NonZeroU8` is undefined behavior rather than a decode error.
+
+**`CO3` can also connect two Rust components** (with validity checks eliminated).
 
 ### Cross-language interface generators
 
+* [UniFFI](https://github.com/mozilla/uniffi-rs)
+* [BoltFFI](https://github.com/boltffi/boltffi)
 * [safer_ffi](https://github.com/getditto/safer_ffi)
 * [Diplomat](https://github.com/rust-diplomat/diplomat)
 * [Interoptopus](https://github.com/ralfbiedert/interoptopus)
-* [BoltFFI](https://github.com/boltffi/boltffi)
-* [UniFFI](https://github.com/mozilla/uniffi-rs)
 
 These projects, like `CO3` primarily **expose Rust-defined interfaces to other languages**.
-However, unlike `CO3`, they generally **don't support importing existing C interfaces**.
 
-Check the [framework comparison](comparisons/README.md) for full feature comparison.
+However, unlike `CO3`, they generally **don't support importing existing C interfaces**.
 
 ### Importing C APIs into Rust
 

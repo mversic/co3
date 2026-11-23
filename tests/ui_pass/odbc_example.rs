@@ -1,4 +1,3 @@
-#![expect(non_camel_case_types, non_snake_case)]
 use std::{ffi::c_void, marker::PhantomData};
 
 use co3::{ReprC, Tag, ffi, pack::Unpack2, rust_spec::RustSpec};
@@ -22,8 +21,11 @@ pub struct MyType<V: OdbcVersion = Payload> {
     _version: PhantomData<V>,
 }
 
+#[expect(non_camel_case_types)]
 pub enum SQL_OV_ODBC3 {}
+#[expect(non_camel_case_types)]
 pub enum SQL_OV_ODBC3_80 {}
+#[expect(non_camel_case_types)]
 pub enum SQL_OV_ODBC4 {}
 
 impl OdbcVersion for SQL_OV_ODBC3 {}
@@ -81,14 +83,6 @@ co3::ffi! {
         fn drop(&mut self) -> SQLSMALLINT;
     }
 
-    #[symbol_name = "SQLAllocHandle"]
-    pub fn SQLAllocHandle<'a, 'b, dyn(SQLSMALLINT) T: Allocate, V: OdbcVersion>(
-        InputHandle: &'a T::Source,
-        OutputHandlePtr: &'b mut T,
-    )
-    where
-        use<T> @ (<OwnedSQLHENV<V>> | <OwnedSQLHDESC<u32, V>>);
-
     impl<V: OdbcVersion> SQLHENV<V> {
         pub fn get_attr0(&self);
         pub fn get_attr1(a: &Self);
@@ -114,6 +108,23 @@ co3::ffi! {
         )
         where
             use<A> @ (<SQL_ATTR_ODBC_VERSION> | <SQL_ATTR_CP_MATCH>);
+    }
+}
+
+#[expect(non_snake_case)]
+mod allocation {
+    use super::*;
+
+    co3::ffi! {
+        #![unsafe(extern("system"))]
+
+        #[symbol_name = "SQLAllocHandle"]
+        pub fn SQLAllocHandle<'a, 'b, dyn(SQLSMALLINT) T: Allocate, V: OdbcVersion>(
+            InputHandle: &'a T::Source,
+            OutputHandlePtr: &'b mut T,
+        )
+        where
+            use<T> @ (<OwnedSQLHENV<V>> | <OwnedSQLHDESC<u32, V>>);
     }
 }
 
@@ -157,10 +168,12 @@ pub trait EnvAttr {
 
 #[derive(Clone, Tag)]
 #[tag(i32, unsafe(80))]
+#[expect(non_camel_case_types)]
 enum SQL_ATTR_ODBC_VERSION {}
 
 #[derive(Clone, Tag)]
 #[tag(i32, unsafe(81))]
+#[expect(non_camel_case_types)]
 enum SQL_ATTR_CP_MATCH {}
 impl EnvAttr for SQL_ATTR_ODBC_VERSION {
     type Value = CpMatch;

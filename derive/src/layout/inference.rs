@@ -409,7 +409,7 @@ pub(super) fn recursive_reference_carrier(
             quote!(co3::wide::abi::SoftWideRef),
         ),
         (TailClass::Unsized(UnsizedTail::SliceLike), true) => (
-            quote!(co3::wide::abi::WideRef),
+            quote!(co3::wide::abi::WideRefMut),
             quote!(co3::wide::abi::SoftWideRefMut),
         ),
         _ => return None,
@@ -553,15 +553,12 @@ mod tests {
     fn a_recursive_slice_chooses_its_own_pointer_width() {
         let own = parse_quote!(Tree<T>);
         let companion = parse_quote!(TreeCType<T>);
-        for (source, expected) in [(
-            parse_quote!(Box<[Self]>),
-            parse_quote!(co3::wide::abi::WideBox<[TreeCType<T>]>),
-        )] {
-            assert_eq!(
-                recursive_carrier(&source, &own, &companion, TailClass::Sized),
-                Some(expected)
-            );
-        }
+        let source = parse_quote!(Box<[Self]>);
+        let expected = parse_quote!(co3::wide::abi::WideBox<[TreeCType<T>]>);
+        assert_eq!(
+            recursive_carrier(&source, &own, &companion, TailClass::Sized),
+            Some(expected)
+        );
         assert_eq!(
             recursive_carrier(
                 &parse_quote!(Box<Self>),

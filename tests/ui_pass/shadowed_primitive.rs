@@ -1,7 +1,7 @@
 use co3::{ops::CFn1, raw};
 
 mod shadow {
-    #[allow(non_camel_case_types)]
+    #[expect(non_camel_case_types)]
     pub type i32 = u64;
 }
 

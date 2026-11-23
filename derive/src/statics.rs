@@ -284,7 +284,7 @@ fn gen_import_wrapper(
         const _: () = {
             #interior_trap
             // This bound is intentionally inaccessible outside the expansion.
-            #[allow(private_bounds)]
+            #[allow(private_bounds, reason = "generated accessors use internal validation bounds")]
             impl #wrapper_ident {
                 #direct_access
                 #soft_read

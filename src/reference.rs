@@ -16,7 +16,7 @@ macro_rules! impl_thin_pointer_traits {
                 if self.data.is_null() || other.data.is_null() {
                     None
                 } else {
-                    #[allow(ambiguous_wide_pointer_comparisons)]
+                    #[allow(ambiguous_wide_pointer_comparisons, reason = "the same macro supports thin and wide pointees")]
                     self.data.partial_cmp(&other.data)
                 }
             }
@@ -351,7 +351,7 @@ pub mod abi {
                 ///
                 /// # Safety
                 /// The result must satisfy the destination's raw constructor contract.
-                #[allow(dead_code)]
+                #[allow(dead_code, reason = "cast usage varies between generated pointer carriers")]
                 pub(crate) const unsafe fn cast<U: CType>(self) -> $ty<$($target)* U $($suffix)*> {
                     $ty { data: self.data.cast(), $($marker)* }
                 }
@@ -587,9 +587,9 @@ mod tests {
         assert_impl_all!(&mut u8: Niche<CType = crate::reference::abi::RefMut<'static, u8>>);
         assert_impl_all!(&UnsafeCell<u8>: Niche<CType = crate::reference::abi::Ref<'static, UnsafeCell<u8>>>);
         assert_impl_all!(&mut UnsafeCell<u8>: Niche<CType = crate::reference::abi::RefMut<'static, UnsafeCell<u8>>>);
-        assert_impl_all!(&mut [u8]: Niche<CType = crate::wide::abi::WideRef<'static, [u8]>>);
+        assert_impl_all!(&mut [u8]: Niche<CType = crate::wide::abi::WideRefMut<'static, [u8]>>);
         assert_impl_all!(&[UnsafeCell<u8>]: Niche<CType = crate::wide::abi::WideRef<'static, [UnsafeCell<u8>]>>);
-        assert_impl_all!(&mut [UnsafeCell<u8>]: Niche<CType = crate::wide::abi::WideRef<'static, [UnsafeCell<u8>]>>);
+        assert_impl_all!(&mut [UnsafeCell<u8>]: Niche<CType = crate::wide::abi::WideRefMut<'static, [UnsafeCell<u8>]>>);
 
         assert_eq!(
             core::mem::size_of::<crate::reference::abi::RefMut<'static, u8>>(),

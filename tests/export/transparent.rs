@@ -25,7 +25,7 @@ pub struct TransparentStruct {
     payload: GenericTransparentStruct<()>,
     _zst1: [u8; 0],
     _zst2: (),
-    _zst3: PhantomData<String>,
+    _zst3: PhantomData<u8>,
 }
 
 ffi! {

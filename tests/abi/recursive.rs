@@ -7,24 +7,28 @@ struct List<T> {
     next: Option<Box<List<T>>>,
 }
 
-#[allow(unused_parens)]
-#[derive(Debug, PartialEq, RustSpec, ReprC)]
-#[repr(C)]
-struct ParenthesizedList<T> {
-    value: T,
-    next: Option<(Box<Self>)>,
-}
+#[expect(unused_parens)] // Exercise parenthesized recursive types, including generated code.
+mod parenthesized {
+    use super::*;
 
-#[test]
-fn parenthesized_recursive_allocation_round_trips() {
-    let list = || ParenthesizedList {
-        value: 3u32,
-        next: Some(Box::new(ParenthesizedList {
-            value: 8,
-            next: None,
-        })),
-    };
-    assert_eq!(unsafe { co3::decode(co3::encode(list())) }, Some(list()));
+    #[derive(Debug, PartialEq, RustSpec, ReprC)]
+    #[repr(C)]
+    struct ParenthesizedList<T> {
+        value: T,
+        next: Option<(Box<Self>)>,
+    }
+
+    #[test]
+    fn parenthesized_recursive_allocation_round_trips() {
+        let list = || ParenthesizedList {
+            value: 3u32,
+            next: Some(Box::new(ParenthesizedList {
+                value: 8,
+                next: None,
+            })),
+        };
+        assert_eq!(unsafe { co3::decode(co3::encode(list())) }, Some(list()));
+    }
 }
 
 impl<T> List<T> {

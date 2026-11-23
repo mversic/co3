@@ -773,8 +773,7 @@ pub mod abi {
 
     /// Wide carrier with a writable data pointer.
     ///
-    /// CO3 exclusive wide references select this carrier directly.
-    /// Native exclusive wide references use the bare `WideRef` carrier.
+    /// Native and CO3 exclusive wide references select this carrier directly.
     #[derive(RustSpec)]
     #[repr(C)]
     #[doc(hidden)]
@@ -865,7 +864,6 @@ pub mod abi {
     }
 
     impl<'a, R: CType + Wide + ?Sized> WideRef<'a, R> {
-        #[allow(dead_code)]
         pub(crate) const fn data(&self) -> *const PointeeData<R> {
             self.data
         }
@@ -897,7 +895,7 @@ pub mod abi {
             ///
             /// # Safety
             /// The result must satisfy the destination's raw constructor contract.
-            #[allow(dead_code)]
+            #[allow(dead_code, reason = "cast usage varies between generated wide carriers")]
             pub(crate) const unsafe fn cast<U>(self) -> $ty<$($target)* U $($suffix)*>
             where U: CType + Wide<Metadata = <R as Wide>::Metadata> + ?Sized {
                 $ty { data: self.data.cast(), metadata: self.metadata, $($marker)* }
@@ -1011,14 +1009,14 @@ pub mod abi {
     }
     #[sealed]
     unsafe impl<'a, C: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized> WideRefMutCarrier
-        for WideRef<'a, C>
+        for WideRefMut<'a, C>
     where
         Self: CType,
     {
         type Pointee = C;
 
         fn data(&self) -> *mut PointeeData<C> {
-            self.data.cast_mut()
+            self.data
         }
         fn metadata(&self) -> <C as Wide>::Metadata {
             self.metadata
@@ -1027,7 +1025,7 @@ pub mod abi {
             data: *mut PointeeData<C>,
             metadata: <C as Wide>::Metadata,
         ) -> Self {
-            unsafe { Self::from_raw_parts(data.cast_const(), metadata) }
+            unsafe { Self::from_raw_parts_mut(data, metadata) }
         }
     }
 
@@ -1616,7 +1614,7 @@ pub(crate) mod tests {
         assert_eq!(shared.metadata(), 3);
         assert_eq!(unsafe { shared.into_ref() }, Some(&values[..]));
         let mut values = [4_u8, 5];
-        let exclusive: abi::WideRef<'_, [u8]> = crate::encode(&mut values[..]);
+        let exclusive: abi::WideRefMut<'_, [u8]> = crate::encode(&mut values[..]);
         unsafe { crate::decode::<&mut [u8]>(exclusive) }.unwrap()[1] = 6;
         assert_eq!(values, [4, 6]);
         assert!(unsafe { abi::WideRef::<[u8]>::null().into_ref() }.is_none());

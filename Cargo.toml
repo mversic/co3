@@ -44,6 +44,7 @@ co3-derive = { version = "0.8.2", path = "derive", optional = true }
 rust-spec = { version = "0.7.2", default-features = false, features = ["derive"] }
 disjoint_impls = "1.4.5"
 impls = "1.0.3"
+sealed = "0.7.0"
 
 [dev-dependencies]
 static_assertions = "1.1.0"

@@ -754,7 +754,7 @@ disjoint_impls! {
     where
         R: RustSpec<Layout = StableLayout, Trap = Robust, Size = MetaSized<SliceLike>>,
     {
-        type CType = AbiWideRef<'a, R::CType>;
+        type CType = wide::abi::WideRefMut<'a, R::CType>;
     }
     impl<R: ReprC<CType: crate::CType + Wide<Header: WideHeader<Data: CType>, Metadata = usize>> + ?Sized> ReprC for &mut R
     where

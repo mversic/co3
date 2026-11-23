@@ -1022,7 +1022,7 @@ fn gen_repr_c_impls(
     let check_recursive_fields = (!recursive_fields.is_empty()).then(|| {
         quote! {
             const _: () = {
-                #[allow(dead_code)]
+                #[expect(dead_code)]
                 trait CheckRecursiveFields { fn check(); }
                 impl #impl_generics CheckRecursiveFields for #name #ty_generics where
                     #recursive_layout_bound
@@ -1307,7 +1307,7 @@ pub(super) fn derive_fieldless_enum(
     let borrow_impls = gen_item_borrow_impls(input, TokenStream::new());
     let tag_const_defs = tag_consts.iter().map(|(tag_name, value)| {
         quote! {
-            #[allow(non_upper_case_globals)]
+            #[allow(non_upper_case_globals, reason = "generated tag names follow the source variants")]
             const #tag_name: #tag_ctype = #value;
         }
     });

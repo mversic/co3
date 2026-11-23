@@ -42,19 +42,19 @@ unsafe impl<T: ?Sized> Zeroable for PhantomData<T> {}
 unsafe impl<T: Sized> Zeroable for *const T {}
 unsafe impl<T: Sized> Zeroable for *mut T {}
 
-crate::borrow::__impl_borrowed_identity!([T: ?Sized] PhantomData<T>);
+crate::borrow::__impl_borrowed_identity!([T: ReprC + ?Sized] PhantomData<T>);
 
-impl<T: ?Sized> ReprC for PhantomData<T> {
-    type CType = Self;
+impl<T: ReprC + ?Sized> ReprC for PhantomData<T> {
+    type CType = PhantomData<T::CType>;
 }
-unsafe impl<T: ?Sized> AbiCompatibleValidate for PhantomData<T> {
+unsafe impl<T: ReprC + ?Sized> AbiCompatibleValidate for PhantomData<T> {
     #[inline(always)]
     unsafe fn is_valid(_: &Self::CType) -> bool {
         true
     }
 }
-unsafe impl<T: ?Sized> AbiCompatible for PhantomData<T> {}
-unsafe impl<T: ?Sized> EncodeMove for PhantomData<T> {
+unsafe impl<T: ReprC + ?Sized> AbiCompatible for PhantomData<T> {}
+unsafe impl<T: ReprC + ?Sized> EncodeMove for PhantomData<T> {
     type Store = ();
 
     #[inline(always)]
@@ -65,34 +65,34 @@ unsafe impl<T: ?Sized> EncodeMove for PhantomData<T> {
         unsafe { self.soft_encode_unchecked(&mut ()) }
     }
 }
-unsafe impl<T: ?Sized> EncodeMoveUnchecked for PhantomData<T> {
+unsafe impl<T: ReprC + ?Sized> EncodeMoveUnchecked for PhantomData<T> {
     type SoftStore = ();
 
     unsafe fn soft_encode_unchecked<'itm>(self, (): &'itm mut ()) -> Self::CType
     where
         Self: 'itm,
     {
-        self
+        PhantomData
     }
 }
-unsafe impl<'d, T: ?Sized> DecodeMove<'d> for PhantomData<T> {
+unsafe impl<'d, T: ReprC + ?Sized> DecodeMove<'d> for PhantomData<T> {
     type Store = ();
 
     #[inline(always)]
-    unsafe fn soft_decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
-        Some(source)
+    unsafe fn soft_decode<'itm: 'd>(_source: Self::CType, (): &mut ()) -> Option<Self> {
+        Some(PhantomData)
     }
 }
 
-impl<T: ?Sized> Decode<'_> for PhantomData<T> {}
-impl<T: ?Sized> EncodeUnchecked for PhantomData<T> {}
-impl<T: ?Sized> Encode for PhantomData<T> {}
+impl<T: ReprC + ?Sized> Decode<'_> for PhantomData<T> {}
+impl<T: ReprC + ?Sized> EncodeUnchecked for PhantomData<T> {}
+impl<T: ReprC + ?Sized> Encode for PhantomData<T> {}
 
-unsafe impl<T: ?Sized> CType for PhantomData<T> {}
+unsafe impl<T: CType + ?Sized> CType for PhantomData<T> {}
 // SAFETY: PhantomData<T> is guaranteed to have size 0 and alignment 1,
 // making its return ABI compatible with unit.
-unsafe impl<T: ?Sized> CFnReturn for PhantomData<T> {}
-crate::mutable::impl_direct_mut!([T: ?Sized] PhantomData<T>);
+unsafe impl<T: CType + ?Sized> CFnReturn for PhantomData<T> {}
+crate::mutable::impl_direct_mut!([T: ReprC + ?Sized] PhantomData<T>);
 
 /// Marks a lowered ABI value that is borrowed across the FFI boundary.
 #[repr(transparent)]
@@ -503,4 +503,51 @@ macro_rules! non_zero_derive {
 non_zero_derive! {
     u8, i8, u16, i16, u32, i32, u64, i64, u128, i128,
     usize, isize,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use static_assertions::{assert_impl_all, assert_not_impl_any, assert_type_eq_all};
+
+    struct Unmapped;
+    assert_type_eq_all!(
+        <PhantomData<bool> as ReprC>::CType,
+        PhantomData<<bool as ReprC>::CType>
+    );
+    assert_type_eq_all!(
+        <PhantomData<[bool]> as ReprC>::CType,
+        PhantomData<<[bool] as ReprC>::CType>
+    );
+    assert_impl_all!(PhantomData<u8>: CType, CFnReturn);
+    assert_not_impl_any!(PhantomData<bool>: CType, CFnArg);
+    assert_not_impl_any!(PhantomData<Unmapped>: ReprC);
+
+    #[cfg(feature = "derive")]
+    #[test]
+    fn named_markers_lower_their_fields() {
+        #[derive(RustSpec, crate::ReprC)]
+        #[repr(transparent)]
+        struct Marker<T: ?Sized>(PhantomData<T>);
+
+        let encoded: <Marker<bool> as ReprC>::CType = crate::encode(Marker::<bool>(PhantomData));
+        let _: PhantomData<<bool as ReprC>::CType> = encoded.0;
+        let encoded: <Marker<[bool]> as ReprC>::CType =
+            crate::encode(Marker::<[bool]>(PhantomData));
+        let _: PhantomData<<[bool] as ReprC>::CType> = encoded.0;
+    }
+
+    #[test]
+    fn phantom_data_round_trip() {
+        let encoded: PhantomData<<bool as ReprC>::CType> = crate::encode(PhantomData::<bool>);
+        assert_eq!(
+            unsafe { crate::decode::<PhantomData<bool>>(encoded) },
+            Some(PhantomData)
+        );
+        let encoded = crate::encode(PhantomData::<[bool]>);
+        assert_eq!(
+            unsafe { crate::decode::<PhantomData<[bool]>>(encoded) },
+            Some(PhantomData)
+        );
+    }
 }

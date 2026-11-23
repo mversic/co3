@@ -6,7 +6,8 @@ trait Prop {
     type DefinedBy;
 }
 
-enum OdbcDefined {}
+#[derive(RustSpec, ReprC)]
+struct OdbcDefined;
 
 #[derive(Tag)]
 #[tag(u8, unsafe(1))]
@@ -18,24 +19,24 @@ impl Prop for Attribute {
 
 #[derive(RustSpec, ReprC)]
 #[repr(transparent)]
-struct AttrLength<D>(u16, PhantomData<fn() -> D>);
+struct AttrLength<D>(u16, PhantomData<D>);
 
 #[derive(RustSpec, ReprC)]
 #[repr(transparent)]
-struct AttrPointer<D>(u32, PhantomData<fn() -> D>);
+struct AttrPointer<D>(u32, PhantomData<D>);
 
 #[derive(RustSpec, ReprC)]
 #[repr(C)]
-struct Parts<D>(u32, u16, PhantomData<fn() -> D>);
+struct Parts<D>(u32, u16, PhantomData<D>);
 
-impl<D> Unpack2<u32, <AttrLength<D> as ReprC>::CType> for Parts<D> {
+impl<D: ReprC> Unpack2<u32, <AttrLength<D> as ReprC>::CType> for Parts<D> {
     type Error = core::convert::Infallible;
     fn unpack(value: Self::CType) -> Result<(u32, <AttrLength<D> as ReprC>::CType), Self::Error> {
-        Ok((value.0, encode(AttrLength(value.1, PhantomData))))
+        Ok((value.0, encode(AttrLength::<D>(value.1, PhantomData))))
     }
 }
 
-impl<D> Unpack2<<AttrPointer<D> as ReprC>::CType, <AttrLength<D> as ReprC>::CType> for Parts<D> {
+impl<D: ReprC> Unpack2<<AttrPointer<D> as ReprC>::CType, <AttrLength<D> as ReprC>::CType> for Parts<D> {
     type Error = core::convert::Infallible;
     fn unpack(
         value: Self::CType,
@@ -47,8 +48,8 @@ impl<D> Unpack2<<AttrPointer<D> as ReprC>::CType, <AttrLength<D> as ReprC>::CTyp
         Self::Error,
     > {
         Ok((
-            encode(AttrPointer(value.0, PhantomData)),
-            encode(AttrLength(value.1, PhantomData)),
+            encode(AttrPointer::<D>(value.0, PhantomData)),
+            encode(AttrLength::<D>(value.1, PhantomData)),
         ))
     }
 }

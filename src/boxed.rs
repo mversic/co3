@@ -107,7 +107,6 @@ pub mod abi {
             }
         }
 
-        #[allow(unused)]
         pub(crate) const fn is_null(&self) -> bool {
             self.data.is_null()
         }

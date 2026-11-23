@@ -79,3 +79,5 @@ mod wide_metadata;
 mod zst;
 
 mod ownership_call;
+
+mod named_zst;

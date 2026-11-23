@@ -560,7 +560,7 @@ pub mod abi {
     ///
     /// Every byte value is valid for this carrier; conversion to `str` accepts only valid `UTF-8`;
     #[derive(RustSpec)]
-    #[allow(non_camel_case_types)]
+    #[expect(non_camel_case_types)]
     #[repr(transparent)]
     pub struct str(pub [u8]);
 
@@ -568,7 +568,7 @@ pub mod abi {
     ///
     /// Every byte value is valid for this carrier; conversion to `bool` accepts only 0 and 1.
     #[derive(Debug, Clone, Copy, Default, RustSpec)]
-    #[allow(non_camel_case_types)]
+    #[expect(non_camel_case_types)]
     #[repr(transparent)]
     pub struct bool(pub u8);
 
@@ -576,7 +576,7 @@ pub mod abi {
     ///
     /// Every `u32` value is valid for this carrier; conversion to `char` validates the scalar value.
     #[derive(Debug, Clone, Copy, Default, RustSpec)]
-    #[allow(non_camel_case_types)]
+    #[expect(non_camel_case_types)]
     #[repr(transparent)]
     pub struct char(pub u32);
 
@@ -781,11 +781,11 @@ mod tests {
         type BoolCallback = extern "C" fn(bool) -> u8;
         assert_not_impl_any!(BoolCallback: ReprC, Encode, Decode<'static>);
 
-        #[allow(improper_ctypes_definitions)]
+        #[expect(improper_ctypes_definitions)]
         type TupleCallback = extern "C" fn((u8,)) -> u8;
         assert_not_impl_any!(TupleCallback: ReprC, Encode, Decode<'static>);
 
-        #[allow(improper_ctypes_definitions)]
+        #[expect(improper_ctypes_definitions)]
         type SystemCallbackWithRustTypes = unsafe extern "system" fn(bool) -> (u8,);
         assert_not_impl_any!(SystemCallbackWithRustTypes: ReprC, Encode, Decode<'static>);
 
@@ -829,7 +829,7 @@ mod tests {
             Encode,
         );
         assert_impl_all!(&mut [u8]:
-            Niche<CType = crate::wide::abi::WideRef<'static, [u8]>>,
+            Niche<CType = crate::wide::abi::WideRefMut<'static, [u8]>>,
             Decode<'static>,
             Encode,
         );

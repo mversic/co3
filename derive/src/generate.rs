@@ -963,7 +963,9 @@ fn gen_dispatch_set(
             .unwrap_or_default();
 
         impls.push(quote! {
+            #[allow(unused_braces, reason = "selected const arguments can require braces")]
             impl #impl_generics #sealed_module::Sealed<#selection_args> for () #impl_where_clause {}
+            #[allow(unused_braces, reason = "selected const arguments can require braces")]
             impl #impl_generics #trait_name<#selection_args> for () #impl_where_clause {
                 #dispatch_impl_items
             }
@@ -1271,7 +1273,6 @@ fn gen_dispatch_import_module(
     }
 
     quote! {
-        #[allow(unused_braces)]
         mod #module_name {
             use super::*;
 
@@ -1719,7 +1720,7 @@ fn gen_export_owned_type_alias(ty: &syn::ForeignItemType) -> TokenStream {
 
     quote! {
         #(#type_cfg_attrs)*
-        #[allow(type_alias_bounds)]
+        #[allow(type_alias_bounds, reason = "owned aliases retain the opaque type parameters and bounds")]
         #[doc = #owned_doc]
         #vis type #owned_ident #impl_generics #where_clause = #co3::boxed::Box<#ident #ty_generics>;
     }
@@ -2377,7 +2378,7 @@ pub(crate) fn expand_extern_decls(
         let mut wrapper = dispatch.item.clone();
         wrapper
             .attrs
-            .push(syn::parse_quote!(#[allow(unused_braces)]));
+            .push(syn::parse_quote!(#[allow(unused_braces, reason = "dispatched const arguments can require braces")]));
         wrapper.modifiers.polarity = None;
         for param in &mut wrapper.generics.params {
             match param {
@@ -3505,7 +3506,7 @@ fn gen_owned_extern_type_impls(
                 core::cmp::PartialEq::eq(&**self, &**other)
             }
 
-            #[allow(clippy::partialeq_ne_impl)]
+            #[expect(clippy::partialeq_ne_impl)]
             fn ne(&self, other: &Self) -> bool {
                 core::cmp::PartialEq::ne(&**self, &**other)
             }

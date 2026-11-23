@@ -146,6 +146,31 @@ pub(super) fn gen_is_valid_call(
 }
 
 pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream> {
+    // Every generated path needs the mapping of a marker's type argument,
+    // even paths that reconstruct its value without accessing a field.
+    let mut bounded_input = input.clone();
+    let fields: Vec<_> = match &input.data {
+        syn::Data::Struct(data) => data.fields.iter().collect(),
+        syn::Data::Enum(data) => data
+            .variants
+            .iter()
+            .flat_map(|variant| &variant.fields)
+            .collect(),
+        syn::Data::Union(data) => data.fields.named.iter().collect(),
+    };
+    for field in fields {
+        if let Some(known) = crate::known_type::recognize(&field.ty)
+            .filter(|known| known.kind == crate::known_type::Kind::PhantomData)
+        {
+            let bound = fields::phantom_mapping_bound(known.inner.unwrap(), &input.generics);
+            bounded_input
+                .generics
+                .make_where_clause()
+                .predicates
+                .extend(bound);
+        }
+    }
+    let input = &bounded_input;
     let mut errors = None::<syn::Error>;
 
     let repr = parse_repr(&input.attrs)?;
@@ -507,7 +532,7 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
         } else {
             Ok(quote! {
                 const _: () = {
-                    #[allow(unused_imports)]
+                    #[allow(unused_imports, reason = "alias usage depends on the generated layout constraints")]
                     use co3::{marker::Native as __Co3Native, rust_spec::Unstable as __Co3Unstable};
 
                     co3::disjoint_impls! {
@@ -1014,6 +1039,14 @@ mod tests {
             #[repr(C)]
             #[repr_c(identity)]
             struct Identity(u32);
+        };
+        assert!(derive_repr_c(&input).is_ok());
+    }
+    #[test]
+    fn phantom_const_array_lowering() {
+        let input = syn::parse_quote! {
+            #[repr(C)]
+            struct Host<const N: usize>(u32, core::marker::PhantomData<[u32; N]>);
         };
         assert!(derive_repr_c(&input).is_ok());
     }

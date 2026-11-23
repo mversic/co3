@@ -1,5 +1,3 @@
-#![allow(unused_parens)]
-
 use co3::{ReprC, ffi, pack::Unpack2, rust_spec::RustSpec, wide::Wide};
 
 trait ExportUnpackLen {
@@ -141,8 +139,6 @@ ffi! {
     fn borrowed_box(#[unpack(_, _)] value: Box<[u32]>);
     fn moved_box(#[unpack(_, _)] value: move Box<[u32]>);
     fn optional_moved_box(#[unpack(_, _)] value: move Option<Box<[u32]>>);
-    fn parenthesized_ref(#[unpack(_, _)] value: (&[u32]));
-    fn parenthesized_tuple(#[unpack(_, _)] value: move ((u8, u16)));
 
     #[symbol_name = "static_unpack_{C}"]
     fn static_unpack<C>(
@@ -174,6 +170,18 @@ ffi! {
     impl ImportUnpackLen for Counter {
         #[symbol_name = "export_trait_unpack_len"]
         fn import_trait_unpack_len(&self, #[unpack(_, usize)] values: &[u32]) -> usize;
+    }
+}
+
+#[expect(unused_parens)]
+mod parenthesized {
+    use super::*;
+
+    ffi! {
+        #![unsafe(extern("C"))]
+
+        fn parenthesized_ref(#[unpack(_, _)] value: (&[u32]));
+        fn parenthesized_tuple(#[unpack(_, _)] value: move ((u8, u16)));
     }
 }
 

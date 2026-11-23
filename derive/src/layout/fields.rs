@@ -34,3 +34,13 @@ pub(super) fn field_types<'a>(
 ) -> impl Iterator<Item = FieldType<'a>> {
     fields.iter().map(|ty| FieldType::new(ty, generics))
 }
+
+/// Mapping prerequisites for a marker. Arrays map element-wise for every length.
+pub(super) fn phantom_mapping_bound(ty: &Type, generics: &Generics) -> Option<WherePredicate> {
+    let (ty, bound) = if let Type::Array(array) = ty {
+        (&*array.elem, quote::quote!(co3::ReprC<CType: Sized>))
+    } else {
+        (ty, quote::quote!(co3::ReprC))
+    };
+    is_parametrized(ty, generics).then(|| FieldType::new(ty, generics).bound(bound))
+}

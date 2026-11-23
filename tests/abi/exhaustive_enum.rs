@@ -8,16 +8,16 @@ macro_rules! exhaustive_enums {
         enum AllTags { $first, $($variant,)* }
 
         #[derive(Debug, PartialEq, Eq, RustSpec, ReprC)]
-        #[allow(dead_code)]
         #[repr(u8)]
         #[repr_c(identity)]
-        enum AllTagsIdentity { $first, $($variant,)* }
+        #[allow(dead_code)] // All 256 variants are needed to exhaust the u8 tag space.
+        pub enum AllTagsIdentity { $first, $($variant,)* }
 
         #[derive(Debug, PartialEq, Eq, RustSpec, ReprC)]
-        #[allow(dead_code)]
         #[repr(u8)]
         #[repr_c(identity)]
-        enum AllTagsDataIdentity { $first(u32), $($variant,)* }
+        #[allow(dead_code)] // All 256 variants are needed to exhaust the u8 tag space.
+        pub enum AllTagsDataIdentity { $first(u32), $($variant,)* }
 
         #[derive(Debug, PartialEq, Eq, RustSpec, ReprC)]
         #[repr(u8)]

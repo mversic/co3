@@ -1,5 +1,3 @@
-#![allow(improper_ctypes_definitions)]
-
 use co3::{ReprC, ops::CFn1, raw};
 
 fn existing(value: u8) -> u8 {

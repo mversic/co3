@@ -1,5 +1,3 @@
-#![allow(unpredictable_function_pointer_comparisons)]
-
 use co3::{ReprC, ffi, ops::CFn0, rust_spec::RustSpec};
 
 #[derive(Clone, Copy, RustSpec, ReprC)]

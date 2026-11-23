@@ -603,13 +603,14 @@ macro_rules! impl_tuple {
     // NOTE: This is a trick to index tuples
     ( @decl_priv_store $( $ty:ident ),+) => {
         // Field names mirror type parameters so the macro can address tuple stores.
-        #[allow(non_snake_case)]
         mod private_store {
+            #[expect(non_snake_case)]
             pub struct Store<'itm, $($ty),+> {
                 $(pub $ty: &'itm mut $ty),+
             }
 
             impl<'itm, $($ty),+> From<&'itm mut ($($ty,)+)> for Store<'itm, $($ty,)+> {
+                #[expect(non_snake_case)]
                 fn from(($($ty,)+): &'itm mut ($($ty,)+)) -> Self {
                     Self {$($ty,)+}
                 }

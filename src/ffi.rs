@@ -25,7 +25,7 @@ use crate::{boxed::abi::Box as AbiBox, niche::Niche};
 macro_rules! c_alias_carrier {
     ($name:ident, $alias:ty) => {
         #[repr(transparent)]
-        #[allow(non_camel_case_types)]
+        #[expect(non_camel_case_types)]
         #[derive(Debug, Clone, Copy, Default, PartialEq, PartialOrd, RustSpec)]
         pub struct $name(
             // NOTE: The wrapped type must remain private to prevent Rust literals to coerce to it.
@@ -134,7 +134,7 @@ macro_rules! c_integer_conversions {
 
         impl Eq for $name {}
 
-        #[allow(clippy::derive_ord_xor_partial_ord)]
+        #[expect(clippy::derive_ord_xor_partial_ord)]
         impl Ord for $name {
             fn cmp(&self, other: &Self) -> core::cmp::Ordering {
                 self.0.cmp(&other.0)
@@ -180,7 +180,7 @@ macro_rules! c_integer_conversions {
         )*
 
         $(
-            #[allow(clippy::infallible_try_from)]
+            #[allow(clippy::infallible_try_from, reason = "conversion fallibility depends on the target C scalar width")]
             impl TryFrom<$try_from> for $name {
                 type Error = <$alias as TryFrom<$try_from>>::Error;
 
@@ -199,7 +199,7 @@ macro_rules! c_integer_conversions {
         )*
 
         $(
-            #[allow(clippy::infallible_try_from)]
+            #[allow(clippy::infallible_try_from, reason = "conversion fallibility depends on the target C scalar width")]
             impl TryFrom<$name> for $try_into {
                 type Error = <$try_into as TryFrom<$alias>>::Error;
 
@@ -439,7 +439,10 @@ c_alias_carrier! { c_double, core::ffi::c_double }
 c_float_from! { c_double, core::ffi::c_double; bool, i8, u8, i16, u16, f32 }
 
 impl From<c_double> for f64 {
-    #[allow(clippy::useless_conversion)]
+    #[allow(
+        clippy::useless_conversion,
+        reason = "the C double representation depends on the target"
+    )]
     fn from(value: c_double) -> Self {
         Self::from(value.0)
     }
@@ -895,7 +898,7 @@ mod tests {
     #[cfg(all(feature = "alloc", feature = "derive"))]
     type Text = String;
     #[cfg(all(feature = "alloc", feature = "derive"))]
-    #[allow(clippy::ptr_arg)] // Exercise the String reference ABI.
+    #[expect(clippy::ptr_arg)] // Exercise the String reference ABI.
     fn string_len(input: &String) -> usize {
         input.len()
     }
@@ -1633,7 +1636,6 @@ mod tests {
         fn signature_identity<T>(value: move T) -> move T;
     }
 
-    #[allow(improper_ctypes_definitions)]
     #[cfg(all(feature = "alloc", feature = "derive"))]
     type ArrayCompanion = unsafe extern "C" fn([u8; 2]) -> [u8; 2];
 
