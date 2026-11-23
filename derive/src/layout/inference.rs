@@ -129,7 +129,7 @@ impl<'a> RecursivePath<'a> {
         let mut bounds = Vec::new();
         for (i, link) in self.links.iter().enumerate().rev() {
             let ty = link.ty;
-            let stable = quote!(co3::rust_spec::RustSpec<Layout = co3::rust_spec::Stable>);
+            let stable = quote!(co3::rust_spec::RustSpec<Layout = co3::rust_spec::Specified>);
             match link.wrapper {
                 Wrapper::Pointer | Wrapper::Named(Kind::NonNull) => continue,
                 Wrapper::Slice => {
@@ -536,7 +536,7 @@ fn recursive_niche(
         }
     };
     let layout = match pointee_class(pointee, own, tail) {
-        TailClass::Sized => quote!(co3::rust_spec::Stable),
+        TailClass::Sized => quote!(co3::rust_spec::Specified),
         TailClass::Unsized(UnsizedTail::SliceLike | UnsizedTail::NulTerminated) => {
             quote!(__Co3Unstable)
         }

@@ -3,7 +3,7 @@ use alloc::{borrow::ToOwned, boxed::Box, vec::Vec};
 #[cfg(feature = "alloc")]
 use core::marker::PhantomData;
 
-use rust_spec::Unstable;
+use rust_spec::Unspecified;
 
 #[cfg(feature = "alloc")]
 use crate::{
@@ -130,7 +130,7 @@ where
     }
 }
 
-unsafe impl<T: Clone, S> TakeDecoded for DecodedField<'_, T, S, rust_spec::Stable> {
+unsafe impl<T: Clone, S> TakeDecoded for DecodedField<'_, T, S, rust_spec::Specified> {
     type Value = T;
 
     unsafe fn take_decoded(field: *mut Self) -> Option<T> {
@@ -138,7 +138,7 @@ unsafe impl<T: Clone, S> TakeDecoded for DecodedField<'_, T, S, rust_spec::Stabl
     }
 }
 
-unsafe impl<T: ?Sized, S: TakeDecoded> TakeDecoded for DecodedField<'_, T, S, Unstable> {
+unsafe impl<T: ?Sized, S: TakeDecoded> TakeDecoded for DecodedField<'_, T, S, Unspecified> {
     type Value = S::Value;
 
     unsafe fn take_decoded(field: *mut Self) -> Option<Self::Value> {
@@ -585,6 +585,7 @@ impl<'d, R, S: Store + Default> RefMutDstEncodeStore<'d, R, S>
 where
     R: ToOwned<Owned: DecodeMove<'d, Store: EmptyStore + 'd>> + ?Sized,
 {
+    #[cfg(feature = "repr-rust")]
     pub(crate) fn encode(
         &mut self,
         original: &'d mut R,
@@ -627,6 +628,7 @@ pub struct RefMutSliceDecodeStore<R: ReprC<CType: Sized>, S> {
 #[cfg(feature = "alloc")]
 impl<R: ReprC<CType: Sized>, S> RefMutSliceDecodeStore<R, S> {
     /// The source must remain valid and exclusively accessible until synchronization.
+    #[cfg(feature = "repr-rust")]
     pub(crate) unsafe fn decode<'a>(
         &'a mut self,
         source: AbiSoftWideRefMut<<[R] as crate::ReprC>::CType>,

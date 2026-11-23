@@ -42,7 +42,7 @@ impl<T: ReprC<CType: Sized>> ReprC for Reverse<T> {
     type CType = core::cmp::Reverse<T::CType>;
 }
 
-impl<T: Niche<CType: Sized>> Niche for Reverse<T> {
+impl<T: Niche> Niche for Reverse<T> {
     const NICHE: Self::CType = core::cmp::Reverse(T::NICHE);
 
     fn is_niche(value: &Self::CType) -> bool {
@@ -336,7 +336,7 @@ mod tests {
     use static_assertions::{assert_impl_all, assert_type_eq_all};
 
     use super::*;
-    use crate::{decode, encode, marker::Native, option::abi::OptionSome as AbiOptionSome};
+    use crate::{decode, encode};
 
     #[test]
     fn reverse_reference_codecs_dispatch_stable_inner() {
@@ -418,9 +418,9 @@ mod tests {
             unsafe { decode::<Reverse<bool>>(core::cmp::Reverse(co3::primitive::abi::bool(2))) },
             None
         );
-        let none: Native<AbiOptionSome<<Reverse<bool> as crate::ReprC>::CType>> =
-            encode(None::<Reverse<bool>>);
-        assert!(<Reverse<bool> as Niche>::is_niche(&none.0.0));
+        assert!(<Reverse<bool> as Niche>::is_niche(
+            &encode(None::<Reverse<bool>>).0.0
+        ));
     }
 
     #[cfg(feature = "alloc")]

@@ -433,7 +433,7 @@ impl DispatchGroups {
 ///
 /// # Helper Attributes
 ///
-/// * `#[repr_c(NICHE = <expr>)]` on a struct customizes [`co3::niche::Niche::NICHE`](https://docs.rs/co3/latest/co3/niche/trait.Niche.html#associatedconstant.NICHE) and requires `RustSpec::Niche = WithNiche<Unstable>`
+/// * `#[repr_c(NICHE = <expr>)]` on a struct customizes [`co3::niche::Niche::NICHE`](https://docs.rs/co3/latest/co3/niche/trait.Niche.html#associatedconstant.NICHE) and requires `RustSpec::Niche = WithNiche<Unspecified>`
 /// * `#[repr_c(is_valid = |[fieldN]| ...)]` on a struct or enum variant customizes validation and requires `RustSpec::Trap = NonRobust`
 /// * `#[repr_c(identity)]` uses a `repr(C)` or `repr(transparent)` type directly as its `CType`
 ///

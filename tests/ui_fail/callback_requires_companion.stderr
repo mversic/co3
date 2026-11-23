@@ -59,7 +59,7 @@ error[E0271]: type mismatch resolving `<[u32; 2] as RustSpec>::__Alignment == On
    = note: required for `extern "C" fn() -> [u32; 2]` to implement `ReprC`
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0271]: type mismatch resolving `<Option<extern "C" fn(NoRepr)> as RustSpec>::Layout == Stable`
+error[E0271]: type mismatch resolving `<Option<extern "C" fn(NoRepr)> as RustSpec>::Layout == Specified`
   --> tests/ui_fail/callback_requires_companion.rs:10:1
    |
 10 | / ffi! {
@@ -69,13 +69,13 @@ error[E0271]: type mismatch resolving `<Option<extern "C" fn(NoRepr)> as RustSpe
 14 | |     fn callback_with_bad_return(callback: BadReturn);
 15 | |     fn non_stable_callback(callback: NonStable);
 16 | | }
-   | |_^ expected `Stable`, found `Unstable`
+   | |_^ expected `Specified`, found `Unspecified`
    |
    = note: required for `std::option::Option<extern "C" fn(NoRepr)>` to implement `CType`
    = note: required for `extern "C" fn(NoRepr)` to implement `ReprC`
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0271]: type mismatch resolving `<NoRepr as RustSpec>::Layout == Stable`
+error[E0271]: type mismatch resolving `<NoRepr as RustSpec>::Layout == Specified`
   --> tests/ui_fail/callback_requires_companion.rs:10:1
    |
 10 | / ffi! {
@@ -85,9 +85,9 @@ error[E0271]: type mismatch resolving `<NoRepr as RustSpec>::Layout == Stable`
 14 | |     fn callback_with_bad_return(callback: BadReturn);
 15 | |     fn non_stable_callback(callback: NonStable);
 16 | | }
-   | |_^ type mismatch resolving `<NoRepr as RustSpec>::Layout == Stable`
+   | |_^ type mismatch resolving `<NoRepr as RustSpec>::Layout == Specified`
    |
-note: expected this to be `Stable`
+note: expected this to be `Specified`
   --> tests/ui_fail/callback_requires_companion.rs:3:10
    |
  3 | #[derive(RustSpec, ReprC)]

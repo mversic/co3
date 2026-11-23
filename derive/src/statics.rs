@@ -18,7 +18,7 @@ fn gen_static_assert(ty: &syn::Type) -> TokenStream {
         const _: () = {
             assert!(
                 #co3::impls!((#ty): #co3::rust_spec::RustSpec<
-                    Layout = #co3::rust_spec::Stable,
+                    Layout = #co3::rust_spec::Specified,
                     Size = #co3::rust_spec::size::Sized<#co3::rust_spec::Gt<#co3::rust_spec::Zero>>
                 >),
                 concat!(

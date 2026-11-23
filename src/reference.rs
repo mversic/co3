@@ -454,10 +454,16 @@ pub mod abi {
             unsafe impl<$($params)*> CType for $ty<$($args)*> {}
             unsafe impl<$($params)*> CFnArg for $ty<$($args)*> {}
             unsafe impl<$($params)*> CFnReturn for $ty<$($args)*> {}
-            unsafe impl<$($params)*> AbiCompatibleValidate for $ty<$($args)*> {
+            unsafe impl<$($params)*> AbiCompatibleValidate for $ty<$($args)*>
+where
+    Self: $crate::rust_spec::RustSpec<Layout = $crate::rust_spec::Specified>,
+{
                 unsafe fn is_valid(_: &Self::CType) -> bool { true }
             }
-            unsafe impl<$($params)*> AbiCompatible for $ty<$($args)*> {}
+            unsafe impl<$($params)*> AbiCompatible for $ty<$($args)*>
+where
+    Self: $crate::rust_spec::RustSpec<Layout = $crate::rust_spec::Specified>,
+{}
         };
     }
 

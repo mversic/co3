@@ -5,6 +5,6 @@ edition = "2024"
 publish = false
 
 [dependencies]
-co3 = { path = "../..", default-features = false, features = ["derive"] }
+co3 = { path = "../..", default-features = false, features = ["derive", "repr-rust"] }
 
 [workspace]

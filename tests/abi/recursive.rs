@@ -115,11 +115,11 @@ fn repr_c_stable_vector_tree_is_abi_compatible() {
     // children and requires a non-null data pointer. Neither field contains
     // interior-mutable storage, including through the child allocations.
     unsafe impl RustSpec for Node {
-        type Layout = rust_spec::Stable;
+        type Layout = rust_spec::Specified;
         type Size = <u32 as RustSpec>::Size;
         type __Alignment = <Vec<u32> as RustSpec>::__Alignment;
         type Trap = rust_spec::layout::NonRobust;
-        type Niche = rust_spec::niche::WithNiche<rust_spec::Unstable>;
+        type Niche = rust_spec::niche::WithNiche<rust_spec::Unspecified>;
         type Drop = rust_spec::drop::AutoDrop;
         type Mutability = <u32 as RustSpec>::Mutability;
         type Opacity = rust_spec::NonOpaque;

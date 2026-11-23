@@ -1,22 +1,29 @@
 //! Stable UTF-8 strings and their C-compatible representation.
 
-use alloc::{boxed::Box, vec::Vec};
+#[cfg(feature = "repr-rust")]
+use crate::{
+    borrow::ToOwned,
+    marker::Native,
+    wide::{self, Wide},
+};
+#[cfg(feature = "repr-rust")]
+use alloc::vec::Vec;
+
+#[cfg(feature = "repr-rust")]
+use alloc::boxed::Box;
+#[cfg(feature = "repr-rust")]
 use core::ptr::NonNull;
 
 use rust_spec::RustSpec;
 
 use crate::{
     CFnArg, CFnReturn, CType, ReprC,
-    borrow::{
-        BorrowedDecode, BorrowedEncode, BorrowedEncodeUnchecked, ToOwned, borrowed_decode_slice,
-    },
-    boxed::OwnedBoxCarrier,
+    borrow::{BorrowedDecode, BorrowedEncode, BorrowedEncodeUnchecked, borrowed_decode_slice},
     convert::{AbiCompatibleValidate, Decode, DecodeMove, Encode, EncodeMove, EncodeMoveUnchecked},
-    marker::{AbiCompatible, Native},
+    marker::AbiCompatible,
     niche::Niche,
     primitive::primitive_derive,
     vec::{self, Vec as StableVec},
-    wide::{self, Wide},
 };
 
 /// An owned UTF-8 string with a stable pointer, length, and capacity layout.
@@ -145,14 +152,12 @@ unsafe impl EncodeMove for String {
 unsafe impl<'d> DecodeMove<'d> for String {
     type Store = ();
     unsafe fn soft_decode<'itm: 'd>(source: Self::CType, _: &'itm mut ()) -> Option<Self> {
-        unsafe { <alloc::string::String as DecodeMove>::soft_decode(Native(source), &mut ()) }
-            .map(Self::from)
+        let bytes = unsafe { source.0.into_vec()? };
+        alloc::string::String::from_utf8(bytes).ok().map(Self::from)
     }
     unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, _: &'itm mut ()) -> Self {
-        unsafe {
-            <alloc::string::String as DecodeMove>::soft_decode_unchecked(Native(source), &mut ())
-        }
-        .into()
+        let bytes = unsafe { source.0.into_vec().unwrap_unchecked() };
+        unsafe { alloc::string::String::from_utf8_unchecked(bytes) }.into()
     }
 }
 impl Encode for String {}
@@ -165,7 +170,7 @@ impl Niche for String {
     }
 }
 unsafe impl BorrowedEncodeUnchecked for String {
-    type Owner = <alloc::string::String as BorrowedEncodeUnchecked>::Owner;
+    type Owner = <StableVec<u8> as BorrowedEncodeUnchecked>::Owner;
     type SoftStore = ();
     unsafe fn soft_encode_unchecked<'itm>(
         self,
@@ -175,18 +180,11 @@ unsafe impl BorrowedEncodeUnchecked for String {
     where
         Self: 'itm,
     {
-        unsafe {
-            <alloc::string::String as BorrowedEncodeUnchecked>::soft_encode_unchecked(
-                self.into(),
-                store,
-                owner,
-            )
-            .0
-        }
+        abi::String(unsafe { BorrowedEncodeUnchecked::soft_encode_unchecked(self.0, store, owner) })
     }
 }
 unsafe impl BorrowedEncode for String {
-    type Store = <alloc::string::String as BorrowedEncode>::Store;
+    type Store = <StableVec<u8> as BorrowedEncode>::Store;
     fn soft_encode<'itm>(
         self,
         store: &'itm mut Self::Store,
@@ -195,20 +193,21 @@ unsafe impl BorrowedEncode for String {
     where
         Self: 'itm,
     {
-        <alloc::string::String as BorrowedEncode>::soft_encode(self.into(), store, owner).0
+        abi::String(BorrowedEncode::soft_encode(self.0, store, owner))
     }
 }
 unsafe impl<'d> BorrowedDecode<'d> for String {
     type Store = ();
-    unsafe fn soft_decode<'itm: 'd>(source: Self::CType, store: &'itm mut ()) -> Option<Self> {
-        unsafe { <alloc::string::String as BorrowedDecode>::soft_decode(Native(source), store) }
-            .map(Self::from)
-    }
-    unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, store: &'itm mut ()) -> Self {
-        unsafe {
-            <alloc::string::String as BorrowedDecode>::soft_decode_unchecked(Native(source), store)
+    unsafe fn soft_decode<'itm: 'd>(source: Self::CType, _: &'itm mut ()) -> Option<Self> {
+        if source.len() > source.capacity() {
+            return None;
         }
-        .into()
+        let bytes = unsafe { borrowed_decode_slice(source.as_ptr(), source.len())? };
+        Some(core::str::from_utf8(bytes).ok()?.into())
+    }
+    unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, _: &'itm mut ()) -> Self {
+        let bytes = unsafe { core::slice::from_raw_parts(source.as_ptr(), source.len()) };
+        unsafe { core::str::from_utf8_unchecked(bytes) }.into()
     }
 }
 
@@ -219,10 +218,12 @@ impl From<String> for alloc::string::String {
     }
 }
 
+#[cfg(feature = "repr-rust")]
 impl ReprC for alloc::string::String {
     type CType = Native<abi::String>;
 }
 
+#[cfg(feature = "repr-rust")]
 unsafe impl EncodeMove for alloc::string::String {
     type Store = ();
 
@@ -233,6 +234,7 @@ unsafe impl EncodeMove for alloc::string::String {
         unsafe { <Self as EncodeMoveUnchecked>::soft_encode_unchecked(self, &mut ()) }
     }
 }
+#[cfg(feature = "repr-rust")]
 unsafe impl EncodeMoveUnchecked for alloc::string::String {
     type SoftStore = ();
 
@@ -244,6 +246,7 @@ unsafe impl EncodeMoveUnchecked for alloc::string::String {
     }
 }
 
+#[cfg(feature = "repr-rust")]
 unsafe impl<'d> DecodeMove<'d> for alloc::string::String {
     type Store = ();
 
@@ -258,10 +261,14 @@ unsafe impl<'d> DecodeMove<'d> for alloc::string::String {
     }
 }
 
+#[cfg(feature = "repr-rust")]
 impl Encode for alloc::string::String {}
+#[cfg(feature = "repr-rust")]
 impl crate::convert::EncodeUnchecked for alloc::string::String {}
+#[cfg(feature = "repr-rust")]
 impl Decode<'_> for alloc::string::String {}
 
+#[cfg(feature = "repr-rust")]
 impl Niche for alloc::string::String {
     const NICHE: Self::CType = Native(abi::String::null());
 
@@ -269,6 +276,7 @@ impl Niche for alloc::string::String {
         value.as_ptr().is_null()
     }
 }
+#[cfg(feature = "repr-rust")]
 unsafe impl<'d> BorrowedDecode<'d> for alloc::string::String {
     type Store = ();
 
@@ -289,6 +297,7 @@ unsafe impl<'d> BorrowedDecode<'d> for alloc::string::String {
     }
 }
 
+#[cfg(feature = "repr-rust")]
 unsafe impl BorrowedEncodeUnchecked for alloc::string::String {
     type Owner = <Vec<u8> as BorrowedEncodeUnchecked>::Owner;
     type SoftStore = <Vec<u8> as BorrowedEncodeUnchecked>::SoftStore;
@@ -312,6 +321,7 @@ unsafe impl BorrowedEncodeUnchecked for alloc::string::String {
     }
 }
 
+#[cfg(feature = "repr-rust")]
 unsafe impl BorrowedEncode for alloc::string::String {
     type Store = <Vec<u8> as BorrowedEncode>::Store;
 
@@ -339,6 +349,7 @@ impl crate::convert::AssignFromOwned for str {
     }
 }
 
+#[cfg(feature = "repr-rust")]
 unsafe impl BorrowedEncodeUnchecked for Box<str> {
     type Owner = Option<Self>;
     type SoftStore = ();
@@ -362,6 +373,7 @@ unsafe impl BorrowedEncodeUnchecked for Box<str> {
     }
 }
 
+#[cfg(feature = "repr-rust")]
 unsafe impl BorrowedEncode for Box<str> {
     type Store = ();
 
@@ -384,6 +396,7 @@ unsafe impl BorrowedEncode for Box<str> {
     }
 }
 
+#[cfg(feature = "repr-rust")]
 unsafe impl<'d> BorrowedDecode<'d> for Box<str> {
     type Store = ();
 
@@ -404,11 +417,15 @@ unsafe impl<'d> BorrowedDecode<'d> for Box<str> {
 #[doc(hidden)]
 pub mod abi {
     use super::{
-        AbiCompatible, Box, CFnArg, CFnReturn, CType, Decode, DecodeMove, Encode, EncodeMove,
-        EncodeMoveUnchecked, NonNull, OwnedBoxCarrier, ReprC, RustSpec, primitive_derive, vec,
-        wide,
+        AbiCompatible, CFnArg, CFnReturn, CType, Decode, DecodeMove, Encode, EncodeMove,
+        EncodeMoveUnchecked, ReprC, RustSpec, primitive_derive, vec,
     };
-    use crate::marker::Native;
+    #[cfg(feature = "repr-rust")]
+    use super::{Box, NonNull};
+    #[cfg(feature = "repr-rust")]
+    use crate::boxed::OwnedBoxCarrier;
+    #[cfg(feature = "repr-rust")]
+    use crate::{marker::Native, wide};
     /// Owned UTF-8 string carrier, including the capacity of its allocation.
     ///
     /// The carrier permits any byte values. Decoding as a `String` checks UTF-8.
@@ -443,6 +460,7 @@ pub mod abi {
     unsafe impl crate::marker::Zeroable for String {}
     primitive_derive! { String }
 
+    #[cfg(feature = "repr-rust")]
     impl OwnedBoxCarrier<wide::abi::WideBox<<str as crate::ReprC>::CType>> for String {
         unsafe fn from_box_carrier(
             value: wide::abi::WideBox<<str as crate::ReprC>::CType>,
@@ -465,6 +483,7 @@ pub mod abi {
         }
     }
 
+    #[cfg(feature = "repr-rust")]
     impl OwnedBoxCarrier<wide::abi::WideBox<<str as crate::ReprC>::CType>> for Native<String> {
         unsafe fn from_box_carrier(
             value: wide::abi::WideBox<<str as crate::ReprC>::CType>,

@@ -400,7 +400,8 @@ macro_rules! impl_fn_types {
         where
             Self: ReprC<CType = Option<Self>>,
             Option<Self>: CType,
-        {
+    Self: $crate::rust_spec::RustSpec<Layout = $crate::rust_spec::Specified>,
+{
             unsafe fn is_valid(target: &Self::CType) -> bool {
                 target.is_some()
             }
@@ -409,6 +410,7 @@ unsafe impl<$($arg,)* R> AbiCompatible for $fn_type
 where
     Self: ReprC<CType = Option<Self>>,
     Option<Self>: CType,
+    Self: $crate::rust_spec::RustSpec<Layout = $crate::rust_spec::Specified>,
 {
 }
     };

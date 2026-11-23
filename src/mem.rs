@@ -1,7 +1,7 @@
 //! C-compatible representations and conversions for [`core::mem`].
 use core::mem::{ManuallyDrop, MaybeUninit};
 
-use rust_spec::{RustSpec, Stable};
+use rust_spec::RustSpec;
 
 use crate::{
     CFnArg, CFnReturn, CType, ReprC,
@@ -103,20 +103,14 @@ where
     }
 }
 
-unsafe impl<R: AbiCompatibleValidate + ?Sized> AbiCompatibleValidate for ManuallyDrop<R>
-where
-    Self: RustSpec<Layout = Stable>,
-{
+unsafe impl<R: AbiCompatibleValidate + ?Sized> AbiCompatibleValidate for ManuallyDrop<R> {
     #[inline(always)]
     unsafe fn is_valid(target: &Self::CType) -> bool {
         unsafe { R::is_valid(target) }
     }
 }
 
-unsafe impl<R: AbiCompatible + ?Sized> AbiCompatible for ManuallyDrop<R> where
-    Self: RustSpec<Layout = Stable>
-{
-}
+unsafe impl<R: AbiCompatible + ?Sized> AbiCompatible for ManuallyDrop<R> {}
 
 impl<R: Niche> Niche for ManuallyDrop<R> {
     const NICHE: Self::CType = core::mem::ManuallyDrop::new(R::NICHE);
@@ -353,13 +347,13 @@ mod tests {
             Encode,
         );
         assert_impl_all!(&ManuallyDrop<u8>:
-            RustSpec<Niche = WithNiche<rust_spec::Stable>>,
+            RustSpec<Niche = WithNiche<rust_spec::Specified>>,
             Niche<CType = Ref<'static, <ManuallyDrop<u8> as crate::ReprC>::CType>>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(&mut ManuallyDrop<u8>:
-            RustSpec<Niche = WithNiche<rust_spec::Stable>>,
+            RustSpec<Niche = WithNiche<rust_spec::Specified>>,
             Niche<CType = crate::reference::abi::RefMut<'static, <ManuallyDrop<u8> as crate::ReprC>::CType>>,
             Decode<'static>,
             Encode,
@@ -426,7 +420,7 @@ mod tests {
             Niche<CType = crate::reference::abi::SoftRefMut<<ManuallyDrop<Box<u8>> as crate::ReprC>::CType>>,
         );
         assert_impl_all!(Box<ManuallyDrop<Box<u8>>>:
-            RustSpec<Niche = WithNiche<rust_spec::Stable>>,
+            RustSpec<Niche = WithNiche<rust_spec::Specified>>,
             Niche<CType = AbiBox<<ManuallyDrop<Box<u8>> as crate::ReprC>::CType>>,
         );
         assert_impl_all!(&[ManuallyDrop<Box<u8>>]:

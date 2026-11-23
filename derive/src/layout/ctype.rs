@@ -891,7 +891,7 @@ fn gen_recursive_carrier_checks(
                 type AbiRequirement = Self;
             }
             impl<T> __Co3SelectVec for co3::vec::Vec<T> {
-                type Niche = co3::rust_spec::niche::WithNiche<co3::rust_spec::Stable>;
+                type Niche = co3::rust_spec::niche::WithNiche<__Co3Unstable>;
                 type Carrier<C: co3::CType> = co3::vec::abi::Vec<C>;
                 type AbiRequirement = ();
             }
@@ -913,10 +913,10 @@ fn gen_recursive_carrier_checks(
     });
     let reference_selector = recursion.selectors.reference.then(|| quote! {
         pub trait __Co3SelectRef<Direct, Soft> { type Carrier; }
-        impl<D, S> __Co3SelectRef<D, S> for co3::rust_spec::Stable { type Carrier = D; }
+        impl<D, S> __Co3SelectRef<D, S> for co3::rust_spec::Specified { type Carrier = D; }
         impl<D, S> __Co3SelectRef<D, S> for __Co3Unstable { type Carrier = S; }
-        impl<D, S> __Co3SelectRef<D, S> for (co3::rust_spec::Stable, co3::rust_spec::layout::Robust) { type Carrier = D; }
-        impl<D, S> __Co3SelectRef<D, S> for (co3::rust_spec::Stable, co3::rust_spec::layout::NonRobust) { type Carrier = S; }
+        impl<D, S> __Co3SelectRef<D, S> for (co3::rust_spec::Specified, co3::rust_spec::layout::Robust) { type Carrier = D; }
+        impl<D, S> __Co3SelectRef<D, S> for (co3::rust_spec::Specified, co3::rust_spec::layout::NonRobust) { type Carrier = S; }
         impl<D, S, Trap> __Co3SelectRef<D, S> for (__Co3Unstable, Trap) { type Carrier = S; }
     });
     let check_carriers = (!checks.is_empty()).then(|| {
@@ -1526,7 +1526,7 @@ fn gen_type_spec(
             #(#mutability_bounds,)*
             #predicates
         {
-            type Layout = co3::rust_spec::Stable;
+            type Layout = co3::rust_spec::Specified;
             type Size = #size;
             type __Alignment = #alignment;
             type Trap = co3::rust_spec::layout::Robust;
@@ -2157,7 +2157,7 @@ mod tests {
         assert_eq!(
             lower(syn::parse_quote!(std::option::Option<Box<Node<T>>>)),
             Some(syn::parse_quote!(
-                <std::option::Option<()> as __Co3SelectOption<co3::rust_spec::niche::WithNiche<co3::rust_spec::Stable>>>::Carrier<
+                <std::option::Option<()> as __Co3SelectOption<co3::rust_spec::niche::WithNiche<co3::rust_spec::Specified>>>::Carrier<
                     #tagged, __Co3Native<#tagged>, __Co3Native<co3::option::abi::OptionSome<#payload>>
                 >
             ))

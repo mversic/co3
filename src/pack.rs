@@ -149,9 +149,10 @@ where
     }
 }
 
-impl<T: Pack2<Part1, Part2>, Part1: CType, Part2: CType> Pack2<Part1, Part2> for Option<T>
+impl<T: Pack2<Part1, Part2> + crate::niche::Niche, Part1: CType, Part2: CType> Pack2<Part1, Part2>
+    for Option<T>
 where
-    Self: ReprC<CType = Native<AbiOptionSome<<T as ReprC>::CType>>>,
+    Self: ReprC<CType = Native<crate::option::abi::OptionSome<<T as ReprC>::CType>>>,
 {
     type Error = T::Error;
 
@@ -161,9 +162,10 @@ where
     }
 }
 
-impl<T: Unpack2<Part1, Part2>, Part1: CType, Part2: CType> Unpack2<Part1, Part2> for Option<T>
+impl<T: Unpack2<Part1, Part2> + crate::niche::Niche, Part1: CType, Part2: CType>
+    Unpack2<Part1, Part2> for Option<T>
 where
-    Self: ReprC<CType = Native<AbiOptionSome<<T as ReprC>::CType>>>,
+    Self: ReprC<CType = Native<crate::option::abi::OptionSome<<T as ReprC>::CType>>>,
 {
     type Error = T::Error;
 
@@ -186,12 +188,15 @@ disjoint_impls! {
         fn unpack(value: Self::CType) -> Result<(Part1, Part2), Self::Error>;
     }
 
-    impl<Ok: Unpack2<A, B> + crate::niche::Niche, Err: ReprC<CType: CType + Sized>, A: CType, B: CType>
-        Unpack2<A, B> for Result<Ok, Err>
+    impl<Ok: Unpack2<A, B> + crate::niche::Niche, Err: ReprC, A: CType, B: CType> Unpack2<A, B>
+        for Result<Ok, Err>
     where
+        Self: ReprC<
+            CType = Native<crate::result::abi::ResultOk<<Ok as ReprC>::CType, <Err as ReprC>::CType>>,
+        >,
         Ok: rust_spec::RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>,
         Err: rust_spec::RustSpec<Size = rust_spec::size::Sized<rust_spec::Zero>>,
-        Self: ReprC<CType = Native<AbiResultOk<<Ok as crate::ReprC>::CType, <Err as crate::ReprC>::CType>>>,
+        <Err as ReprC>::CType: Sized,
     {
         type Error = Ok::Error;
         fn unpack(value: Self::CType) -> Result<(A, B), Self::Error> {
@@ -199,12 +204,15 @@ disjoint_impls! {
         }
     }
 
-    impl<Ok: ReprC<CType: CType + Sized>, Err: Unpack2<A, B> + crate::niche::Niche, A: CType, B: CType>
-        Unpack2<A, B> for Result<Ok, Err>
+    impl<Ok: ReprC, Err: Unpack2<A, B> + crate::niche::Niche, A: CType, B: CType> Unpack2<A, B>
+        for Result<Ok, Err>
     where
+        Self: ReprC<
+            CType = Native<crate::result::abi::ResultErr<<Ok as ReprC>::CType, <Err as ReprC>::CType>>,
+        >,
         Ok: rust_spec::RustSpec<Size = rust_spec::size::Sized<rust_spec::Zero>>,
         Err: rust_spec::RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>,
-        Self: ReprC<CType = Native<AbiResultErr<<Ok as crate::ReprC>::CType, <Err as crate::ReprC>::CType>>>,
+        <Ok as ReprC>::CType: Sized,
     {
         type Error = Err::Error;
         fn unpack(value: Self::CType) -> Result<(A, B), Self::Error> {
@@ -228,12 +236,15 @@ disjoint_impls! {
         unsafe fn pack(part1: Part1, part2: Part2) -> Result<Self::CType, Self::Error>;
     }
 
-    impl<Ok: Pack2<A, B> + crate::niche::Niche, Err: ReprC<CType: CType + Sized>, A: CType, B: CType>
-        Pack2<A, B> for Result<Ok, Err>
+    impl<Ok: Pack2<A, B> + crate::niche::Niche, Err: ReprC, A: CType, B: CType> Pack2<A, B>
+        for Result<Ok, Err>
     where
+        Self: ReprC<
+            CType = Native<crate::result::abi::ResultOk<<Ok as ReprC>::CType, <Err as ReprC>::CType>>,
+        >,
         Ok: rust_spec::RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>,
         Err: rust_spec::RustSpec<Size = rust_spec::size::Sized<rust_spec::Zero>>,
-        Self: ReprC<CType = Native<AbiResultOk<<Ok as crate::ReprC>::CType, <Err as crate::ReprC>::CType>>>,
+        <Err as ReprC>::CType: Sized,
     {
         type Error = Ok::Error;
         unsafe fn pack(a: A, b: B) -> Result<Self::CType, Self::Error> {
@@ -241,12 +252,15 @@ disjoint_impls! {
         }
     }
 
-    impl<Ok: ReprC<CType: CType + Sized>, Err: Pack2<A, B> + crate::niche::Niche, A: CType, B: CType>
-        Pack2<A, B> for Result<Ok, Err>
+    impl<Ok: ReprC, Err: Pack2<A, B> + crate::niche::Niche, A: CType, B: CType> Pack2<A, B>
+        for Result<Ok, Err>
     where
+        Self: ReprC<
+            CType = Native<crate::result::abi::ResultErr<<Ok as ReprC>::CType, <Err as ReprC>::CType>>,
+        >,
         Ok: rust_spec::RustSpec<Size = rust_spec::size::Sized<rust_spec::Zero>>,
         Err: rust_spec::RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>,
-        Self: ReprC<CType = Native<AbiResultErr<<Ok as crate::ReprC>::CType, <Err as crate::ReprC>::CType>>>,
+        <Ok as ReprC>::CType: Sized,
     {
         type Error = Err::Error;
         unsafe fn pack(a: A, b: B) -> Result<Self::CType, Self::Error> {

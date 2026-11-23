@@ -556,6 +556,18 @@
 //! ```
 #![no_std]
 
+use crate::wide::{Wide, WideHeader};
+
+#[cfg(feature = "repr-rust")]
+use crate::{
+    reference::abi::SoftRef,
+    wide::abi::{
+        SoftWideRef as AbiSoftWideRef, SoftWideRefMut as AbiSoftWideRefMut, WideRef as AbiWideRef,
+    },
+};
+#[cfg(feature = "repr-rust")]
+use rust_spec::size::{MetaSized, NulTerminated, SliceLike};
+
 use crate::marker::Native;
 #[cfg(feature = "alloc")]
 extern crate alloc;
@@ -573,30 +585,24 @@ pub use disjoint_impls::disjoint_impls;
 pub use impls::impls;
 #[doc(hidden)]
 pub use rust_spec;
-#[cfg(feature = "alloc")]
+#[cfg(all(feature = "alloc", feature = "repr-rust"))]
 use rust_spec::size::MetadataKind;
 use rust_spec::{
-    RustSpec, Stable as StableLayout, Unstable,
-    layout::{LayoutKind, NonRobust, Robust},
-    niche::{WithNiche, WithoutNiche},
-    size::{ExternTypeLike, MetaSized, NulTerminated, SizedKind, SliceLike, Zero},
+    RustSpec, Specified, Unspecified,
+    layout::{NonRobust, Robust},
+    size::{ExternTypeLike, SizedKind, Zero},
 };
 
 #[cfg(feature = "alloc")]
+use crate::boxed::abi::Box as AbiBox;
+#[cfg(all(feature = "alloc", feature = "repr-rust"))]
 use crate::ffi::NulTerminatedBuf;
-#[cfg(feature = "alloc")]
-use crate::{boxed::abi::Box as AbiBox, wide::abi::WideBox as AbiWideBox};
+#[cfg(all(feature = "alloc", feature = "repr-rust"))]
+use crate::wide::abi::WideBox as AbiWideBox;
 use crate::{
     convert::Store,
     niche::Niche,
-    reference::abi::{Ref, RefMut, SoftRef, SoftRefMut},
-    wide::{
-        Wide, WideHeader,
-        abi::{
-            SoftWideRef as AbiSoftWideRef, SoftWideRefMut as AbiSoftWideRefMut,
-            WideRef as AbiWideRef,
-        },
-    },
+    reference::abi::{Ref, RefMut, SoftRefMut},
 };
 
 mod abi;
@@ -638,11 +644,11 @@ pub mod tuple;
 pub mod vec;
 pub mod wide;
 
-#[cfg(feature = "alloc")]
+#[cfg(all(feature = "alloc", feature = "repr-rust"))]
 trait Dst {}
-#[cfg(feature = "alloc")]
+#[cfg(all(feature = "alloc", feature = "repr-rust"))]
 impl Dst for ExternTypeLike {}
-#[cfg(feature = "alloc")]
+#[cfg(all(feature = "alloc", feature = "repr-rust"))]
 impl<K: MetadataKind> Dst for MetaSized<K> {}
 
 /// Produces return values for invariant violations in the conversion layer.
@@ -694,8 +700,19 @@ trait Thin {}
 impl<K: SizedKind> Thin for rust_spec::size::Sized<K> {}
 impl Thin for ExternTypeLike {}
 
+// Feature eligibility is independent of the selected conversion carrier.
+trait SupportedLayout {}
+#[cfg(not(feature = "repr-rust"))]
+impl<T: RustSpec<Layout = Specified>> SupportedLayout for T {}
+#[cfg(feature = "repr-rust")]
+impl<T> SupportedLayout for T {}
+
 disjoint_impls! {
     /// A Rust type that has a C-compatible companion type.
+    #[cfg_attr(
+        not(feature = "repr-rust"),
+        diagnostic::on_unimplemented(note = "Did you disable `repr-rust` feature?")
+    )]
     pub trait ReprC {
         /// The C-compatible representation of this Rust type.
         type CType: CType + ?Sized;
@@ -703,68 +720,81 @@ disjoint_impls! {
 
     impl<'a, R: ReprC + ?Sized> ReprC for &'a R
     where
-        R: RustSpec<Layout = StableLayout, Size: Thin>,
+        R: RustSpec<Layout = Specified, Size: Thin>,
     {
         type CType = Ref<'a, R::CType>;
     }
+    #[cfg(feature = "repr-rust")]
     impl<R: ReprC + ?Sized> ReprC for &R
     where
-        R: RustSpec<Layout = Unstable, Size: Thin>,
+        R: RustSpec<Layout = Unspecified, Size: Thin>,
     {
         type CType = SoftRef<R::CType>;
     }
+    #[cfg(feature = "repr-rust")]
     impl<R: ReprC + ?Sized> ReprC for &R
     where
         R: RustSpec<Size = NulTerminated>,
-        <R as ReprC>::CType: crate::CType + Sized,
+        <R as ReprC>::CType: Sized,
     {
         type CType = SoftRef<R::CType>;
     }
-    impl<'a, R: ReprC<CType: crate::CType + Wide<Header: WideHeader<Data: CType>, Metadata = usize>> + ?Sized> ReprC for &'a R
+    #[cfg(feature = "repr-rust")]
+    impl<'a, R: ReprC + ?Sized> ReprC for &'a R
     where
-        R: RustSpec<Layout = StableLayout, Size = MetaSized<SliceLike>>,
+        R: RustSpec<Layout = Specified, Size = MetaSized<SliceLike>>,
+        <R as ReprC>::CType: Wide<Header: WideHeader<Data: CType>, Metadata = usize>,
     {
         type CType = AbiWideRef<'a, R::CType>;
     }
-    impl<R: ReprC<CType: crate::CType + Wide<Header: WideHeader<Data: CType>, Metadata = usize>> + ?Sized> ReprC for &R
+    #[cfg(feature = "repr-rust")]
+    impl<R: ReprC + ?Sized> ReprC for &R
     where
-        R: RustSpec<Layout = Unstable, Size = MetaSized<SliceLike>>,
+        R: RustSpec<Layout = Unspecified, Size = MetaSized<SliceLike>>,
+        <R as ReprC>::CType: Wide<Header: WideHeader<Data: CType>, Metadata = usize>,
     {
         type CType = AbiSoftWideRef<R::CType>;
     }
     impl<'a, R: ReprC + ?Sized> ReprC for &'a mut R
     where
-        R: RustSpec<Layout = StableLayout, Trap = Robust, Size: Thin>,
+        R: RustSpec<Layout = Specified, Trap = Robust, Size: Thin>,
     {
         type CType = RefMut<'a, R::CType>;
     }
     impl<R: ReprC + ?Sized> ReprC for &mut R
     where
-        R: RustSpec<Layout = StableLayout, Trap = NonRobust, Size: Thin>,
+        R: RustSpec<Layout = Specified, Trap = NonRobust, Size: Thin>,
     {
         type CType = SoftRefMut<R::CType>;
     }
+    #[cfg(feature = "repr-rust")]
     impl<R: ReprC + ?Sized> ReprC for &mut R
     where
-        R: RustSpec<Layout = Unstable, Size: Thin>,
+        R: RustSpec<Layout = Unspecified, Size: Thin>,
     {
         type CType = SoftRefMut<R::CType>;
     }
-    impl<'a, R: ReprC<CType: crate::CType + Wide<Header: WideHeader<Data: CType>, Metadata = usize>> + ?Sized> ReprC for &'a mut R
+    #[cfg(feature = "repr-rust")]
+    impl<'a, R: ReprC + ?Sized> ReprC for &'a mut R
     where
-        R: RustSpec<Layout = StableLayout, Trap = Robust, Size = MetaSized<SliceLike>>,
+        R: RustSpec<Layout = Specified, Trap = Robust, Size = MetaSized<SliceLike>>,
+        <R as ReprC>::CType: Wide<Header: WideHeader<Data: CType>, Metadata = usize>,
     {
         type CType = wide::abi::WideRefMut<'a, R::CType>;
     }
-    impl<R: ReprC<CType: crate::CType + Wide<Header: WideHeader<Data: CType>, Metadata = usize>> + ?Sized> ReprC for &mut R
+    #[cfg(feature = "repr-rust")]
+    impl<R: ReprC + ?Sized> ReprC for &mut R
     where
-        R: RustSpec<Layout = StableLayout, Trap = NonRobust, Size = MetaSized<SliceLike>>,
+        R: RustSpec<Layout = Specified, Trap = NonRobust, Size = MetaSized<SliceLike>>,
+        <R as ReprC>::CType: Wide<Header: WideHeader<Data: CType>, Metadata = usize>,
     {
         type CType = AbiSoftWideRefMut<R::CType>;
     }
-    impl<R: ReprC<CType: crate::CType + Wide<Header: WideHeader<Data: CType>, Metadata = usize>> + ?Sized> ReprC for &mut R
+    #[cfg(feature = "repr-rust")]
+    impl<R: ReprC + ?Sized> ReprC for &mut R
     where
-        R: RustSpec<Layout = Unstable, Size = MetaSized<SliceLike>>,
+        R: RustSpec<Layout = Unspecified, Size = MetaSized<SliceLike>>,
+        <R as ReprC>::CType: Wide<Header: WideHeader<Data: CType>, Metadata = usize>,
     {
         type CType = AbiSoftWideRefMut<R::CType>;
     }
@@ -773,103 +803,149 @@ disjoint_impls! {
     impl<R: ReprC, S: SizedKind> ReprC for Box<R>
     where
         R: RustSpec<Size = rust_spec::size::Sized<S>>,
-        <R as ReprC>::CType: crate::CType + Sized,
+        <R as ReprC>::CType: Sized,
     {
         type CType = AbiBox<R::CType>;
     }
     #[cfg(feature = "alloc")]
-    impl<R: NulTerminatedBuf<Header: ReprC> + ReprC<CType: CType + Sized> + ?Sized> ReprC for Box<R>
+    #[cfg(feature = "repr-rust")]
+    impl<R: NulTerminatedBuf<Header: ReprC> + ReprC + ?Sized> ReprC for Box<R>
     where
         R: RustSpec<Size = NulTerminated>,
         <R as NulTerminatedBuf>::Header: Sized,
-        <<R as NulTerminatedBuf>::Header as ReprC>::CType: crate::CType + Sized,
+        <<R as NulTerminatedBuf>::Header as ReprC>::CType: Sized,
+        <R as ReprC>::CType: Sized,
     {
         type CType = AbiBox<R::CType>;
     }
     #[cfg(feature = "alloc")]
-    impl<R: ReprC<CType: crate::CType + Wide<Header: WideHeader<Data: CType + Sized>, Metadata = usize>> + ?Sized> ReprC for Box<R>
+    #[cfg(feature = "repr-rust")]
+    impl<R: ReprC + ?Sized> ReprC for Box<R>
     where
         R: RustSpec<Size = MetaSized<SliceLike>>,
+        <R as ReprC>::CType: Wide<Header: WideHeader<Data: CType + Sized>, Metadata = usize>,
     {
         type CType = AbiWideBox<R::CType>;
     }
 
-    impl<R: ReprC> ReprC for Option<R>
+    impl<R: Niche, N: rust_spec::layout::LayoutKind> ReprC for Option<R>
     where
-        R: RustSpec<Niche = WithoutNiche>,
-        <R as ReprC>::CType: crate::CType + Sized,
-    {
-        type CType = Native<option::abi::Option<R::CType>>;
-    }
-    impl<R: Niche, N: LayoutKind> ReprC for Option<R>
-    where
-        R: RustSpec<Niche = WithNiche<N>>,
-        <R as ReprC>::CType: crate::CType + Sized,
+        Self: SupportedLayout,
+        R: RustSpec<Niche = rust_spec::niche::WithNiche<N>>,
+        <R as ReprC>::CType: Sized,
     {
         type CType = Native<option::abi::OptionSome<R::CType>>;
     }
 
-    impl<R: ReprC, E: ReprC, K: SizedKind> ReprC for Result<R, E>
+    #[cfg(feature = "repr-rust")]
+    impl<R: ReprC> ReprC for Option<R>
     where
-        R: RustSpec<Size = rust_spec::size::Sized<K>>,
-        E: RustSpec<Size = rust_spec::size::Sized<K>>,
-        // TODO: There is an error in disjoint_impls! that doesn't allow to use
-        // `ReprC<CType: crate::CType + Copy>` constraint. Fix that! Check other Result sites
-        <R as ReprC>::CType: CType + Copy,
-        <E as ReprC>::CType: CType + Copy,
+        R: RustSpec<Niche = rust_spec::niche::WithoutNiche>,
+        <R as ReprC>::CType: Sized,
     {
-        type CType = Native<result::abi::Result<R::CType, E::CType>>;
+        type CType = Native<option::abi::Option<R::CType>>;
     }
-    impl<R: Niche, E: ReprC<CType: CType + Sized>> ReprC for Result<R, E>
+
+    impl<R: Niche, E: ReprC, N: rust_spec::layout::LayoutKind> ReprC for Result<R, E>
     where
-        R: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>,
+        Self: SupportedLayout,
+        R: RustSpec<
+                Size = rust_spec::size::Sized<rust_spec::Gt<Zero>>,
+                Niche = rust_spec::niche::WithNiche<N>,
+            >,
         E: RustSpec<Size = rust_spec::size::Sized<Zero>>,
-        <R as ReprC>::CType: crate::CType + Sized,
+        <R as ReprC>::CType: Sized,
+        <E as ReprC>::CType: Sized,
     {
         type CType = Native<result::abi::ResultOk<R::CType, E::CType>>;
     }
-    impl<R: ReprC<CType: CType + Sized>, E: Niche> ReprC for Result<R, E>
+
+    impl<R: ReprC, E: Niche, N: rust_spec::layout::LayoutKind> ReprC for Result<R, E>
     where
+        Self: SupportedLayout,
         R: RustSpec<Size = rust_spec::size::Sized<Zero>>,
-        E: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>,
-        <E as ReprC>::CType: crate::CType + Sized,
+        E: RustSpec<
+                Size = rust_spec::size::Sized<rust_spec::Gt<Zero>>,
+                Niche = rust_spec::niche::WithNiche<N>,
+            >,
+        <R as ReprC>::CType: Sized,
+        <E as ReprC>::CType: Sized,
     {
         type CType = Native<result::abi::ResultErr<R::CType, E::CType>>;
     }
 
+    #[cfg(feature = "repr-rust")]
+    impl<R: ReprC, E: ReprC, K: SizedKind> ReprC for Result<R, E>
+    where
+        R: RustSpec<Size = rust_spec::size::Sized<K>>,
+        E: RustSpec<Size = rust_spec::size::Sized<K>>,
+        <R as ReprC>::CType: Copy,
+        <E as ReprC>::CType: Copy,
+    {
+        type CType = Native<result::abi::Result<R::CType, E::CType>>;
+    }
+    #[cfg(feature = "repr-rust")]
+    impl<R: ReprC, E: ReprC> ReprC for Result<R, E>
+    where
+        R: RustSpec<
+                Size = rust_spec::size::Sized<rust_spec::Gt<Zero>>,
+                Niche = rust_spec::niche::WithoutNiche,
+            >,
+        E: RustSpec<Size = rust_spec::size::Sized<Zero>>,
+        <R as ReprC>::CType: Copy,
+        <E as ReprC>::CType: Copy,
+    {
+        type CType = Native<result::abi::Result<R::CType, E::CType>>;
+    }
+    #[cfg(feature = "repr-rust")]
+    impl<R: ReprC, E: ReprC> ReprC for Result<R, E>
+    where
+        R: RustSpec<Size = rust_spec::size::Sized<Zero>>,
+        E: RustSpec<
+                Size = rust_spec::size::Sized<rust_spec::Gt<Zero>>,
+                Niche = rust_spec::niche::WithoutNiche,
+            >,
+        <R as ReprC>::CType: Copy,
+        <E as ReprC>::CType: Copy,
+    {
+        type CType = Native<result::abi::Result<R::CType, E::CType>>;
+    }
+
     impl<'a, R: ?Sized> ReprC for wide::WideRef<'a, R>
     where
-        R: ReprC<CType: crate::CType + wide::Wide<Header: CType + wide::WideHeader<Data: CType>>>
-            + wide::Wide + RustSpec<Layout = StableLayout>,
+        R: ReprC + Wide + RustSpec<Layout = Specified>,
+        <R as ReprC>::CType: Wide<Header: CType + WideHeader<Data: CType>>,
     {
         type CType = wide::abi::WideRef<'a, R::CType>;
     }
+    #[cfg(feature = "repr-rust")]
     impl<'a, R: ?Sized> ReprC for wide::WideRef<'a, R>
     where
-        R: ReprC<CType: crate::CType + wide::Wide<Header: CType + wide::WideHeader<Data: CType>>>
-            + wide::Wide + RustSpec<Layout = Unstable>,
+        R: ReprC + Wide + RustSpec<Layout = Unspecified>,
+        <R as ReprC>::CType: Wide<Header: CType + WideHeader<Data: CType>>,
     {
         type CType = wide::abi::SoftWideRef<R::CType>;
     }
 
     impl<'a, R: ?Sized> ReprC for wide::WideRefMut<'a, R>
     where
-        R: ReprC<CType: crate::CType + wide::Wide<Header: CType + wide::WideHeader<Data: CType>>>
-            + wide::Wide + RustSpec<Layout = StableLayout, Trap = rust_spec::layout::Robust>,
+        R: ReprC + Wide + RustSpec<Layout = Specified, Trap = rust_spec::layout::Robust>,
+        <R as ReprC>::CType: Wide<Header: CType + WideHeader<Data: CType>>,
     {
         type CType = wide::abi::WideRefMut<'a, R::CType>;
     }
     impl<'a, R: ?Sized> ReprC for wide::WideRefMut<'a, R>
     where
-        R: ReprC<CType: crate::CType + wide::Wide<Header: CType + wide::WideHeader<Data: CType>>>
-            + wide::Wide + RustSpec<Layout = StableLayout, Trap = rust_spec::layout::NonRobust>,
+        R: ReprC + Wide + RustSpec<Layout = Specified, Trap = rust_spec::layout::NonRobust>,
+        <R as ReprC>::CType: Wide<Header: CType + WideHeader<Data: CType>>,
     {
         type CType = wide::abi::SoftWideRefMut<R::CType>;
     }
+    #[cfg(feature = "repr-rust")]
     impl<'a, R: ?Sized> ReprC for wide::WideRefMut<'a, R>
     where
-        R: ReprC<CType: crate::CType + wide::Wide<Header: CType + wide::WideHeader<Data: CType>>>
-            + wide::Wide + RustSpec<Layout = Unstable>,
+        R: ReprC + Wide + RustSpec<Layout = Unspecified>,
+        <R as ReprC>::CType: Wide<Header: CType + WideHeader<Data: CType>>,
     {
         type CType = wide::abi::SoftWideRefMut<R::CType>;
     }

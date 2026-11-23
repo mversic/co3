@@ -128,7 +128,7 @@ impl NameStores<'_> {
             let layout_bound = match case {
                 Any => None,
                 Unstable => Some(quote!(Layout = __Co3Unstable,)),
-                _ => Some(quote!(Layout = co3::rust_spec::Stable,)),
+                _ => Some(quote!(Layout = co3::rust_spec::Specified,)),
             };
             let trap_bound = match case {
                 StableRobust => Some(quote!(Trap = co3::rust_spec::layout::Robust,)),
@@ -152,7 +152,7 @@ impl NameStores<'_> {
                     predicates.push(parse_quote!(<#own as co3::rust_spec::RustSpec>::Mutability: co3::rust_spec::mutability::PointerMutability));
                 }
                 if kind == Kind::Box {
-                    let niche = quote!(co3::rust_spec::niche::WithNiche<co3::rust_spec::Stable>);
+                    let niche = quote!(co3::rust_spec::niche::WithNiche<co3::rust_spec::Specified>);
                     predicates.push(parse_quote!(#alloc: co3::rust_spec::RustSpec<#layout_bound Niche = #niche> + co3::ReprC<CType = co3::boxed::abi::Box<#companion>>));
                 }
             }

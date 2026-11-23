@@ -15,10 +15,12 @@ use crate::{
 };
 
 /// Converts owned carrier allocations without assuming their headers have equal layout.
+#[cfg(feature = "repr-rust")]
 pub(crate) trait OwnedBoxCarrier<B>: Sized {
     unsafe fn from_box_carrier(value: B) -> Option<Self>;
     unsafe fn into_box_carrier(self) -> B;
 }
+#[cfg(feature = "repr-rust")]
 impl<C> OwnedBoxCarrier<C> for C {
     unsafe fn from_box_carrier(value: Self) -> Option<Self> {
         Some(value)

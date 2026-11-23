@@ -272,7 +272,10 @@ impl<T: Encode> Encode for Option<T> {}
 impl<T: EncodeUnchecked> EncodeUnchecked for Option<T> {}
 impl<'d, T: Decode<'d>> Decode<'d> for Option<T> {}
 
-unsafe impl<T: AbiCompatibleValidate<CType: Copy>> AbiCompatibleValidate for Option<T> {
+unsafe impl<T: AbiCompatibleValidate<CType: Copy>> AbiCompatibleValidate for Option<T>
+where
+    Self: crate::rust_spec::RustSpec<Layout = crate::rust_spec::Specified>,
+{
     unsafe fn is_valid(target: &Self::CType) -> bool {
         match target.tag {
             0 => true,
@@ -281,7 +284,10 @@ unsafe impl<T: AbiCompatibleValidate<CType: Copy>> AbiCompatibleValidate for Opt
         }
     }
 }
-unsafe impl<T: AbiCompatible<CType: Copy>> AbiCompatible for Option<T> {}
+unsafe impl<T: AbiCompatible<CType: Copy>> AbiCompatible for Option<T> where
+    Self: crate::rust_spec::RustSpec<Layout = crate::rust_spec::Specified>
+{
+}
 
 impl<T: ReprC<CType: Copy>> crate::niche::Niche for Option<T> {
     const NICHE: Self::CType = abi::Option::niche();
@@ -312,8 +318,14 @@ macro_rules! impl_niche_payload {
         impl<T: $crate::convert::Encode> $crate::convert::Encode for $name<T> {}
         impl<T: $crate::convert::EncodeUnchecked> $crate::convert::EncodeUnchecked for $name<T> {}
         impl<'d, T: $crate::convert::Decode<'d>> $crate::convert::Decode<'d> for $name<T> {}
-        unsafe impl<T: $crate::marker::AbiCompatible<CType: Sized>> $crate::marker::AbiCompatible for $name<T> {}
-        unsafe impl<T: $crate::convert::AbiCompatibleValidate<CType: Sized>> $crate::convert::AbiCompatibleValidate for $name<T> {
+        unsafe impl<T: $crate::marker::AbiCompatible<CType: Sized>> $crate::marker::AbiCompatible for $name<T>
+where
+    Self: $crate::rust_spec::RustSpec<Layout = $crate::rust_spec::Specified>,
+{}
+        unsafe impl<T: $crate::convert::AbiCompatibleValidate<CType: Sized>> $crate::convert::AbiCompatibleValidate for $name<T>
+where
+    Self: $crate::rust_spec::RustSpec<Layout = $crate::rust_spec::Specified>,
+{
             unsafe fn is_valid(value: &Self::CType) -> bool {
                 unsafe { T::is_valid(&value.0) }
             }
@@ -392,7 +404,7 @@ impl<T> From<Option<T>> for core::option::Option<T> {
 unsafe impl<T: EmptyStore> EmptyStore for core::option::Option<T> {}
 
 unsafe impl<T> CType for core::option::Option<T> where
-    Self: RustSpec<Layout = rust_spec::Stable, Trap = Robust, Drop = NoDrop>
+    Self: RustSpec<Layout = rust_spec::Specified, Trap = Robust, Drop = NoDrop>
 {
 }
 unsafe impl<T> CFnArg for core::option::Option<T> where
@@ -458,12 +470,18 @@ pub mod abi {
     impl<R: CType> Encode for OptionSome<R> {}
     impl<R: CType> EncodeUnchecked for OptionSome<R> {}
     impl<'d, R: CType> Decode<'d> for OptionSome<R> {}
-    unsafe impl<R: CType> AbiCompatibleValidate for OptionSome<R> {
+    unsafe impl<R: CType> AbiCompatibleValidate for OptionSome<R>
+    where
+        Self: crate::rust_spec::RustSpec<Layout = crate::rust_spec::Specified>,
+    {
         unsafe fn is_valid(_: &Self::CType) -> bool {
             true
         }
     }
-    unsafe impl<R: CType> AbiCompatible for OptionSome<R> {}
+    unsafe impl<R: CType> AbiCompatible for OptionSome<R> where
+        Self: crate::rust_spec::RustSpec<Layout = crate::rust_spec::Specified>
+    {
+    }
 
     impl<R: CType + Copy + Sized> Copy for OptionSome<R> {}
     impl<R: CType + Clone + Sized> Clone for OptionSome<R> {

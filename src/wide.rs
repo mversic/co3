@@ -9,9 +9,11 @@ use core::{
     marker::PhantomData,
     ptr::NonNull,
 };
+#[cfg(feature = "alloc")]
+use rust_spec::Unspecified;
 
 use rust_spec::{
-    RustSpec, Unstable,
+    RustSpec,
     size::{MetaSized, SliceLike},
 };
 
@@ -21,6 +23,7 @@ use crate::{
     marker::{AbiCompatible, Zeroable},
 };
 
+#[cfg(feature = "repr-rust")]
 pub(crate) type WideData<R> = <<R as Wide>::Header as WideHeader>::Data;
 
 /// Describes the data addressed by a dynamically sized type's fixed header.
@@ -515,7 +518,7 @@ where
         <R::Metadata as RustSpec>::__Alignment,
     >;
     type Trap = rust_spec::layout::NonRobust;
-    type Niche = rust_spec::niche::WithNiche<Unstable>;
+    type Niche = rust_spec::niche::WithNiche<Unspecified>;
     type Drop = rust_spec::drop::CustomDrop<rust_spec::drop::AutoDrop>;
     type Mutability =
         <<R::Mutability as rust_spec::mutability::PointerMutability>::Output as core::ops::Add<
@@ -566,14 +569,20 @@ macro_rules! impl_identity_carrier {
         impl<'d, $($params)*> Decode<'d> for $ty<$($args)*> {}
 
 
-        unsafe impl<$($params)*> $crate::convert::AbiCompatibleValidate for $ty<$($args)*> {
+        unsafe impl<$($params)*> $crate::convert::AbiCompatibleValidate for $ty<$($args)*>
+where
+    Self: $crate::rust_spec::RustSpec<Layout = $crate::rust_spec::Specified>,
+{
             #[inline(always)]
             unsafe fn is_valid(_: &Self::CType) -> bool {
                 true
             }
         }
 
-        unsafe impl<$($params)*> AbiCompatible for $ty<$($args)*> {}
+        unsafe impl<$($params)*> AbiCompatible for $ty<$($args)*>
+where
+    Self: $crate::rust_spec::RustSpec<Layout = $crate::rust_spec::Specified>,
+{}
         unsafe impl<$($params)*> CType for $ty<$($args)*> {}
         unsafe impl<$($params)*> CFnArg for $ty<$($args)*> {}
         unsafe impl<$($params)*> CFnReturn for $ty<$($args)*> {}
@@ -864,6 +873,7 @@ pub mod abi {
     }
 
     impl<'a, R: CType + Wide + ?Sized> WideRef<'a, R> {
+        #[cfg(feature = "repr-rust")]
         pub(crate) const fn data(&self) -> *const PointeeData<R> {
             self.data
         }
@@ -1215,7 +1225,7 @@ pub mod abi {
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use rust_spec::Unstable;
+    use rust_spec::Unspecified;
 
     #[cfg(all(feature = "derive", feature = "alloc"))]
     #[test]
@@ -1332,17 +1342,17 @@ pub(crate) mod tests {
         use crate::{ReprC, niche::Niche};
 
         type Stable = WideRefMut<'static, [bool]>;
-        type Unstable = WideRefMut<'static, [(u8,)]>;
+        type Unspecified = WideRefMut<'static, [(u8,)]>;
         static_assertions::assert_type_eq_all!(
             <Stable as ReprC>::CType,
             abi::SoftWideRefMut<<[bool] as crate::ReprC>::CType>
         );
         static_assertions::assert_type_eq_all!(
-            <Unstable as ReprC>::CType,
+            <Unspecified as ReprC>::CType,
             abi::SoftWideRefMut<<[(u8,)] as crate::ReprC>::CType>
         );
         assert!(Stable::is_niche(&<Stable as Niche>::NICHE));
-        assert!(Unstable::is_niche(&<Unstable as Niche>::NICHE));
+        assert!(Unspecified::is_niche(&<Unspecified as Niche>::NICHE));
     }
 
     #[test]
@@ -1406,9 +1416,9 @@ pub(crate) mod tests {
 
         assert_impl_all!(WideBox<[u8]>: crate::ReprC<CType = abi::WideBox<[u8]>>);
         assert_impl_all!(WideBox<[u8]>: rust_spec::RustSpec<
-            Niche = rust_spec::niche::WithNiche<Unstable>,
+            Niche = rust_spec::niche::WithNiche<Unspecified>,
         >);
-        assert_impl_all!(Option<WideBox<[u8]>>: rust_spec::RustSpec<Layout = Unstable>);
+        assert_impl_all!(Option<WideBox<[u8]>>: rust_spec::RustSpec<Layout = Unspecified>);
         assert_not_impl_any!(WideBox<[u8]>: Copy);
         assert_not_impl_any!(WideBox<[bool]>: CType);
 

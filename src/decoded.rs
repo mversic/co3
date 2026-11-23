@@ -1,19 +1,23 @@
 //! Referent-specific decoding and mutable writeback for unstable layouts.
+#[cfg(feature = "repr-rust")]
+use crate::ffi::NulTerminatedBuf;
+#[cfg(all(feature = "alloc", feature = "repr-rust"))]
+use crate::sync::RefMutSliceDecodeStore;
 #[cfg(feature = "alloc")]
 use alloc::{boxed::Box, vec::Vec};
+#[cfg(feature = "alloc")]
+use rust_spec::Unspecified;
+#[cfg(all(feature = "alloc", feature = "repr-rust"))]
+use rust_spec::size::{MetaSized, SliceLike};
 
 use disjoint_impls::disjoint_impls;
-use rust_spec::{RustSpec, Unstable};
+use rust_spec::RustSpec;
 #[cfg(feature = "alloc")]
-use rust_spec::{
-    mutability::{Exclusive, ExclusiveKind},
-    size::{MetaSized, SliceLike},
-};
+use rust_spec::mutability::{Exclusive, ExclusiveKind};
 
 use crate::{
     CType, ReprC,
     convert::{DecodeMove, EmptyStore, EncodeMove, Store},
-    ffi::NulTerminatedBuf,
     marker::Native,
     niche::Niche,
     option::abi::{Option as AbiOption, OptionSome as AbiOptionSome},
@@ -24,7 +28,6 @@ use crate::{
 #[cfg(feature = "alloc")]
 use crate::{
     boxed::abi::Box as AbiBox,
-    sync::RefMutSliceDecodeStore,
     vec::abi::Vec as AbiVec,
     wide::{abi::WideBox as AbiWideBox, abi::WideRefCarrier},
 };
@@ -40,7 +43,7 @@ where
     crate::sync::DecodedField<'d, T, <&'d T as DecodeMove<'d>>::Store, T::Layout>:
         TakeDecoded<Value = T>,
 {
-    unsafe { DecodedField::<T, _, T::Layout>::decode(source, store) }
+    unsafe { DecodedField::<T, <&'d T as DecodeMove<'d>>::Store, T::Layout>::decode(source, store) }
 }
 
 pub(crate) unsafe fn decode_ref_field_unchecked<'d, 'itm: 'd, T: ReprC + RustSpec + 'd>(
@@ -52,7 +55,11 @@ where
     crate::sync::DecodedField<'d, T, <&'d T as DecodeMove<'d>>::Store, T::Layout>:
         TakeDecoded<Value = T>,
 {
-    unsafe { DecodedField::<T, _, T::Layout>::decode_unchecked(source, store) }
+    unsafe {
+        DecodedField::<T, <&'d T as DecodeMove<'d>>::Store, T::Layout>::decode_unchecked(
+            source, store,
+        )
+    }
 }
 
 disjoint_impls! {
@@ -77,7 +84,7 @@ disjoint_impls! {
             store: &'itm mut Self::Store,
         ) -> Option<&'d Self>
         where
-            &'d Self: ReprC<CType: crate::CType + Sized>;
+            &'d Self: ReprC<CType: Sized>;
 
         /// Decode a reference whose value validity is guaranteed by the caller.
         ///
@@ -89,21 +96,21 @@ disjoint_impls! {
             store: &'itm mut Self::Store,
         ) -> &'d Self
         where
-            &'d Self: ReprC<CType: crate::CType + Sized>,
+            &'d Self: ReprC<CType: Sized>,
         {
             unsafe { Self::soft_decode_ref(source, store) }.unwrap()
         }
     }
 
     #[cfg(feature = "alloc")]
-    unsafe impl<'d, T: 'd, S: rust_spec::size::SizedKind>
-        SoftDecodeRef<'d> for Box<T>
+    unsafe impl<'d, T: 'd, S: rust_spec::size::SizedKind> SoftDecodeRef<'d> for Box<T>
     where
         Self: ReprC<CType = AbiBox<<T as ReprC>::CType>>,
-        T: ReprC<CType: CType + Sized> + RustSpec<Size = rust_spec::size::Sized<S>>,
+        T: ReprC + RustSpec<Size = rust_spec::size::Sized<S>>,
         &'d Self: ReprC<CType = SoftRef<<Self as ReprC>::CType>>,
         &'d T: DecodeMove<'d, Store: Store + Default + Sized + TakeDecoded<Value = T>>
-            + ReprC<CType: crate::CType + RefCarrier<Pointee = <T as ReprC>::CType>>,
+            + ReprC<CType: RefCarrier<Pointee = <T as ReprC>::CType>>,
+        <T as ReprC>::CType: Sized,
     {
         type Store = RefSizedDecodeStore<Self, <&'d T as DecodeMove<'d>>::Store>;
 
@@ -112,10 +119,9 @@ disjoint_impls! {
             store: &'itm mut Self::Store,
         ) -> Option<&'d Self> {
             let header = unsafe { *source.into_ref()? };
-            let carrier =
-                unsafe { RefCarrier::from_raw(header.as_ptr()) };
+            let carrier = unsafe { RefCarrier::from_raw(header.as_ptr()) };
             store.decode(|field| {
-                let value = unsafe { DecodedField::<T, _, Unstable>::decode(carrier, field)? };
+                let value = unsafe { DecodedField::<T, _, Unspecified>::decode(carrier, field)? };
                 Some(Box::new(value))
             })
         }
@@ -124,11 +130,11 @@ disjoint_impls! {
             store: &'itm mut Self::Store,
         ) -> &'d Self {
             let header = unsafe { *source.into_ref().unwrap_unchecked() };
-            let carrier =
-                unsafe { RefCarrier::from_raw(header.as_ptr()) };
+            let carrier = unsafe { RefCarrier::from_raw(header.as_ptr()) };
             store
                 .decode(|field| {
-                    let value = unsafe { DecodedField::<T, _, Unstable>::decode_unchecked(carrier, field) };
+                    let value =
+                        unsafe { DecodedField::<T, _, Unspecified>::decode_unchecked(carrier, field) };
                     Some(Box::new(value))
                 })
                 .expect("unchecked decoding produces a value")
@@ -136,22 +142,24 @@ disjoint_impls! {
     }
 
     #[cfg(feature = "alloc")]
-    unsafe impl<'d, T: ?Sized + alloc::borrow::ToOwned + 'd, __Interior: ExclusiveKind> SoftDecodeRef<'d> for Box<T>
+    unsafe impl<'d, T: ?Sized + alloc::borrow::ToOwned + 'd, __Interior: ExclusiveKind>
+        SoftDecodeRef<'d> for Box<T>
     where
         Self: ReprC<CType = AbiWideBox<<T as ReprC>::CType>>,
         T: ReprC<
-                CType: crate::CType + crate::wide::Wide<
+                CType: crate::CType
+                           + crate::wide::Wide<
                     Header: crate::wide::WideHeader<Data: CType>,
                     Metadata = usize,
                 >,
             > + RustSpec<
-                Layout = rust_spec::Stable,
+                Layout = rust_spec::Specified,
                 Mutability = Exclusive<__Interior>,
                 Size = rust_spec::size::MetaSized<rust_spec::size::SliceLike>,
             >,
         &'d Self: ReprC<CType = SoftRef<<Self as ReprC>::CType>>,
         &'d T: DecodeMove<'d, Store: Store + Default + Sized>
-            + ReprC<CType: crate::CType + WideRefCarrier<Pointee = <T as ReprC>::CType>>,
+            + ReprC<CType: WideRefCarrier<Pointee = <T as ReprC>::CType>>,
         Self: From<<T as alloc::borrow::ToOwned>::Owned>,
     {
         type Store = RefSizedDecodeStore<Self, <&'d T as DecodeMove<'d>>::Store>;
@@ -160,8 +168,9 @@ disjoint_impls! {
             store: &'itm mut Self::Store,
         ) -> Option<&'d Self> {
             let header = unsafe { *source.into_ref()? };
-            let carrier =
-                unsafe { WideRefCarrier::from_raw_parts(header.as_ptr().cast_const(), header.metadata()) };
+            let carrier = unsafe {
+                WideRefCarrier::from_raw_parts(header.as_ptr().cast_const(), header.metadata())
+            };
             store.decode(|field| {
                 let value = unsafe { <&'d T>::soft_decode(carrier, field)? };
                 Some(alloc::borrow::ToOwned::to_owned(value).into())
@@ -172,8 +181,9 @@ disjoint_impls! {
             store: &'itm mut Self::Store,
         ) -> &'d Self {
             let header = unsafe { *source.into_ref().unwrap_unchecked() };
-            let carrier =
-                unsafe { WideRefCarrier::from_raw_parts(header.as_ptr().cast_const(), header.metadata()) };
+            let carrier = unsafe {
+                WideRefCarrier::from_raw_parts(header.as_ptr().cast_const(), header.metadata())
+            };
             store
                 .decode(|field| {
                     let value = unsafe { <&'d T>::soft_decode_unchecked(carrier, field) };
@@ -184,21 +194,23 @@ disjoint_impls! {
     }
 
     #[cfg(feature = "alloc")]
+    #[cfg(feature = "repr-rust")]
     unsafe impl<'d, T: ?Sized + 'd> SoftDecodeRef<'d> for Box<T>
     where
         Self: ReprC<CType = AbiWideBox<<T as ReprC>::CType>>,
         T: ReprC<
-                CType: crate::CType + crate::wide::Wide<
+                CType: crate::CType
+                           + crate::wide::Wide<
                     Header: crate::wide::WideHeader<Data: CType>,
                     Metadata = usize,
                 >,
             > + RustSpec<
-                Layout = Unstable,
+                Layout = Unspecified,
                 Size = rust_spec::size::MetaSized<rust_spec::size::SliceLike>,
             >,
         &'d Self: ReprC<CType = SoftRef<<Self as ReprC>::CType>>,
         &'d T: DecodeMove<'d, Store: Store + Default + Sized + TakeDecoded>
-            + ReprC<CType: crate::CType + WideRefCarrier<Pointee = <T as ReprC>::CType>>,
+            + ReprC<CType: WideRefCarrier<Pointee = <T as ReprC>::CType>>,
         Self: From<<<&'d T as DecodeMove<'d>>::Store as TakeDecoded>::Value>,
     {
         type Store = RefSizedDecodeStore<Self, <&'d T as DecodeMove<'d>>::Store>;
@@ -207,10 +219,11 @@ disjoint_impls! {
             store: &'itm mut Self::Store,
         ) -> Option<&'d Self> {
             let header = unsafe { *source.into_ref()? };
-            let carrier =
-                unsafe { WideRefCarrier::from_raw_parts(header.as_ptr().cast_const(), header.metadata()) };
+            let carrier = unsafe {
+                WideRefCarrier::from_raw_parts(header.as_ptr().cast_const(), header.metadata())
+            };
             store.decode(|field| {
-                let value = unsafe { DecodedField::<T, _, Unstable>::decode(carrier, field)? };
+                let value = unsafe { DecodedField::<T, _, Unspecified>::decode(carrier, field)? };
                 Some(value.into())
             })
         }
@@ -219,28 +232,30 @@ disjoint_impls! {
             store: &'itm mut Self::Store,
         ) -> &'d Self {
             let header = unsafe { *source.into_ref().unwrap_unchecked() };
-            let carrier =
-                unsafe { WideRefCarrier::from_raw_parts(header.as_ptr().cast_const(), header.metadata()) };
+            let carrier = unsafe {
+                WideRefCarrier::from_raw_parts(header.as_ptr().cast_const(), header.metadata())
+            };
             store
                 .decode(|field| {
-                    let value = unsafe { DecodedField::<T, _, Unstable>::decode_unchecked(carrier, field) };
+                    let value =
+                        unsafe { DecodedField::<T, _, Unspecified>::decode_unchecked(carrier, field) };
                     Some(value.into())
                 })
                 .expect("unchecked decoding produces a value")
         }
     }
 
-    unsafe impl<'d, T: ReprC<CType: CType + Copy> + RustSpec<Layout: Sized> + 'd>
-        SoftDecodeRef<'d> for Option<T>
+    #[cfg(feature = "repr-rust")]
+    unsafe impl<'d, T: ReprC + RustSpec<Layout: Sized> + 'd> SoftDecodeRef<'d> for Option<T>
     where
-        crate::sync::DecodedField<
-            'd, T, <&'d T as DecodeMove<'d>>::Store, <T as RustSpec>::Layout,
-        >: TakeDecoded<Value = T>,
+        crate::sync::DecodedField<'d, T, <&'d T as DecodeMove<'d>>::Store, <T as RustSpec>::Layout>:
+            TakeDecoded<Value = T>,
         Self: ReprC<CType = Native<AbiOption<<T as ReprC>::CType>>>,
         &'d Self: ReprC<CType = SoftRef<<Self as ReprC>::CType>>,
         T: RustSpec<Niche = rust_spec::niche::WithoutNiche>,
         &'d T: DecodeMove<'d, Store: Store + Default + Sized>
-            + ReprC<CType: crate::CType + RefCarrier<Pointee = <T as ReprC>::CType>>,
+            + ReprC<CType: RefCarrier<Pointee = <T as ReprC>::CType>>,
+        <T as ReprC>::CType: Copy,
     {
         type Store = RefSizedDecodeStore<Self, Option<<&'d T as DecodeMove<'d>>::Store>>;
         unsafe fn soft_decode_ref<'itm: 'd>(
@@ -255,12 +270,7 @@ disjoint_impls! {
                 }
                 Some(value) => {
                     let field = fields.insert(Default::default());
-                    let value = unsafe {
-                        decode_ref_field::<T>(
-                            RefCarrier::from_raw(value),
-                            field,
-                        )
-                    }?;
+                    let value = unsafe { decode_ref_field::<T>(RefCarrier::from_raw(value), field) }?;
                     Some(Self::Some(value))
                 }
             })
@@ -279,10 +289,7 @@ disjoint_impls! {
                     Some(value) => {
                         let field = fields.insert(Default::default());
                         let value = unsafe {
-                            decode_ref_field_unchecked::<T>(
-                                RefCarrier::from_raw(value),
-                                field,
-                            )
+                            decode_ref_field_unchecked::<T>(RefCarrier::from_raw(value), field)
                         };
                         Some(Self::Some(value))
                     }
@@ -291,27 +298,23 @@ disjoint_impls! {
         }
     }
 
-    unsafe impl<
-        'd,
-        T: ReprC<CType: CType + Copy> + RustSpec<Layout: Sized> + 'd,
-        E: ReprC<CType: CType + Copy> + RustSpec<Layout: Sized> + 'd,
-        K: rust_spec::size::SizedKind,
-    > SoftDecodeRef<'d> for Result<T, E>
+    #[cfg(feature = "repr-rust")]
+    unsafe impl<'d, T: ReprC + RustSpec<Layout: Sized> + 'd, E: ReprC + RustSpec<Layout: Sized> + 'd>
+        SoftDecodeRef<'d> for Result<T, E>
     where
-        crate::sync::DecodedField<
-            'd, E, <&'d E as DecodeMove<'d>>::Store, <E as RustSpec>::Layout,
-        >: TakeDecoded<Value = E>,
-        crate::sync::DecodedField<
-            'd, T, <&'d T as DecodeMove<'d>>::Store, <T as RustSpec>::Layout,
-        >: TakeDecoded<Value = T>,
-        Self: ReprC<CType = Native<AbiResult<<T as ReprC>::CType, <E as ReprC>::CType>>>,
+        Self:
+            ReprC<CType = Native<crate::result::abi::Result<<T as ReprC>::CType, <E as ReprC>::CType>>>,
+        crate::sync::DecodedField<'d, E, <&'d E as DecodeMove<'d>>::Store, <E as RustSpec>::Layout>:
+            TakeDecoded<Value = E>,
+        crate::sync::DecodedField<'d, T, <&'d T as DecodeMove<'d>>::Store, <T as RustSpec>::Layout>:
+            TakeDecoded<Value = T>,
         &'d Self: ReprC<CType = SoftRef<<Self as ReprC>::CType>>,
-        T: RustSpec<Size = rust_spec::size::Sized<K>>,
-        E: RustSpec<Size = rust_spec::size::Sized<K>>,
-        &'d T: DecodeMove<'d, Store: Store + Default + Sized>
-            + ReprC<CType: crate::CType + RefCarrier<Pointee = <T as ReprC>::CType>>,
-        &'d E: DecodeMove<'d, Store: Store + Default + Sized>
-            + ReprC<CType: crate::CType + RefCarrier<Pointee = <E as ReprC>::CType>>,
+        &'d T: DecodeMove<'d>,
+        &'d E: DecodeMove<'d>,
+        <T as ReprC>::CType: Copy,
+        <E as ReprC>::CType: Copy,
+        &'d T: ReprC<CType: RefCarrier<Pointee = <T as ReprC>::CType>>,
+        &'d E: ReprC<CType: RefCarrier<Pointee = <E as ReprC>::CType>>,
     {
         type Store = RefSizedDecodeStore<
             Self,
@@ -327,24 +330,14 @@ disjoint_impls! {
                     let Ok(field) = fields.insert(Ok(Default::default())) else {
                         unreachable!()
                     };
-                    let value = unsafe {
-                        decode_ref_field::<T>(
-                            RefCarrier::from_raw(value),
-                            field,
-                        )
-                    }?;
+                    let value = unsafe { decode_ref_field::<T>(RefCarrier::from_raw(value), field) }?;
                     Some(Self::Ok(value))
                 }
                 Err(value) => {
                     let Err(field) = fields.insert(Err(Default::default())) else {
                         unreachable!()
                     };
-                    let value = unsafe {
-                        decode_ref_field::<E>(
-                            RefCarrier::from_raw(value),
-                            field,
-                        )
-                    }?;
+                    let value = unsafe { decode_ref_field::<E>(RefCarrier::from_raw(value), field) }?;
                     Some(Self::Err(value))
                 }
             })
@@ -361,10 +354,7 @@ disjoint_impls! {
                             unreachable!()
                         };
                         let value = unsafe {
-                            decode_ref_field_unchecked::<T>(
-                                RefCarrier::from_raw(value),
-                                field,
-                            )
+                            decode_ref_field_unchecked::<T>(RefCarrier::from_raw(value), field)
                         };
                         Some(Self::Ok(value))
                     }
@@ -373,10 +363,7 @@ disjoint_impls! {
                             unreachable!()
                         };
                         let value = unsafe {
-                            decode_ref_field_unchecked::<E>(
-                                RefCarrier::from_raw(value),
-                                field,
-                            )
+                            decode_ref_field_unchecked::<E>(RefCarrier::from_raw(value), field)
                         };
                         Some(Self::Err(value))
                     }
@@ -385,17 +372,16 @@ disjoint_impls! {
         }
     }
 
-    unsafe impl<'d, T: Niche<CType: CType + Sized> + RustSpec<Layout: Sized> + 'd, N: rust_spec::layout::LayoutKind>
+    unsafe impl<'d, T: Niche + RustSpec<Layout: Sized> + 'd, N: rust_spec::layout::LayoutKind>
         SoftDecodeRef<'d> for Option<T>
     where
-        crate::sync::DecodedField<
-            'd, T, <&'d T as DecodeMove<'d>>::Store, <T as RustSpec>::Layout,
-        >: TakeDecoded<Value = T>,
+        crate::sync::DecodedField<'d, T, <&'d T as DecodeMove<'d>>::Store, <T as RustSpec>::Layout>:
+            TakeDecoded<Value = T>,
         T: RustSpec<Niche = rust_spec::niche::WithNiche<N>>,
         Self: ReprC<CType = Native<AbiOptionSome<<T as ReprC>::CType>>>,
         &'d Self: ReprC<CType = SoftRef<<Self as ReprC>::CType>>,
         &'d T: DecodeMove<'d, Store: Store + Default + Sized>
-            + ReprC<CType: crate::CType + RefCarrier<Pointee = <T as ReprC>::CType>>,
+            + ReprC<CType: RefCarrier<Pointee = <T as ReprC>::CType>>,
     {
         type Store = RefSizedDecodeStore<Self, Option<<&'d T as DecodeMove<'d>>::Store>>;
         unsafe fn soft_decode_ref<'itm: 'd>(
@@ -441,23 +427,23 @@ disjoint_impls! {
     }
     unsafe impl<
         'd,
-        T: Niche<CType: CType + Sized> + RustSpec<Layout: Sized> + 'd,
+        T: Niche + RustSpec<Layout: Sized> + 'd,
+        E: Default + ReprC + 'd,
         N: rust_spec::layout::LayoutKind,
-        E: Default + ReprC<CType: CType + Sized> + 'd,
     > SoftDecodeRef<'d> for Result<T, E>
     where
-        crate::sync::DecodedField<
-            'd, T, <&'d T as DecodeMove<'d>>::Store, <T as RustSpec>::Layout,
-        >: TakeDecoded<Value = T>,
-        T: RustSpec<
-                Niche = rust_spec::niche::WithNiche<N>,
-                Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>,
-            >,
+        T: RustSpec<Niche = rust_spec::niche::WithNiche<N>>,
+        Self: ReprC<
+            CType = Native<crate::result::abi::ResultOk<<T as ReprC>::CType, <E as ReprC>::CType>>,
+        >,
+        crate::sync::DecodedField<'d, T, <&'d T as DecodeMove<'d>>::Store, <T as RustSpec>::Layout>:
+            TakeDecoded<Value = T>,
+        T: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>,
         E: RustSpec<Size = rust_spec::size::Sized<rust_spec::Zero>>,
-        Self: ReprC<CType = Native<AbiResultOk<<T as ReprC>::CType, <E as ReprC>::CType>>>,
         &'d Self: ReprC<CType = SoftRef<<Self as ReprC>::CType>>,
-        &'d T: DecodeMove<'d, Store: Store + Default + Sized>
-            + ReprC<CType: crate::CType + RefCarrier<Pointee = <T as ReprC>::CType>>,
+        &'d T: DecodeMove<'d>,
+        <E as ReprC>::CType: Sized,
+        &'d T: ReprC<CType: RefCarrier<Pointee = <T as ReprC>::CType>>,
     {
         type Store = RefSizedDecodeStore<Self, Option<<&'d T as DecodeMove<'d>>::Store>>;
         unsafe fn soft_decode_ref<'itm: 'd>(
@@ -503,23 +489,23 @@ disjoint_impls! {
     }
     unsafe impl<
         'd,
-        E: Niche<CType: CType + Sized> + RustSpec<Layout: Sized> + 'd,
+        E: Niche + RustSpec<Layout: Sized> + 'd,
+        T: Default + ReprC + 'd,
         N: rust_spec::layout::LayoutKind,
-        T: Default + ReprC<CType: CType + Sized> + 'd,
     > SoftDecodeRef<'d> for Result<T, E>
     where
-        crate::sync::DecodedField<
-            'd, E, <&'d E as DecodeMove<'d>>::Store, <E as RustSpec>::Layout,
-        >: TakeDecoded<Value = E>,
-        E: RustSpec<
-                Niche = rust_spec::niche::WithNiche<N>,
-                Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>,
-            >,
+        E: RustSpec<Niche = rust_spec::niche::WithNiche<N>>,
+        Self: ReprC<
+            CType = Native<crate::result::abi::ResultErr<<T as ReprC>::CType, <E as ReprC>::CType>>,
+        >,
+        crate::sync::DecodedField<'d, E, <&'d E as DecodeMove<'d>>::Store, <E as RustSpec>::Layout>:
+            TakeDecoded<Value = E>,
+        E: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>,
         T: RustSpec<Size = rust_spec::size::Sized<rust_spec::Zero>>,
-        Self: ReprC<CType = Native<AbiResultErr<<T as ReprC>::CType, <E as ReprC>::CType>>>,
         &'d Self: ReprC<CType = SoftRef<<Self as ReprC>::CType>>,
-        &'d E: DecodeMove<'d, Store: Store + Default + Sized>
-            + ReprC<CType: crate::CType + RefCarrier<Pointee = <E as ReprC>::CType>>,
+        &'d E: DecodeMove<'d>,
+        <T as ReprC>::CType: Sized,
+        &'d E: ReprC<CType: RefCarrier<Pointee = <E as ReprC>::CType>>,
     {
         type Store = RefSizedDecodeStore<Self, Option<<&'d E as DecodeMove<'d>>::Store>>;
         unsafe fn soft_decode_ref<'itm: 'd>(
@@ -564,11 +550,11 @@ disjoint_impls! {
         }
     }
     // Decode borrowed vector headers without taking ownership of their allocations.
-
 }
 
 // Null-terminated referents are implemented individually so downstream types
 // can provide their own reference decoder.
+#[cfg(feature = "repr-rust")]
 macro_rules! impl_nul_decode_ref {
     ($ty:ty) => {
         unsafe impl<'d> SoftDecodeRef<'d> for $ty {
@@ -594,7 +580,9 @@ macro_rules! impl_nul_decode_ref {
     };
 }
 
+#[cfg(feature = "repr-rust")]
 impl_nul_decode_ref!(core::ffi::CStr);
+#[cfg(feature = "repr-rust")]
 impl_nul_decode_ref!(core::mem::ManuallyDrop<core::ffi::CStr>);
 
 disjoint_impls! {
@@ -620,7 +608,7 @@ disjoint_impls! {
             store: &'itm mut Self::Store,
         ) -> Option<&'d mut Self>
         where
-            &'d mut Self: ReprC<CType: crate::CType + Sized>;
+            &'d mut Self: ReprC<CType: Sized>;
 
         /// Decode a reference whose value validity is guaranteed by the caller.
         ///
@@ -632,18 +620,22 @@ disjoint_impls! {
             store: &'itm mut Self::Store,
         ) -> &'d mut Self
         where
-            &'d mut Self: ReprC<CType: crate::CType + Sized>,
+            &'d mut Self: ReprC<CType: Sized>,
         {
             unsafe { Self::soft_decode_mut(source, store) }.unwrap()
         }
     }
 
-    unsafe impl<'d, T: ReprC<CType: CType + Copy> + 'd> SoftDecodeMut<'d> for Option<T>
+    #[cfg(feature = "repr-rust")]
+    unsafe impl<'d, T: ReprC + 'd> SoftDecodeMut<'d> for Option<T>
     where
         T: crate::borrow::BorrowedDecode<'d>,
-        Self: EncodeMove<Store: EmptyStore> + RustSpec + ReprC<CType = Native<AbiOption<<T as ReprC>::CType>>>,
+        Self: EncodeMove<Store: EmptyStore>
+            + RustSpec
+            + ReprC<CType = Native<AbiOption<<T as ReprC>::CType>>>,
         &'d mut Self: ReprC<CType = SoftRefMut<<Self as ReprC>::CType>>,
         T: RustSpec<Niche = rust_spec::niche::WithoutNiche>,
+        <T as ReprC>::CType: Copy,
     {
         type Store =
             RefMutSizedDecodeStore<Self, Option<<T as crate::borrow::BorrowedDecode<'d>>::Store>>;
@@ -690,19 +682,16 @@ disjoint_impls! {
         }
     }
 
-    unsafe impl<
-        'd,
-        T: ReprC<CType: CType + Copy> + 'd,
-        E: ReprC<CType: CType + Copy> + 'd,
-        K: rust_spec::size::SizedKind,
-    > SoftDecodeMut<'d> for Result<T, E>
+    unsafe impl<'d, T: ReprC + 'd, E: ReprC + 'd> SoftDecodeMut<'d> for Result<T, E>
     where
         T: crate::borrow::BorrowedDecode<'d>,
         E: crate::borrow::BorrowedDecode<'d>,
-        Self: EncodeMove<Store: EmptyStore> + RustSpec + ReprC<CType = Native<AbiResult<<T as ReprC>::CType, <E as ReprC>::CType>>>,
+        Self: EncodeMove<Store: EmptyStore>
+            + RustSpec
+            + ReprC<CType = Native<AbiResult<<T as ReprC>::CType, <E as ReprC>::CType>>>,
         &'d mut Self: ReprC<CType = SoftRefMut<<Self as ReprC>::CType>>,
-        T: RustSpec<Size = rust_spec::size::Sized<K>>,
-        E: RustSpec<Size = rust_spec::size::Sized<K>>,
+        <T as ReprC>::CType: Copy,
+        <E as ReprC>::CType: Copy,
     {
         type Store = RefMutSizedDecodeStore<
             Self,
@@ -766,12 +755,13 @@ disjoint_impls! {
         }
     }
 
-    unsafe impl<'d, T: Niche<CType: CType + Copy + Sized> + 'd, N: rust_spec::layout::LayoutKind>
-        SoftDecodeMut<'d> for Option<T>
+    unsafe impl<'d, T: Niche + 'd, N: rust_spec::layout::LayoutKind> SoftDecodeMut<'d> for Option<T>
     where
         T: crate::borrow::BorrowedDecode<'d>,
         T: RustSpec<Niche = rust_spec::niche::WithNiche<N>>,
-        Self: EncodeMove<Store: EmptyStore> + RustSpec + ReprC<CType = Native<AbiOptionSome<<T as ReprC>::CType>>>,
+        Self: EncodeMove<Store: EmptyStore>
+            + RustSpec
+            + ReprC<CType = Native<AbiOptionSome<<T as ReprC>::CType>>>,
         &'d mut Self: ReprC<CType = SoftRefMut<<Self as ReprC>::CType>>,
     {
         type Store =
@@ -813,21 +803,19 @@ disjoint_impls! {
             .expect("unchecked decoding produces a value")
         }
     }
-    unsafe impl<
-        'd,
-        T: Niche<CType: CType + Copy + Sized> + 'd,
-        N: rust_spec::layout::LayoutKind,
-        E: Default + ReprC<CType: CType + Sized> + 'd,
-    > SoftDecodeMut<'d> for Result<T, E>
+    unsafe impl<'d, T: Niche + 'd, E: Default + ReprC + 'd, N: rust_spec::layout::LayoutKind>
+        SoftDecodeMut<'d> for Result<T, E>
     where
+        T: RustSpec<Niche = rust_spec::niche::WithNiche<N>>,
         T: crate::borrow::BorrowedDecode<'d>,
-        T: RustSpec<
-                Niche = rust_spec::niche::WithNiche<N>,
-                Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>,
-            >,
+        T: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>,
         E: RustSpec<Size = rust_spec::size::Sized<rust_spec::Zero>>,
-        Self: EncodeMove<Store: EmptyStore> + RustSpec + ReprC<CType = Native<AbiResultOk<<T as ReprC>::CType, <E as ReprC>::CType>>>,
+        Self: EncodeMove<Store: EmptyStore>
+            + RustSpec
+            + ReprC<CType = Native<AbiResultOk<<T as ReprC>::CType, <E as ReprC>::CType>>>,
         &'d mut Self: ReprC<CType = SoftRefMut<<Self as ReprC>::CType>>,
+        <T as ReprC>::CType: Copy,
+        <E as ReprC>::CType: Sized,
     {
         type Store =
             RefMutSizedDecodeStore<Self, Option<<T as crate::borrow::BorrowedDecode<'d>>::Store>>;
@@ -868,21 +856,19 @@ disjoint_impls! {
             .expect("unchecked decoding produces a value")
         }
     }
-    unsafe impl<
-        'd,
-        E: Niche<CType: CType + Copy + Sized> + 'd,
-        N: rust_spec::layout::LayoutKind,
-        T: Default + ReprC<CType: CType + Sized> + 'd,
-    > SoftDecodeMut<'d> for Result<T, E>
+    unsafe impl<'d, E: Niche + 'd, T: Default + ReprC + 'd, N: rust_spec::layout::LayoutKind>
+        SoftDecodeMut<'d> for Result<T, E>
     where
+        E: RustSpec<Niche = rust_spec::niche::WithNiche<N>>,
         E: crate::borrow::BorrowedDecode<'d>,
-        E: RustSpec<
-                Niche = rust_spec::niche::WithNiche<N>,
-                Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>,
-            >,
+        E: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>,
         T: RustSpec<Size = rust_spec::size::Sized<rust_spec::Zero>>,
-        Self: EncodeMove<Store: EmptyStore> + RustSpec + ReprC<CType = Native<AbiResultErr<<T as ReprC>::CType, <E as ReprC>::CType>>>,
+        Self: EncodeMove<Store: EmptyStore>
+            + RustSpec
+            + ReprC<CType = Native<AbiResultErr<<T as ReprC>::CType, <E as ReprC>::CType>>>,
         &'d mut Self: ReprC<CType = SoftRefMut<<Self as ReprC>::CType>>,
+        <E as ReprC>::CType: Copy,
+        <T as ReprC>::CType: Sized,
     {
         type Store =
             RefMutSizedDecodeStore<Self, Option<<E as crate::borrow::BorrowedDecode<'d>>::Store>>;
@@ -932,10 +918,10 @@ disjoint_impls! {
     // the direct DecodeMove path. Likewise, reconstructing &&mut T would duplicate
     // an exclusive reference. AbiOption/AbiResult are stable identity carriers and use
     // the direct reference path rather than an unstable referent decoder.
-
 }
 
 #[cfg(feature = "alloc")]
+#[cfg(feature = "repr-rust")]
 unsafe impl<'d, R: ReprC<CType: CType + Sized + 'd> + RustSpec + 'd, __Interior: ExclusiveKind>
     SoftDecodeRef<'d> for [R]
 where
@@ -943,8 +929,7 @@ where
         TakeDecoded<Value = R>,
     [R]: RustSpec<Size = MetaSized<SliceLike>, Mutability = Exclusive<__Interior>>,
     &'d Self: ReprC<CType = crate::wide::abi::SoftWideRef<<Self as ReprC>::CType>>,
-    &'d R: DecodeMove<'d, Store: Store + Default + Sized>
-        + ReprC<CType: RefCarrier<Pointee = <R as ReprC>::CType>>,
+    &'d R: DecodeMove<'d> + ReprC<CType: RefCarrier<Pointee = <R as ReprC>::CType>>,
 {
     type Store = RefSizedDecodeStore<Vec<R>, Box<[<&'d R as DecodeMove<'d>>::Store]>>;
 
@@ -993,15 +978,14 @@ where
     }
 }
 
-unsafe impl<'d, T: ReprC<CType: CType + Copy> + RustSpec + 'd> SoftDecodeRef<'d>
-    for crate::option::Option<T>
+unsafe impl<'d, T: ReprC + RustSpec + 'd> SoftDecodeRef<'d> for crate::option::Option<T>
 where
     crate::sync::DecodedField<'d, T, <&'d T as DecodeMove<'d>>::Store, <T as RustSpec>::Layout>:
         TakeDecoded<Value = T>,
     Self: ReprC<CType = AbiOption<<T as ReprC>::CType>>,
     &'d Self: ReprC<CType = SoftRef<<Self as ReprC>::CType>>,
-    &'d T: DecodeMove<'d, Store: Store + Default + Sized>
-        + ReprC<CType: RefCarrier<Pointee = <T as ReprC>::CType>>,
+    &'d T: DecodeMove<'d> + ReprC<CType: RefCarrier<Pointee = <T as ReprC>::CType>>,
+    <T as ReprC>::CType: Copy,
 {
     type Store = RefSizedDecodeStore<Self, Option<<&'d T as DecodeMove<'d>>::Store>>;
     unsafe fn soft_decode_ref<'itm: 'd>(
@@ -1044,11 +1028,8 @@ where
     }
 }
 
-unsafe impl<
-    'd,
-    T: ReprC<CType: CType + Copy> + RustSpec + 'd,
-    E: ReprC<CType: CType + Copy> + RustSpec + 'd,
-> SoftDecodeRef<'d> for crate::result::Result<T, E>
+unsafe impl<'d, T: ReprC + RustSpec + 'd, E: ReprC + RustSpec + 'd> SoftDecodeRef<'d>
+    for crate::result::Result<T, E>
 where
     crate::sync::DecodedField<'d, E, <&'d E as DecodeMove<'d>>::Store, <E as RustSpec>::Layout>:
         TakeDecoded<Value = E>,
@@ -1056,10 +1037,10 @@ where
         TakeDecoded<Value = T>,
     Self: ReprC<CType = AbiResult<<T as ReprC>::CType, <E as ReprC>::CType>>,
     &'d Self: ReprC<CType = SoftRef<<Self as ReprC>::CType>>,
-    &'d T: DecodeMove<'d, Store: Store + Default + Sized>
-        + ReprC<CType: RefCarrier<Pointee = <T as ReprC>::CType>>,
-    &'d E: DecodeMove<'d, Store: Store + Default + Sized>
-        + ReprC<CType: RefCarrier<Pointee = <E as ReprC>::CType>>,
+    &'d T: DecodeMove<'d> + ReprC<CType: RefCarrier<Pointee = <T as ReprC>::CType>>,
+    &'d E: DecodeMove<'d> + ReprC<CType: RefCarrier<Pointee = <E as ReprC>::CType>>,
+    <T as ReprC>::CType: Copy,
+    <E as ReprC>::CType: Copy,
 {
     type Store = RefSizedDecodeStore<
         Self,
@@ -1127,9 +1108,8 @@ unsafe fn decode_vec_ref<'d, 'itm: 'd, T>(
 where
     crate::sync::DecodedField<'d, T, <&'d T as DecodeMove<'d>>::Store, <T as RustSpec>::Layout>:
         TakeDecoded<Value = T>,
-    T: ReprC<CType: CType + Sized> + RustSpec + 'd,
-    &'d T: DecodeMove<'d, Store: Store + Default + Sized>
-        + ReprC<CType: RefCarrier<Pointee = <T as ReprC>::CType>>,
+    T: ReprC<CType: Sized> + RustSpec + 'd,
+    &'d T: DecodeMove<'d, Store: Sized> + ReprC<CType: RefCarrier<Pointee = <T as ReprC>::CType>>,
 {
     if header.as_ptr().is_null() || header.len() > header.capacity() {
         return None;
@@ -1154,9 +1134,8 @@ unsafe fn decode_vec_ref_unchecked<'d, 'itm: 'd, T>(
 where
     crate::sync::DecodedField<'d, T, <&'d T as DecodeMove<'d>>::Store, <T as RustSpec>::Layout>:
         TakeDecoded<Value = T>,
-    T: ReprC<CType: CType + Sized> + RustSpec + 'd,
-    &'d T: DecodeMove<'d, Store: Store + Default + Sized>
-        + ReprC<CType: RefCarrier<Pointee = <T as ReprC>::CType>>,
+    T: ReprC<CType: Sized> + RustSpec + 'd,
+    &'d T: DecodeMove<'d, Store: Sized> + ReprC<CType: RefCarrier<Pointee = <T as ReprC>::CType>>,
 {
     *fields = core::iter::repeat_with(Default::default)
         .take(header.len())
@@ -1171,6 +1150,7 @@ where
 }
 
 #[cfg(feature = "alloc")]
+#[cfg(feature = "repr-rust")]
 unsafe impl<'d> SoftDecodeRef<'d> for alloc::string::String {
     type Store = RefSizedDecodeStore<Self, Box<[<&'d u8 as DecodeMove<'d>>::Store]>>;
 
@@ -1203,15 +1183,14 @@ unsafe impl<'d> SoftDecodeRef<'d> for alloc::string::String {
 }
 
 #[cfg(feature = "alloc")]
-unsafe impl<'d, T: ReprC<CType: CType + Sized> + RustSpec + 'd> SoftDecodeRef<'d>
-    for alloc::vec::Vec<T>
+unsafe impl<'d, T: ReprC + RustSpec + 'd> SoftDecodeRef<'d> for alloc::vec::Vec<T>
 where
     crate::sync::DecodedField<'d, T, <&'d T as DecodeMove<'d>>::Store, <T as RustSpec>::Layout>:
         TakeDecoded<Value = T>,
     Self: ReprC<CType = Native<AbiVec<<T as ReprC>::CType>>>,
     &'d Self: ReprC<CType = SoftRef<<Self as ReprC>::CType>>,
-    &'d T: DecodeMove<'d, Store: Store + Default + Sized>
-        + ReprC<CType: RefCarrier<Pointee = <T as ReprC>::CType>>,
+    &'d T: DecodeMove<'d> + ReprC<CType: RefCarrier<Pointee = <T as ReprC>::CType>>,
+    <T as ReprC>::CType: Sized,
 {
     type Store = RefSizedDecodeStore<Self, Box<[<&'d T as DecodeMove<'d>>::Store]>>;
 
@@ -1236,15 +1215,14 @@ where
 }
 
 #[cfg(feature = "alloc")]
-unsafe impl<'d, T: ReprC<CType: CType + Sized> + RustSpec + 'd> SoftDecodeRef<'d>
-    for crate::vec::Vec<T>
+unsafe impl<'d, T: ReprC + RustSpec + 'd> SoftDecodeRef<'d> for crate::vec::Vec<T>
 where
     crate::sync::DecodedField<'d, T, <&'d T as DecodeMove<'d>>::Store, <T as RustSpec>::Layout>:
         TakeDecoded<Value = T>,
     Self: ReprC<CType = AbiVec<<T as ReprC>::CType>>,
     &'d Self: ReprC<CType = SoftRef<<Self as ReprC>::CType>>,
-    &'d T: DecodeMove<'d, Store: Store + Default + Sized>
-        + ReprC<CType: RefCarrier<Pointee = <T as ReprC>::CType>>,
+    &'d T: DecodeMove<'d> + ReprC<CType: RefCarrier<Pointee = <T as ReprC>::CType>>,
+    <T as ReprC>::CType: Sized,
 {
     type Store = RefSizedDecodeStore<Self, Box<[<&'d T as DecodeMove<'d>>::Store]>>;
 
@@ -1274,8 +1252,7 @@ where
         TakeDecoded<Value = T>,
     Self: ReprC<CType = [<T as ReprC>::CType; N]>,
     &'d Self: ReprC<CType = SoftRef<<Self as ReprC>::CType>>,
-    &'d T: DecodeMove<'d, Store: Store + Default + Sized>
-        + ReprC<CType: RefCarrier<Pointee = <T as ReprC>::CType>>,
+    &'d T: DecodeMove<'d> + ReprC<CType: RefCarrier<Pointee = <T as ReprC>::CType>>,
 {
     type Store = RefSizedDecodeStore<Self, ArrayStore<<&'d T as DecodeMove<'d>>::Store, N>>;
 
@@ -1314,12 +1291,13 @@ where
     }
 }
 
-unsafe impl<'d, T: ReprC<CType: CType + Sized> + 'd> SoftDecodeRef<'d>
-    for core::mem::ManuallyDrop<T>
+unsafe impl<'d, T: ReprC + 'd> SoftDecodeRef<'d> for core::mem::ManuallyDrop<T>
 where
-    Self: ReprC<CType: CType + Sized>,
+    Self: ReprC,
     &'d Self: ReprC<CType = SoftRef<<Self as ReprC>::CType>>,
     &'d T: DecodeMove<'d> + ReprC<CType: RefCarrier<Pointee = <T as ReprC>::CType>>,
+    <T as ReprC>::CType: Sized,
+    <Self as ReprC>::CType: Sized,
 {
     type Store = <&'d T as DecodeMove<'d>>::Store;
     unsafe fn soft_decode_ref<'itm: 'd>(
@@ -1368,12 +1346,13 @@ where
 }
 
 #[cfg(feature = "alloc")]
-unsafe impl<'d, R: ReprC<CType: CType + Copy> + EncodeMove<Store: EmptyStore> + 'd>
-    SoftDecodeMut<'d> for [R]
+#[cfg(feature = "repr-rust")]
+unsafe impl<'d, R: ReprC + EncodeMove<Store: EmptyStore> + 'd> SoftDecodeMut<'d> for [R]
 where
     R: crate::borrow::BorrowedDecode<'d>,
     &'d mut Self: ReprC<CType = crate::wide::abi::SoftWideRefMut<<Self as ReprC>::CType>>,
     [R]: RustSpec<Size = MetaSized<SliceLike>>,
+    <R as ReprC>::CType: Copy,
 {
     type Store = RefMutSliceDecodeStore<R, Box<[<R as crate::borrow::BorrowedDecode<'d>>::Store]>>;
 
@@ -1421,11 +1400,12 @@ where
     }
 }
 
-unsafe impl<'d, T: ReprC<CType: CType + Copy> + 'd> SoftDecodeMut<'d> for crate::option::Option<T>
+unsafe impl<'d, T: ReprC + 'd> SoftDecodeMut<'d> for crate::option::Option<T>
 where
     T: crate::borrow::BorrowedDecode<'d>,
     Self: EncodeMove<Store: EmptyStore> + RustSpec + ReprC<CType = AbiOption<<T as ReprC>::CType>>,
     &'d mut Self: ReprC<CType = SoftRefMut<<Self as ReprC>::CType>>,
+    <T as ReprC>::CType: Copy,
 {
     type Store =
         RefMutSizedDecodeStore<Self, Option<<T as crate::borrow::BorrowedDecode<'d>>::Store>>;
@@ -1472,8 +1452,7 @@ where
     }
 }
 
-unsafe impl<'d, T: ReprC<CType: CType + Copy> + 'd, E: ReprC<CType: CType + Copy> + 'd>
-    SoftDecodeMut<'d> for crate::result::Result<T, E>
+unsafe impl<'d, T: ReprC + 'd, E: ReprC + 'd> SoftDecodeMut<'d> for crate::result::Result<T, E>
 where
     T: crate::borrow::BorrowedDecode<'d>,
     E: crate::borrow::BorrowedDecode<'d>,
@@ -1481,6 +1460,8 @@ where
         + RustSpec
         + ReprC<CType = AbiResult<<T as ReprC>::CType, <E as ReprC>::CType>>,
     &'d mut Self: ReprC<CType = SoftRefMut<<Self as ReprC>::CType>>,
+    <T as ReprC>::CType: Copy,
+    <E as ReprC>::CType: Copy,
 {
     type Store = RefMutSizedDecodeStore<
         Self,
@@ -1545,11 +1526,12 @@ where
 }
 
 #[cfg(feature = "alloc")]
-unsafe impl<'d, T: ReprC<CType: CType + Sized> + Clone + 'd> SoftDecodeMut<'d> for Box<T>
+unsafe impl<'d, T: ReprC + Clone + 'd> SoftDecodeMut<'d> for Box<T>
 where
     Self: RustSpec + ReprC<CType = AbiBox<<T as ReprC>::CType>>,
     &'d mut Self: ReprC<CType = SoftRefMut<<Self as ReprC>::CType>>,
     &'d mut T: DecodeMove<'d> + ReprC<CType: RefMutCarrier<Pointee = <T as ReprC>::CType>>,
+    <T as ReprC>::CType: Sized,
 {
     type Store = RefMutSizedDecodeStore<Self, Box<<&'d mut T as DecodeMove<'d>>::Store>, *mut T>;
     unsafe fn soft_decode_mut<'itm: 'd>(
@@ -1594,11 +1576,12 @@ where
 }
 
 #[cfg(feature = "alloc")]
-unsafe impl<'d, T: ReprC<CType: CType + Sized> + Clone + 'd> SoftDecodeMut<'d> for Box<[T]>
+unsafe impl<'d, T: ReprC + Clone + 'd> SoftDecodeMut<'d> for Box<[T]>
 where
-    Self: RustSpec + ReprC<CType = AbiWideBox<<[T] as crate::ReprC>::CType>>,
+    Self: RustSpec + ReprC<CType = AbiWideBox<<[T] as ReprC>::CType>>,
     &'d mut Self: ReprC<CType = SoftRefMut<<Self as ReprC>::CType>>,
     &'d mut T: DecodeMove<'d> + ReprC<CType: RefMutCarrier<Pointee = <T as ReprC>::CType>>,
+    <T as ReprC>::CType: Sized,
 {
     type Store =
         RefMutSizedDecodeStore<Self, Box<[<&'d mut T as DecodeMove<'d>>::Store]>, Box<[*mut T]>>;
@@ -1681,11 +1664,12 @@ where
     }
 }
 
-unsafe impl<'d, T: ReprC<CType: CType + Copy> + 'd, const N: usize> SoftDecodeMut<'d> for [T; N]
+unsafe impl<'d, T: ReprC + 'd, const N: usize> SoftDecodeMut<'d> for [T; N]
 where
     T: crate::borrow::BorrowedDecode<'d>,
     Self: RustSpec + ReprC<CType = [<T as ReprC>::CType; N]> + EncodeMove<Store: EmptyStore>,
     &'d mut Self: ReprC<CType = SoftRefMut<<Self as ReprC>::CType>>,
+    <T as ReprC>::CType: Copy,
 {
     type Store = RefMutSizedDecodeStore<
         Self,
@@ -1732,12 +1716,13 @@ where
     }
 }
 
-unsafe impl<'d, T: ReprC<CType: CType + Sized> + 'd> SoftDecodeMut<'d>
-    for core::mem::ManuallyDrop<T>
+unsafe impl<'d, T: ReprC + 'd> SoftDecodeMut<'d> for core::mem::ManuallyDrop<T>
 where
-    Self: RustSpec + ReprC<CType: CType + Sized>,
+    Self: RustSpec + ReprC,
     &'d mut Self: ReprC<CType = SoftRefMut<<Self as ReprC>::CType>>,
     &'d mut T: DecodeMove<'d> + ReprC<CType: RefMutCarrier<Pointee = <T as ReprC>::CType>>,
+    <T as ReprC>::CType: Sized,
+    <Self as ReprC>::CType: Sized,
 {
     type Store = <&'d mut T as DecodeMove<'d>>::Store;
     unsafe fn soft_decode_mut<'itm: 'd>(
@@ -1761,11 +1746,13 @@ where
     }
 }
 
-unsafe impl<'d, T: ReprC<CType: CType + Sized> + 'd> SoftDecodeMut<'d> for core::cell::Cell<T>
+unsafe impl<'d, T: ReprC + 'd> SoftDecodeMut<'d> for core::cell::Cell<T>
 where
-    Self: RustSpec + ReprC<CType: CType + Sized>,
+    Self: RustSpec + ReprC,
     &'d mut Self: ReprC<CType = SoftRefMut<<Self as ReprC>::CType>>,
     &'d mut T: DecodeMove<'d> + ReprC<CType: RefMutCarrier<Pointee = <T as ReprC>::CType>>,
+    <T as ReprC>::CType: Sized,
+    <Self as ReprC>::CType: Sized,
 {
     type Store = <&'d mut T as DecodeMove<'d>>::Store;
     unsafe fn soft_decode_mut<'itm: 'd>(
@@ -1789,11 +1776,13 @@ where
     }
 }
 
-unsafe impl<'d, T: ReprC<CType: CType + Sized> + 'd> SoftDecodeMut<'d> for core::cell::UnsafeCell<T>
+unsafe impl<'d, T: ReprC + 'd> SoftDecodeMut<'d> for core::cell::UnsafeCell<T>
 where
-    Self: RustSpec + ReprC<CType: CType + Sized>,
+    Self: RustSpec + ReprC,
     &'d mut Self: ReprC<CType = SoftRefMut<<Self as ReprC>::CType>>,
     &'d mut T: DecodeMove<'d> + ReprC<CType: RefMutCarrier<Pointee = <T as ReprC>::CType>>,
+    <T as ReprC>::CType: Sized,
+    <Self as ReprC>::CType: Sized,
 {
     type Store = <&'d mut T as DecodeMove<'d>>::Store;
     unsafe fn soft_decode_mut<'itm: 'd>(
@@ -1845,12 +1834,12 @@ where
 }
 
 #[cfg(feature = "alloc")]
-unsafe impl<'d, T: ReprC<CType: CType + Sized> + Clone + 'd> SoftDecodeMut<'d>
-    for alloc::vec::Vec<T>
+unsafe impl<'d, T: ReprC + Clone + 'd> SoftDecodeMut<'d> for alloc::vec::Vec<T>
 where
     Self: RustSpec + ReprC<CType = Native<AbiVec<<T as ReprC>::CType>>>,
     &'d mut Self: ReprC<CType = SoftRefMut<<Self as ReprC>::CType>>,
     &'d mut T: DecodeMove<'d> + ReprC<CType: RefMutCarrier<Pointee = <T as ReprC>::CType>>,
+    <T as ReprC>::CType: Sized,
 {
     type Store = RefMutSizedDecodeStore<
         Self,
@@ -1934,12 +1923,12 @@ where
 }
 
 #[cfg(feature = "alloc")]
-unsafe impl<'d, T: ReprC<CType: CType + Sized> + Clone + 'd> SoftDecodeMut<'d>
-    for crate::vec::Vec<T>
+unsafe impl<'d, T: ReprC + Clone + 'd> SoftDecodeMut<'d> for crate::vec::Vec<T>
 where
     Self: RustSpec + ReprC<CType = AbiVec<<T as ReprC>::CType>>,
     &'d mut Self: ReprC<CType = SoftRefMut<<Self as ReprC>::CType>>,
     &'d mut T: DecodeMove<'d> + ReprC<CType: RefMutCarrier<Pointee = <T as ReprC>::CType>>,
+    <T as ReprC>::CType: Sized,
 {
     type Store = RefMutSizedDecodeStore<
         Self,
@@ -2025,10 +2014,11 @@ where
 }
 
 #[cfg(feature = "alloc")]
-unsafe impl<'d, 'a: 'd, T: ReprC<CType: CType + Sized> + 'a> SoftDecodeMut<'d> for &'a mut T
+unsafe impl<'d, 'a: 'd, T: ReprC + 'a> SoftDecodeMut<'d> for &'a mut T
 where
     Self: RustSpec + DecodeMove<'d, CType = SoftRefMut<<T as ReprC>::CType>>,
     &'d mut Self: ReprC<CType = SoftRefMut<<Self as ReprC>::CType>>,
+    <T as ReprC>::CType: Sized,
 {
     type Store = RefMutSizedDecodeStore<Self, Box<<Self as DecodeMove<'d>>::Store>, *mut T>;
     unsafe fn soft_decode_mut<'itm: 'd>(
@@ -2243,9 +2233,10 @@ mod tests {
 
     fn check_shared_decode<R, S>(source: &R::CType, verify: impl Fn(&R))
     where
-        R: ReprC<CType: Sized> + 'static,
+        R: ReprC + 'static,
         S: Store + Default,
         for<'d> &'d R: DecodeMove<'d, Store = S> + ReprC<CType = SoftRef<<R as ReprC>::CType>>,
+        <R as ReprC>::CType: Sized,
     {
         for unchecked in [false, true] {
             let mut store = Default::default();

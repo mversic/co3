@@ -88,7 +88,6 @@ pub(super) fn gen_stable_direct_mut_impls(input: &syn::DeriveInput) -> TokenStre
             unsafe impl #impl_generics #trait_name<'_ršč> for #name #ty_generics
             where
                 #speculative Self: Clone + #move_trait + co3::marker::AbiCompatible
-                    + co3::ReprC<CType: co3::CType + Sized>
                     + co3::convert::DecodeMove<'_ršč, Store: co3::convert::EmptyStore + '_ršč> + '_ršč,
                 &'_ršč mut Self: co3::ReprC<CType = co3::reference::abi::SoftRefMut<<Self as co3::ReprC>::CType>> + co3::marker::AbiCompatible,
                 #predicates
@@ -106,8 +105,8 @@ pub(super) fn gen_stable_direct_mut_impls(input: &syn::DeriveInput) -> TokenStre
         quote! {
             unsafe impl #impl_generics #trait_name<'_ršč> for #name #ty_generics
             where
-                #speculative Self: #abi_bound
-                    + co3::ReprC<CType: co3::CType + Sized> + Sized + '_ršč,
+                #speculative <Self as co3::ReprC>::CType: Sized,
+                #speculative Self: #abi_bound + Sized + '_ršč,
                 &'_ršč mut Self: #carrier_bound + #abi_bound,
                 #predicates
             {
@@ -488,9 +487,9 @@ fn gen_structural_decode(
                 let inner = known.inner.unwrap();
                 quote!(co3::ReprC<CType = core::marker::PhantomData<<#inner as co3::ReprC>::CType>>)
             } else if tagged_enum || mutable {
-                quote!(co3::ReprC<CType: co3::CType + Copy + Sized>)
+                quote!(co3::ReprC<CType: Copy>)
             } else {
-                quote!(co3::ReprC<CType: co3::CType + Sized>)
+                quote!(co3::ReprC<CType: Sized>)
             };
             let field_bound = field_type.bound(quote!(#repr_bound + '_dšč));
             let field_decoder = if mutable {
@@ -717,8 +716,9 @@ fn gen_shared_field_encoders() -> TokenStream {
         };
             let encode = if unchecked { encoding_call(quote!(<&'a R as #move_trait>::#move_method(self, store)), true) } else { quote!(co3::convert::EncodeMove::soft_encode(self, store)) };
         let implementation = quote! {
-                unsafe impl<'a, R: co3::ReprC<CType: co3::CType + Copy> + 'a> #name<'a> for R
+                unsafe impl<'a, R: co3::ReprC + 'a> #name<'a> for R
                 where
+                    <R as co3::ReprC>::CType: Copy,
                     &'a R: #move_trait + co3::ReprC<CType: co3::reference::abi::RefCarrier<Pointee = <R as co3::ReprC>::CType>>,
                 {
                     type #store_name = <&'a R as #move_trait>::#store_name;
@@ -749,8 +749,9 @@ fn gen_shared_field_encoders() -> TokenStream {
 fn gen_shared_field_decoder() -> TokenStream {
     let layout = quote!(<R as co3::rust_spec::RustSpec>::Layout);
     let implementation = quote! {
-            unsafe impl<'d, R: co3::ReprC<CType: co3::CType + Sized + 'd> + 'd> __Co3DecodeField<'d> for R
+            unsafe impl<'d, R: co3::ReprC + 'd> __Co3DecodeField<'d> for R
             where
+                <R as co3::ReprC>::CType: Sized + 'd,
                 R: co3::rust_spec::RustSpec,
                 &'d R: co3::convert::DecodeMove<'d, Store: co3::convert::Store + Default + Sized>
                     + co3::ReprC<CType: co3::reference::abi::RefCarrier<Pointee = R::CType>>,

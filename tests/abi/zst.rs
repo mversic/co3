@@ -168,6 +168,17 @@ fn unit_like_return_layout_requires_alignment_one() {
     assert_not_impl_any!(SourceZst: CFnArg);
 }
 
+#[cfg(feature = "repr-rust")]
+#[test]
+fn tagged_result_with_empty_variant_round_trips() {
+    for value in [Ok(42u32), Err(())] {
+        assert_eq!(unsafe { co3::decode(co3::encode(value)) }, Some(value));
+    }
+    for value in [Ok(()), Err(42u32)] {
+        assert_eq!(unsafe { co3::decode(co3::encode(value)) }, Some(value));
+    }
+}
+
 #[test]
 fn niche_optimized_option_and_result_are_function_values() {
     type MaybeNonZero = Option<NonZero<u8>>;

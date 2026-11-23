@@ -103,12 +103,18 @@ impl<T: CType> ReprC for Borrowed<T> {
     type CType = Self;
 }
 unsafe impl<T: CType> CType for Borrowed<T> {}
-unsafe impl<T: CType> AbiCompatibleValidate for Borrowed<T> {
+unsafe impl<T: CType> AbiCompatibleValidate for Borrowed<T>
+where
+    Self: crate::rust_spec::RustSpec<Layout = crate::rust_spec::Specified>,
+{
     unsafe fn is_valid(_: &Self) -> bool {
         true
     }
 }
-unsafe impl<T: CType> AbiCompatible for Borrowed<T> {}
+unsafe impl<T: CType> AbiCompatible for Borrowed<T> where
+    Self: crate::rust_spec::RustSpec<Layout = crate::rust_spec::Specified>
+{
+}
 unsafe impl<T: CType> CFnArg for Borrowed<T> where T: CFnArg {}
 // SAFETY: repr(transparent) preserves T's return ABI, including unit.
 unsafe impl<T: CFnReturn> CFnReturn for Borrowed<T> {}
@@ -178,12 +184,18 @@ impl<T: CType + ?Sized> ReprC for Native<T> {
 }
 
 unsafe impl<T: CType + ?Sized> CType for Native<T> {}
-unsafe impl<T: CType + ?Sized> AbiCompatibleValidate for Native<T> {
+unsafe impl<T: CType + ?Sized> AbiCompatibleValidate for Native<T>
+where
+    Self: crate::rust_spec::RustSpec<Layout = crate::rust_spec::Specified>,
+{
     unsafe fn is_valid(_: &Self) -> bool {
         true
     }
 }
-unsafe impl<T: CType + ?Sized> AbiCompatible for Native<T> {}
+unsafe impl<T: CType + ?Sized> AbiCompatible for Native<T> where
+    Self: crate::rust_spec::RustSpec<Layout = crate::rust_spec::Specified>
+{
+}
 unsafe impl<T: CFnArg> CFnArg for Native<T> {}
 unsafe impl<T: CFnReturn> CFnReturn for Native<T> {}
 

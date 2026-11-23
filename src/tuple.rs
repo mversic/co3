@@ -58,6 +58,9 @@
 //! assert_eq!(encode(none_value_3).0, abi::Option::None());
 //! ```
 
+#[cfg(feature = "repr-rust")]
+use crate::{marker::Native, niche::Niche};
+
 use rust_spec::{
     RustSpec,
     mutability::{Exclusive, ExclusiveKind},
@@ -69,13 +72,13 @@ use crate::{
         AbiCompatibleValidate, Decode, DecodeMove, Encode, EncodeMove, EncodeMoveUnchecked,
         SoftEncodeRef, SoftEncodeRefUnchecked,
     },
-    marker::{AbiCompatible, Native},
-    niche::Niche,
+    marker::AbiCompatible,
     reference::abi::RefCarrier,
 };
 
 macro_rules! impl_tuple {
     (@codecs [$($ty:ident:$idx:tt),+] -> $ffi_ty:ident, $carrier:ident, $encode:ident, $unchecked:ident, $decode:ident) => {
+        #[cfg(feature = "repr-rust")]
         unsafe impl<$($ty: $encode),*> $encode for ($($ty,)*) {
             type Store = ($( $ty::Store, )*);
 
@@ -107,6 +110,7 @@ macro_rules! impl_tuple {
             }
 
         }
+        #[cfg(feature = "repr-rust")]
         unsafe impl<$($ty: $unchecked),*> $unchecked for ($($ty,)*) {
             type SoftStore = ($($ty::SoftStore,)*);
 
@@ -128,6 +132,7 @@ macro_rules! impl_tuple {
                 abi::$carrier($(unsafe { $ty.soft_encode_unchecked(store.$ty) }),*)
             }
         }
+        #[cfg(feature = "repr-rust")]
         unsafe impl<'d, $($ty: $decode<'d>),*> $decode<'d> for ($($ty,)*) {
             type Store = ($( $ty::Store, )*);
 
@@ -182,6 +187,7 @@ macro_rules! impl_tuple {
         impl_tuple!(@codecs [$($ty:$idx),+] -> $ffi_ty, $carrier, EncodeMove, EncodeMoveUnchecked, DecodeMove);
         const _: () = {
             use crate::borrow::{BorrowedEncode, BorrowedEncodeUnchecked, BorrowedDecode};
+            #[cfg(feature = "repr-rust")]
             unsafe impl<$($ty: BorrowedEncode),*> BorrowedEncode for ($($ty,)*) {
             type Store = ($( $ty::Store, )*);
 
@@ -214,6 +220,7 @@ macro_rules! impl_tuple {
             }
 
         }
+        #[cfg(feature = "repr-rust")]
         unsafe impl<$($ty: BorrowedEncodeUnchecked),*> BorrowedEncodeUnchecked for ($($ty,)*) {
             type Owner = ($($ty::Owner,)*);
             type SoftStore = ($($ty::SoftStore,)*);
@@ -238,6 +245,7 @@ macro_rules! impl_tuple {
                 abi::$carrier($(unsafe { $ty.soft_encode_unchecked(store.$ty, owner.$ty) }),*)
             }
         }
+        #[cfg(feature = "repr-rust")]
         unsafe impl<'d, $($ty: BorrowedDecode<'d>),*> BorrowedDecode<'d> for ($($ty,)*) {
             type Store = ($( $ty::Store, )*);
 
@@ -283,6 +291,7 @@ macro_rules! impl_tuple {
             }
         }
         };
+        #[cfg(feature = "repr-rust")]
         unsafe impl<'d, $($ty: ReprC<CType: crate::CType + Sized> + RustSpec + 'd),+> crate::convert::SoftDecodeRef<'d> for ($($ty,)*)
         where
             Self: RustSpec + ReprC<CType = Native<abi::$carrier<$(<$ty as ReprC>::CType),*>>>,
@@ -350,6 +359,7 @@ macro_rules! impl_tuple {
                 )*))).expect("unchecked decoding produces a value")
             }
         }
+        #[cfg(feature = "repr-rust")]
         unsafe impl<'d, $($ty: ReprC<CType: crate::CType + Copy> + 'd),+> crate::convert::SoftDecodeMut<'d> for ($($ty,)*)
         where
             $($ty: crate::borrow::BorrowedDecode<'d>,)*
@@ -403,6 +413,7 @@ macro_rules! impl_tuple {
             }
         }
 
+        #[cfg(feature = "repr-rust")]
         unsafe impl<'a, $($ty: ReprC<CType: Copy> + 'a),*, __Interior: ExclusiveKind> SoftEncodeRef<'a> for ($($ty,)*)
         where
         &'a Self: crate::ReprC<CType = crate::reference::abi::SoftRef<<Self as ReprC>::CType>>,
@@ -439,6 +450,7 @@ macro_rules! impl_tuple {
             }
         }
 
+        #[cfg(feature = "repr-rust")]
         unsafe impl<'a, $($ty: ReprC<CType: Copy> + 'a),*, __Interior: ExclusiveKind> SoftEncodeRefUnchecked<'a> for ($($ty,)*)
         where
         &'a Self: crate::ReprC<CType = crate::reference::abi::SoftRef<<Self as ReprC>::CType>>,
@@ -475,11 +487,14 @@ macro_rules! impl_tuple {
             }
         }
 
+        #[cfg(feature = "repr-rust")]
         impl<$($ty: Encode),*> Encode for ($($ty,)*) {}
         impl<$($ty: Encode),*> Encode for $ffi_ty<$($ty),*> {}
+        #[cfg(feature = "repr-rust")]
         impl<$($ty: crate::convert::EncodeUnchecked),*> crate::convert::EncodeUnchecked for ($($ty,)*) {}
         impl<$($ty: crate::convert::EncodeUnchecked),*> crate::convert::EncodeUnchecked for $ffi_ty<$($ty),*> {}
 
+        #[cfg(feature = "repr-rust")]
         impl<'d, $($ty: Decode<'d>),*> Decode<'d> for ($($ty,)*) {}
         impl<'d, $($ty: Decode<'d>),*> Decode<'d> for $ffi_ty<$($ty),*> {}
 
@@ -518,6 +533,7 @@ macro_rules! impl_tuple {
             }
         }
 
+        #[cfg(feature = "repr-rust")]
         impl<$($head: ReprC<CType: Sized>,)* $last: ReprC + ?Sized> ReprC for ($($head,)* $last,) {
             type CType = Native<abi::$carrier<$($head::CType,)* $last::CType>>;
         }
@@ -525,7 +541,10 @@ macro_rules! impl_tuple {
             type CType = abi::$carrier<$($head::CType,)* $last::CType>;
         }
 
-        unsafe impl<$($head: AbiCompatibleValidate<CType: Copy>,)* $last: AbiCompatibleValidate + ?Sized> AbiCompatibleValidate for $ffi_ty<$($head,)* $last> {
+        unsafe impl<$($head: AbiCompatibleValidate<CType: Copy>,)* $last: AbiCompatibleValidate + ?Sized> AbiCompatibleValidate for $ffi_ty<$($head,)* $last>
+where
+    Self: $crate::rust_spec::RustSpec<Layout = $crate::rust_spec::Specified>,
+{
             #[inline(always)]
             #[expect(non_snake_case)]
             unsafe fn is_valid(target: &Self::CType) -> bool {
@@ -533,7 +552,10 @@ macro_rules! impl_tuple {
                 true $(&& unsafe { $head::is_valid($head) })* && unsafe { $last::is_valid($last) }
             }
         }
-        unsafe impl<$($head: AbiCompatible<CType: Copy>,)* $last: AbiCompatible + ?Sized> AbiCompatible for $ffi_ty<$($head,)* $last> {}
+        unsafe impl<$($head: AbiCompatible<CType: Copy>,)* $last: AbiCompatible + ?Sized> AbiCompatible for $ffi_ty<$($head,)* $last>
+where
+    Self: $crate::rust_spec::RustSpec<Layout = $crate::rust_spec::Specified>,
+{}
 
         unsafe impl<$($head: CType,)* $last: CType + ?Sized> CType for $ffi_ty<$($head,)* $last> {}
 
@@ -632,6 +654,7 @@ impl_tuple! {(A:0, B:1, C:2, D:3, E:4, F:5, G:6, H:7, I:8, J:9) -> Tuple10, Tupl
 impl_tuple! {(A:0, B:1, C:2, D:3, E:4, F:5, G:6, H:7, I:8, J:9, K:10) -> Tuple11, Tuple11}
 impl_tuple! {(A:0, B:1, C:2, D:3, E:4, F:5, G:6, H:7, I:8, J:9, K:10, L:11) -> Tuple12, Tuple12}
 
+#[cfg(feature = "repr-rust")]
 impl<A: Niche> Niche for (A,) {
     const NICHE: Self::CType = Native(abi::Tuple1(A::NICHE));
 
@@ -640,6 +663,7 @@ impl<A: Niche> Niche for (A,) {
     }
 }
 
+#[cfg(feature = "repr-rust")]
 impl<A: ReprC<CType: Copy>, B: ReprC<CType: Copy>, C: ReprC<CType: Copy>> Niche for (A, B, C)
 where
     (A, (B, C)): Niche<CType = Native<abi::Tuple2<<A as ReprC>::CType, <(B, C) as ReprC>::CType>>>,
@@ -661,6 +685,7 @@ where
 macro_rules! impl_tuple_niche_recursive {
     ($(($($all:ident),+) => ($left:ty, $right:ty) : $ffi_ty:ident($(( $outer:tt, $inner:tt )),+): ($left_val:expr, $right_val:expr)),+ $(,)?) => {
         $(
+            #[cfg(feature = "repr-rust")]
             impl<$($all: ReprC<CType: Copy>),+> Niche for ($($all,)+)
             where
                 ($left, $right): Niche<CType = Native<abi::Tuple2<<$left as ReprC>::CType, <$right as ReprC>::CType>>>,
@@ -704,10 +729,16 @@ pub mod abi {
             type CType = Self;
         }
         unsafe impl<$($head: CType,)* $last: CType + ?Sized> CType for $ffi_ty<$($head,)* $last> {}
-        unsafe impl<$($head: CType,)* $last: CType + ?Sized> AbiCompatibleValidate for $ffi_ty<$($head,)* $last> {
+        unsafe impl<$($head: CType,)* $last: CType + ?Sized> AbiCompatibleValidate for $ffi_ty<$($head,)* $last>
+where
+    Self: $crate::rust_spec::RustSpec<Layout = $crate::rust_spec::Specified>,
+{
             unsafe fn is_valid(_: &Self) -> bool { true }
         }
-        unsafe impl<$($head: CType,)* $last: CType + ?Sized> AbiCompatible for $ffi_ty<$($head,)* $last> {}
+        unsafe impl<$($head: CType,)* $last: CType + ?Sized> AbiCompatible for $ffi_ty<$($head,)* $last>
+where
+    Self: $crate::rust_spec::RustSpec<Layout = $crate::rust_spec::Specified>,
+{}
 
         impl<$($head: CType,)* $last: CType> $ffi_ty<$($head,)* $last> {
             /// Return the lowered fields without decoding them.

@@ -1,17 +1,18 @@
 //! Conversions for types in [`core::ffi`].
 
 #[cfg(feature = "alloc")]
-use alloc::{boxed::Box, ffi::CString};
+use alloc::boxed::Box;
+#[cfg(all(feature = "alloc", feature = "repr-rust"))]
+use alloc::ffi::CString;
+#[cfg(feature = "repr-rust")]
+use core::ffi::CStr;
 #[cfg(feature = "alloc")]
 use core::ptr::NonNull;
-use core::{
-    ffi::{CStr, c_void},
-    mem::ManuallyDrop,
-};
+use core::{ffi::c_void, mem::ManuallyDrop};
 
 use rust_spec::RustSpec;
 
-#[cfg(feature = "alloc")]
+#[cfg(all(feature = "alloc", feature = "repr-rust"))]
 use crate::borrow::{self, ToOwned};
 use crate::{
     CFnArg, CFnReturn, CType, ReprC,
@@ -19,7 +20,7 @@ use crate::{
     marker::AbiCompatible,
     primitive::primitive_derive,
 };
-#[cfg(feature = "alloc")]
+#[cfg(all(feature = "alloc", feature = "repr-rust"))]
 use crate::{boxed::abi::Box as AbiBox, niche::Niche};
 
 macro_rules! c_alias_carrier {
@@ -532,10 +533,12 @@ unsafe impl<R: NulTerminatedBuf + ?Sized> NulTerminatedBuf for ManuallyDrop<R> {
     }
 }
 
+#[cfg(feature = "repr-rust")]
 impl ReprC for CStr {
     type CType = c_char;
 }
 
+#[cfg(feature = "repr-rust")]
 unsafe impl NulTerminatedBuf for CStr {
     type Header = c_char;
 
@@ -560,10 +563,12 @@ unsafe impl NulTerminatedBuf for CStr {
 }
 
 #[cfg(feature = "alloc")]
+#[cfg(feature = "repr-rust")]
 impl ReprC for CString {
     type CType = AbiBox<<CStr as crate::ReprC>::CType>;
 }
 #[cfg(feature = "alloc")]
+#[cfg(feature = "repr-rust")]
 unsafe impl EncodeMove for CString {
     type Store = ();
 
@@ -576,6 +581,7 @@ unsafe impl EncodeMove for CString {
     }
 }
 #[cfg(feature = "alloc")]
+#[cfg(feature = "repr-rust")]
 unsafe impl EncodeMoveUnchecked for CString {
     type SoftStore = ();
 
@@ -587,6 +593,7 @@ unsafe impl EncodeMoveUnchecked for CString {
     }
 }
 #[cfg(feature = "alloc")]
+#[cfg(feature = "repr-rust")]
 unsafe impl<'d> DecodeMove<'d> for CString {
     type Store = ();
 
@@ -596,13 +603,17 @@ unsafe impl<'d> DecodeMove<'d> for CString {
 }
 
 #[cfg(feature = "alloc")]
+#[cfg(feature = "repr-rust")]
 impl Encode for CString {}
 #[cfg(feature = "alloc")]
+#[cfg(feature = "repr-rust")]
 impl crate::convert::EncodeUnchecked for CString {}
 #[cfg(feature = "alloc")]
+#[cfg(feature = "repr-rust")]
 impl Decode<'_> for CString {}
 
 #[cfg(feature = "alloc")]
+#[cfg(feature = "repr-rust")]
 impl Niche for CString {
     const NICHE: Self::CType = AbiBox::null();
 
@@ -619,6 +630,7 @@ impl ReprC for c_void {
 unsafe impl CType for c_void {}
 
 #[cfg(feature = "alloc")]
+#[cfg(feature = "repr-rust")]
 unsafe impl<'d> borrow::BorrowedDecode<'d> for alloc::ffi::CString {
     type Store = ();
 
@@ -636,6 +648,7 @@ unsafe impl<'d> borrow::BorrowedDecode<'d> for alloc::ffi::CString {
 }
 
 #[cfg(feature = "alloc")]
+#[cfg(feature = "repr-rust")]
 unsafe impl borrow::BorrowedEncodeUnchecked for alloc::ffi::CString {
     type Owner = <Box<CStr> as borrow::BorrowedEncodeUnchecked>::Owner;
     type SoftStore = <Box<CStr> as borrow::BorrowedEncodeUnchecked>::SoftStore;
@@ -659,6 +672,7 @@ unsafe impl borrow::BorrowedEncodeUnchecked for alloc::ffi::CString {
 }
 
 #[cfg(feature = "alloc")]
+#[cfg(feature = "repr-rust")]
 unsafe impl borrow::BorrowedEncode for alloc::ffi::CString {
     type Store = <Box<CStr> as borrow::BorrowedEncode>::Store;
 

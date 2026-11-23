@@ -1,10 +1,10 @@
 //! Conversion functions and traits for C-compatible representations.
+#[cfg(feature = "alloc")]
+use alloc::boxed::Box;
 
 #[cfg(feature = "alloc")]
 pub use crate::stored::{AssignFromOwned, Owned};
 pub(crate) use crate::stored::{encode_ref_field, encode_ref_field_unchecked};
-#[cfg(feature = "alloc")]
-use crate::{RustSpec, StableLayout, Unstable, boxed::Box};
 pub use crate::{
     // FIXME: This trait doesn't belong here
     abi::AbiCompatibleValidate,
@@ -15,6 +15,8 @@ pub use crate::{
         DecodeMove, EmptyStore, EncodeMove, EncodeMoveUnchecked, Store, decode_move, encode_move,
     },
 };
+#[cfg(feature = "alloc")]
+use rust_spec::{RustSpec, Specified, Unspecified};
 
 /// Facilitates unchecked conversion from a Rust type into a C-compatible representation.
 pub trait EncodeUnchecked: EncodeMoveUnchecked {}
@@ -30,8 +32,8 @@ const _: () = {
     // An unstable box representation can still transfer its allocation when the
     // pointee layout is stable (for example, a boxed slice).
     trait BoxConversionLayout<R: ?Sized> {}
-    impl<R: ?Sized> BoxConversionLayout<R> for StableLayout {}
-    impl<R: RustSpec<Layout = StableLayout> + ?Sized> BoxConversionLayout<R> for Unstable {}
+    impl<R: ?Sized> BoxConversionLayout<R> for Specified {}
+    impl<R: RustSpec<Layout = Specified> + ?Sized> BoxConversionLayout<R> for Unspecified {}
 
     impl<R: ?Sized> EncodeUnchecked for Box<R> where
         Self: RustSpec<Layout: BoxConversionLayout<R>> + EncodeMoveUnchecked

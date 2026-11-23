@@ -2,23 +2,23 @@ error[E0271]: type mismatch resolving `<(NonZero<u8>,) as RustSpec>::Niche == Wi
  --> tests/ui_fail/custom_niche_override.rs:5:20
   |
 5 | #[derive(RustSpec, ReprC)]
-  |                    ^^^^^ expected `WithoutNiche`, found `WithNiche<Stable>`
+  |                    ^^^^^ expected `WithoutNiche`, found `WithNiche<Specified>`
   |
   = note: expected enum `WithoutNiche`
-           found struct `WithNiche<Stable>`
+           found struct `WithNiche<Specified>`
   = note: this error originates in the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0271]: type mismatch resolving `<CustomNicheRequiresUnstable as RustSpec>::Niche == WithNiche<Unstable>`
+error[E0271]: type mismatch resolving `<CustomNicheRequiresUnstable as RustSpec>::Niche == WithNiche<Unspecified>`
   --> tests/ui_fail/custom_niche_override.rs:11:20
    |
 11 | #[derive(RustSpec, ReprC)]
-   |                    ^^^^^ type mismatch resolving `<CustomNicheRequiresUnstable as RustSpec>::Niche == WithNiche<Unstable>`
+   |                    ^^^^^ type mismatch resolving `<CustomNicheRequiresUnstable as RustSpec>::Niche == WithNiche<Unspecified>`
    |
-note: expected this to be `WithNiche<Unstable>`
+note: expected this to be `WithNiche<Unspecified>`
   --> tests/ui_fail/custom_niche_override.rs:11:10
    |
 11 | #[derive(RustSpec, ReprC)]
    |          ^^^^^^^^
-   = note: expected struct `WithNiche<Unstable>`
+   = note: expected struct `WithNiche<Unspecified>`
                 found enum `WithoutNiche`
    = note: this error originates in the derive macro `ReprC` which comes from the expansion of the derive macro `RustSpec` (in Nightly builds, run with -Z macro-backtrace for more info)

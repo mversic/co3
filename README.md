@@ -181,7 +181,9 @@ Both crates let independently compiled Rust components share ABI-stable types an
 
 Since this is assumed to be Rust-to-Rust interop only, the compatibility checks do not validate argument or return values at decode and do not protect against data corruption that violates Rust validity invariants. For example, a zero byte supplied as `NonZeroU8` is undefined behavior rather than a decode error.
 
-**`CO3` can also connect two Rust components** (with validity checks eliminated).
+Likewise, native Rust API like `Vec<T>` or `String` isn't supported. In general, all types without a stable representation aren't. The user can make use of custom-defined stable types by the respective library or define their own stable counterpart.
+
+**`CO3` can also connect two Rust components** (validity is opt-out) and provides the support to use native types directly (also opt-out).
 
 ### Cross-language interface generators
 

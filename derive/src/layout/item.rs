@@ -1013,7 +1013,7 @@ fn gen_repr_c_impls(
     }
     let recursive_layout_bound = (!recursive_fields.is_empty()).then(|| {
         let bound = FieldType::new(&own, generics).bound(quote!(
-            co3::rust_spec::RustSpec<Layout = co3::rust_spec::Stable>
+            co3::rust_spec::RustSpec<Layout = co3::rust_spec::Specified>
         ));
         quote!(#bound,)
     });
@@ -1388,8 +1388,8 @@ pub(super) fn derive_fieldless_enum(
             }
             unsafe impl #ref_impl_generics #trait_name<'_ršč> for #name #ty_generics
             where
-                #drop_speculative Self: co3::ReprC<CType: co3::CType + Sized>
-                    + #abi_bound + '_ršč,
+                #drop_speculative <Self as co3::ReprC>::CType: Sized,
+                #drop_speculative Self: #abi_bound + '_ršč,
                 &'_ršč Self: co3::ReprC<CType = co3::reference::abi::Ref<'_ršč, <Self as co3::ReprC>::CType>>,
                 #validation_bound
                 #predicates
@@ -1788,8 +1788,8 @@ fn gen_codec_impls(
                     #sized_bound
                     #leading_predicates
                     #(#repr_c_bounds,)*
-                    #speculative Self: co3::ReprC<CType: co3::CType + Sized>
-                        + #abi_bound
+                    #speculative <Self as co3::ReprC>::CType: Sized,
+                    #speculative Self: #abi_bound
                         + Sized + '_ršč,
                     &'_ršč Self: co3::ReprC<CType = co3::reference::abi::Ref<'_ršč, <Self as co3::ReprC>::CType>>,
                     #validation_bound

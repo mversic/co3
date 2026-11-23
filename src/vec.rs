@@ -1,5 +1,8 @@
 //! Stable vector ownership and its robust C-compatible representation.
 
+#[cfg(feature = "repr-rust")]
+use crate::{convert::EncodeUnchecked, marker::Native};
+
 use alloc::boxed::Box;
 use core::{
     hash::Hash,
@@ -12,11 +15,8 @@ use rust_spec::RustSpec;
 
 use crate::{
     CFnArg, CFnReturn, CType, ReprC,
-    convert::{
-        AbiCompatibleValidate, Decode, DecodeMove, Encode, EncodeMove, EncodeMoveUnchecked,
-        EncodeUnchecked,
-    },
-    marker::{AbiCompatible, Native, Zeroable},
+    convert::{AbiCompatibleValidate, Decode, DecodeMove, Encode, EncodeMove, EncodeMoveUnchecked},
+    marker::{AbiCompatible, Zeroable},
     wide::impl_identity_carrier,
 };
 #[cfg(feature = "alloc")]
@@ -240,7 +240,7 @@ unsafe impl<T: RustSpec<Mutability: rust_spec::mutability::PointerMutability>> R
     type Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>;
     type __Alignment = <usize as RustSpec>::__Alignment;
     type Trap = rust_spec::layout::NonRobust;
-    type Niche = rust_spec::niche::WithNiche<rust_spec::Stable>;
+    type Niche = rust_spec::niche::WithNiche<rust_spec::Unspecified>;
     type Drop = rust_spec::drop::CustomDrop<rust_spec::drop::AutoDrop>;
     type Mutability = <T::Mutability as rust_spec::mutability::PointerMutability>::Output;
     type Opacity = rust_spec::NonOpaque;
@@ -263,7 +263,10 @@ impl<T: ReprC<CType: CType + Sized>> crate::niche::Niche for Vec<T> {
 }
 unsafe impl<T: AbiCompatibleValidate<CType: CType + Sized>> AbiCompatibleValidate for Vec<T>
 where
-    T: RustSpec<Layout = rust_spec::Stable, Mutability: rust_spec::mutability::PointerMutability>,
+    T: RustSpec<
+            Layout = rust_spec::Specified,
+            Mutability: rust_spec::mutability::PointerMutability,
+        >,
 {
     unsafe fn is_valid(value: &Self::CType) -> bool {
         if value.data.is_null() || value.len > value.capacity {
@@ -275,14 +278,17 @@ where
     }
 }
 unsafe impl<T: AbiCompatible<CType: CType + Sized>> AbiCompatible for Vec<T> where
-    T: RustSpec<Layout = rust_spec::Stable, Mutability: rust_spec::mutability::PointerMutability>
+    T: RustSpec<
+            Layout = rust_spec::Specified,
+            Mutability: rust_spec::mutability::PointerMutability,
+        >
 {
 }
 
 #[cfg(feature = "alloc")]
 unsafe impl<'d, T: borrow::BorrowedDecode<'d>> borrow::BorrowedDecode<'d> for Vec<T>
 where
-    T: ReprC<CType: CType + Copy + Sized>,
+    T: ReprC<CType: CType + Copy>,
     Self: ReprC<CType = abi::Vec<<T as ReprC>::CType>>,
 {
     type Store = Box<[T::Store]>;
@@ -348,19 +354,24 @@ impl<T> From<Vec<T>> for alloc::vec::Vec<T> {
 }
 
 #[cfg(feature = "alloc")]
+#[cfg(feature = "repr-rust")]
 impl<R: ReprC<CType: Sized>> ReprC for alloc::vec::Vec<R> {
     type CType = Native<abi::Vec<R::CType>>;
 }
 #[cfg(feature = "alloc")]
+#[cfg(feature = "repr-rust")]
 impl<R> Encode for alloc::vec::Vec<R> where Self: EncodeMove {}
 #[cfg(feature = "alloc")]
+#[cfg(feature = "repr-rust")]
 impl<R> EncodeUnchecked for alloc::vec::Vec<R> where Self: EncodeMoveUnchecked {}
 #[cfg(feature = "alloc")]
+#[cfg(feature = "repr-rust")]
 impl<'d, R> Decode<'d> for alloc::vec::Vec<R> where Self: DecodeMove<'d> {}
 
 // The header has C layout; reachable element layout and mutability follow T.
 
 #[cfg(feature = "alloc")]
+#[cfg(feature = "repr-rust")]
 unsafe impl<T> borrow::BorrowedEncodeUnchecked for alloc::vec::Vec<T>
 where
     T: ReprC<CType: CType + Sized>,
@@ -388,6 +399,7 @@ where
 }
 
 #[cfg(feature = "alloc")]
+#[cfg(feature = "repr-rust")]
 unsafe impl<T> borrow::BorrowedEncode for alloc::vec::Vec<T>
 where
     T: ReprC<CType: CType + Sized>,
@@ -412,9 +424,10 @@ where
 }
 
 #[cfg(feature = "alloc")]
+#[cfg(feature = "repr-rust")]
 unsafe impl<'d, T: borrow::BorrowedDecode<'d>> borrow::BorrowedDecode<'d> for alloc::vec::Vec<T>
 where
-    T: ReprC<CType: CType + Copy + Sized>,
+    T: ReprC<CType: CType + Copy>,
     Self: ReprC<CType = Native<abi::Vec<<T as ReprC>::CType>>>,
 {
     type Store = Box<[T::Store]>;
@@ -440,6 +453,7 @@ where
 }
 
 #[cfg(feature = "alloc")]
+#[cfg(feature = "repr-rust")]
 unsafe impl<R: ReprC<CType: CType + Sized>> EncodeMoveUnchecked for alloc::vec::Vec<R>
 where
     Vec<R>: EncodeMoveUnchecked + ReprC<CType = abi::Vec<<R as ReprC>::CType>>,
@@ -455,6 +469,7 @@ where
 }
 
 #[cfg(feature = "alloc")]
+#[cfg(feature = "repr-rust")]
 unsafe impl<R: ReprC<CType: CType + Sized>> EncodeMove for alloc::vec::Vec<R>
 where
     Vec<R>: EncodeMove + ReprC<CType = abi::Vec<<R as ReprC>::CType>>,
@@ -471,6 +486,7 @@ where
 }
 
 #[cfg(feature = "alloc")]
+#[cfg(feature = "repr-rust")]
 unsafe impl<'d, R: ReprC<CType: CType + Sized>> DecodeMove<'d> for alloc::vec::Vec<R>
 where
     Vec<R>: DecodeMove<'d> + ReprC<CType = abi::Vec<<R as ReprC>::CType>>,
@@ -491,6 +507,7 @@ where
 }
 
 #[cfg(feature = "alloc")]
+#[cfg(feature = "repr-rust")]
 impl<R: ReprC<CType: CType + Sized>> crate::niche::Niche for alloc::vec::Vec<R> {
     const NICHE: Self::CType = Native(abi::Vec::null());
 
@@ -502,7 +519,10 @@ impl<R: ReprC<CType: CType + Sized>> crate::niche::Niche for alloc::vec::Vec<R> 
 #[doc(hidden)]
 pub mod abi {
     use super::*;
-    use crate::{boxed::OwnedBoxCarrier, marker::Native, wide};
+    #[cfg(feature = "repr-rust")]
+    use crate::boxed::OwnedBoxCarrier;
+    #[cfg(feature = "repr-rust")]
+    use crate::{marker::Native, wide};
 
     /// An owned allocation represented by its data pointer, length, and capacity.
     /// A null pointer is reserved as a niche and does not represent a vector.
@@ -598,6 +618,7 @@ pub mod abi {
         }
     }
 
+    #[cfg(feature = "repr-rust")]
     impl<R: CType> OwnedBoxCarrier<wide::abi::WideBox<[R]>> for Vec<R> {
         unsafe fn from_box_carrier(value: wide::abi::WideBox<[R]>) -> Option<Self> {
             let data = NonNull::new(value.as_ptr())?;
@@ -615,6 +636,7 @@ pub mod abi {
         }
     }
 
+    #[cfg(feature = "repr-rust")]
     impl<R: CType> OwnedBoxCarrier<wide::abi::WideBox<[R]>> for Native<Vec<R>> {
         unsafe fn from_box_carrier(value: wide::abi::WideBox<[R]>) -> Option<Self> {
             unsafe { Vec::from_box_carrier(value) }.map(Self)
@@ -671,6 +693,25 @@ mod tests {
     use super::abi;
 
     #[test]
+    fn nullable_vector_layout_is_not_guaranteed() {
+        use rust_spec::{RustSpec, Specified, Unspecified, niche::WithNiche};
+        use static_assertions::{assert_impl_all, assert_not_impl_any};
+
+        assert_impl_all!(super::Vec<u32>: RustSpec<Layout = Specified, Niche = WithNiche<Unspecified>>);
+        assert_impl_all!(Option<super::Vec<u32>>: RustSpec<Layout = Unspecified>);
+        assert_impl_all!(Result<super::Vec<u32>, ()>: RustSpec<Layout = Unspecified>);
+        assert_impl_all!(crate::string::String: RustSpec<Niche = WithNiche<Unspecified>>);
+        assert_impl_all!(Option<crate::string::String>: RustSpec<Layout = Unspecified>);
+        assert_not_impl_any!(Option<super::Vec<u32>>: crate::marker::AbiCompatible);
+
+        for value in [None, Some(super::Vec::new()), Some(vec![1u32, 2, 3].into())] {
+            let expected = value.clone();
+            let decoded = unsafe { crate::decode(crate::encode(value)) };
+            assert_eq!(decoded, Some(expected));
+        }
+    }
+
+    #[test]
     fn raw_vector_roundtrip_preserves_allocation_and_capacity() {
         let mut value = Vec::with_capacity(32);
         value.extend([1u32, 2, 3]);
@@ -707,13 +748,13 @@ mod tests {
         use static_assertions::assert_impl_all;
 
         use crate::rust_spec::{
-            self, RustSpec, Stable,
+            self, RustSpec, Specified,
             layout::Robust,
             mutability::{Exclusive, WithInterior, WithoutInterior},
         };
 
         assert_impl_all!(abi::Vec<()>: RustSpec<
-            Layout = Stable,
+            Layout = Specified,
             Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>,
             __Alignment = <usize as RustSpec>::__Alignment,
             Trap = Robust,
@@ -725,7 +766,7 @@ mod tests {
         >);
         // bool lowers to the robust bool carrier, including inside UnsafeCell.
         assert_impl_all!(abi::Vec<<UnsafeCell<bool> as crate::ReprC>::CType>: RustSpec<
-            Layout = Stable,
+            Layout = Specified,
             Trap = Robust,
             Mutability = Exclusive<WithInterior<Robust>>,
             __IndirectTrap = Robust,

@@ -11,7 +11,7 @@ use disjoint_impls::disjoint_impls;
 #[doc(hidden)]
 pub use interior::InteriorTrap;
 use rust_spec::{
-    Gt, RustSpec, Stable,
+    Gt, RustSpec, Specified,
     layout::{NonRobust, Robust},
     mutability::{Exclusive, ExclusiveKind, WithInterior, WithoutInterior},
     size::{Sized as RustSpecSized, Zero},
@@ -19,13 +19,12 @@ use rust_spec::{
 
 #[cfg(feature = "alloc")]
 use crate::boxed::abi::Box as AbiBox;
+#[cfg(test)]
+use crate::option::abi::OptionSome as AbiOptionSome;
 use crate::{
-    CType, ReprC,
-    marker::Native,
+    ReprC,
     niche::Niche,
-    option::abi::OptionSome as AbiOptionSome,
     reference::abi::{RefCarrier, RefMutCarrier},
-    result::abi::{ResultErr as AbiResultErr, ResultOk as AbiResultOk},
     wide::Wide as _,
 };
 
@@ -36,6 +35,24 @@ disjoint_impls! {
 
     impl<T: RustSpec<Size = RustSpecSized<Gt<Zero>>>> CFnReturnLayout for T {}
     impl<T: RustSpec<Size = RustSpecSized<Zero>, __Alignment = rust_spec::One>> CFnReturnLayout for T {}
+}
+
+trait CellValidation {
+    fn validate(validate: impl FnOnce() -> bool) -> bool;
+}
+
+impl CellValidation for Robust {
+    #[inline(always)]
+    fn validate(_: impl FnOnce() -> bool) -> bool {
+        true
+    }
+}
+
+impl CellValidation for NonRobust {
+    #[inline(always)]
+    fn validate(validate: impl FnOnce() -> bool) -> bool {
+        validate()
+    }
 }
 
 // The trait is public inside a private module so associated-type projections
@@ -61,47 +78,39 @@ mod interior {
 }
 
 disjoint_impls! {
-/// Type that can be safely transmuted into its C representation.
-///
-/// # Safety
-/// `Self` and `Self::CType` must be compatible with the same stable ABI.
+    /// Type that can be safely transmuted into its C representation.
+    ///
+    /// # Safety
+    /// `Self` and `Self::CType` must be compatible with the same stable ABI.
     pub unsafe trait AbiCompatible: ReprC {}
 
-    unsafe impl<R: AbiCompatible<CType: CType + Copy> + Niche, E: ReprC> AbiCompatible for Result<R, E>
-        where
-            Self: RustSpec<Layout = Stable> + ReprC,
-            R: RustSpec<Size = RustSpecSized<Gt<Zero>>>,
-            E: RustSpec<Size = RustSpecSized<Zero>>,
-        {}
+    unsafe impl<R: AbiCompatible + Niche, E: ReprC> AbiCompatible for Result<R, E>
+    where
+        Self: ReprC<
+            CType = crate::marker::Native<
+                crate::result::abi::ResultOk<<R as ReprC>::CType, <E as ReprC>::CType>,
+            >,
+        >,
+        Self: RustSpec<Layout = Specified>,
+        R: RustSpec<Size = RustSpecSized<Gt<Zero>>>,
+        E: RustSpec<Size = RustSpecSized<Zero>>,
+        <E as ReprC>::CType: Sized,
+    {
+    }
 
-    unsafe impl<R: ReprC, E: AbiCompatible<CType: CType + Copy> + Niche> AbiCompatible for Result<R, E>
-        where
-            Self: RustSpec<Layout = Stable> + ReprC,
-            R: RustSpec<Size = RustSpecSized<Zero>>,
-            E: RustSpec<Size = RustSpecSized<Gt<Zero>>>,
-        {}
-
-
-
-    unsafe impl<T: AbiCompatible + ?Sized> AbiCompatible for UnsafeCell<T>
-        where
-            Self: RustSpec<Layout = Stable, Trap = Robust>
-        {}
-
-    unsafe impl<T: AbiCompatible + ?Sized> AbiCompatible for UnsafeCell<T>
-        where
-            Self: RustSpec<Layout = Stable, Trap = NonRobust>
-        {}
-
-    unsafe impl<T: AbiCompatible + ?Sized> AbiCompatible for Cell<T>
-        where
-            Self: RustSpec<Layout = Stable, Trap = Robust>
-        {}
-
-    unsafe impl<T: AbiCompatible + ?Sized> AbiCompatible for Cell<T>
-        where
-            Self: RustSpec<Layout = Stable, Trap = NonRobust>
-        {}
+    unsafe impl<R: ReprC, E: AbiCompatible + Niche> AbiCompatible for Result<R, E>
+    where
+        Self: ReprC<
+            CType = crate::marker::Native<
+                crate::result::abi::ResultErr<<R as ReprC>::CType, <E as ReprC>::CType>,
+            >,
+        >,
+        Self: RustSpec<Layout = Specified>,
+        R: RustSpec<Size = RustSpecSized<Zero>>,
+        E: RustSpec<Size = RustSpecSized<Gt<Zero>>>,
+        <R as ReprC>::CType: Sized,
+    {
+    }
 }
 
 disjoint_impls! {
@@ -122,90 +131,54 @@ disjoint_impls! {
         unsafe fn is_valid(target: &Self::CType) -> bool;
     }
 
-    unsafe impl<R: AbiCompatibleValidate<CType: CType + Copy> + Niche, E: ReprC<CType: CType + Sized>>
-        AbiCompatibleValidate for Result<R, E>
+    unsafe impl<R: AbiCompatibleValidate + Niche, E: ReprC> AbiCompatibleValidate for Result<R, E>
     where
-        Self: RustSpec<Layout = Stable> + ReprC<CType = Native<AbiResultOk<<R as ReprC>::CType, <E as ReprC>::CType>>>,
+        Self: ReprC<
+            CType = crate::marker::Native<
+                crate::result::abi::ResultOk<<R as ReprC>::CType, <E as ReprC>::CType>,
+            >,
+        >,
+        Self: RustSpec<Layout = Specified>,
         R: RustSpec<Size = RustSpecSized<Gt<Zero>>>,
         E: RustSpec<Size = RustSpecSized<Zero>>,
+        <E as ReprC>::CType: Sized,
     {
         #[inline(always)]
         unsafe fn is_valid(target: &Self::CType) -> bool {
-let target = &target.0;
+            let target = &target.0;
             R::is_niche(&target.0) || unsafe { R::is_valid(&target.0) }
         }
     }
-
-    unsafe impl<R: ReprC<CType: CType + Sized>, E: AbiCompatibleValidate<CType: CType + Copy> + Niche>
-        AbiCompatibleValidate for Result<R, E>
+    unsafe impl<R: ReprC, E: AbiCompatibleValidate + Niche> AbiCompatibleValidate for Result<R, E>
     where
-        Self: RustSpec<Layout = Stable> + ReprC<CType = Native<AbiResultErr<<R as ReprC>::CType, <E as ReprC>::CType>>>,
+        Self: ReprC<
+            CType = crate::marker::Native<
+                crate::result::abi::ResultErr<<R as ReprC>::CType, <E as ReprC>::CType>,
+            >,
+        >,
+        Self: RustSpec<Layout = Specified>,
         R: RustSpec<Size = RustSpecSized<Zero>>,
         E: RustSpec<Size = RustSpecSized<Gt<Zero>>>,
+        <R as ReprC>::CType: Sized,
     {
         #[inline(always)]
         unsafe fn is_valid(target: &Self::CType) -> bool {
-let target = &target.0;
+            let target = &target.0;
             E::is_niche(&target.0) || unsafe { E::is_valid(&target.0) }
-        }
-    }
-
-
-
-    unsafe impl<T: AbiCompatibleValidate + ?Sized> AbiCompatibleValidate for UnsafeCell<T>
-    where
-        Self: RustSpec<Layout = Stable, Trap = Robust>
-    {
-        #[inline(always)]
-        unsafe fn is_valid(_: &Self::CType) -> bool {
-            true
-        }
-    }
-
-    unsafe impl<T: AbiCompatibleValidate + ?Sized> AbiCompatibleValidate for UnsafeCell<T>
-    where
-        Self: RustSpec<Layout = Stable, Trap = NonRobust>
-    {
-        #[inline(always)]
-        unsafe fn is_valid(target: &Self::CType) -> bool {
-            // SAFETY: The validation contract requires exclusive access to these contents.
-            unsafe { T::is_valid(&*target.get()) }
-        }
-    }
-
-    unsafe impl<T: AbiCompatibleValidate + ?Sized> AbiCompatibleValidate for Cell<T>
-    where
-        Self: RustSpec<Layout = Stable, Trap = Robust>
-    {
-        #[inline(always)]
-        unsafe fn is_valid(_: &Self::CType) -> bool {
-            true
-        }
-    }
-
-    unsafe impl<T: AbiCompatibleValidate + ?Sized> AbiCompatibleValidate for Cell<T>
-    where
-        Self: RustSpec<Layout = Stable, Trap = NonRobust>
-    {
-        #[inline(always)]
-        unsafe fn is_valid(target: &Self::CType) -> bool {
-            // SAFETY: The validation contract requires exclusive access to these contents.
-            unsafe { T::is_valid(&*target.as_ptr()) }
         }
     }
 }
 
 unsafe impl<R: AbiCompatible + RustSpec + ?Sized> AbiCompatible for &R
 where
-    Self: RustSpec<Layout = Stable>,
+    Self: RustSpec<Layout = Specified>,
     <R as RustSpec>::Mutability: InteriorTrap<Trap = Robust>,
     Self: ReprC<CType: RefCarrier<Pointee = <R as ReprC>::CType>>,
 {
 }
-
 unsafe impl<R: AbiCompatibleValidate + RustSpec + ?Sized> AbiCompatibleValidate for &R
 where
-    Self: RustSpec<Layout = Stable>,
+    Self: RustSpec<Layout = Specified>,
     <R as RustSpec>::Mutability: InteriorTrap<Trap = Robust>,
     Self: ReprC<CType: RefCarrier<Pointee = <R as ReprC>::CType>>,
 {
@@ -221,9 +194,13 @@ where
     }
 }
 
+unsafe impl<R: AbiCompatible + ?Sized> AbiCompatible for &mut R where
+    Self: RustSpec<Layout = Specified> + ReprC<CType: RefMutCarrier<Pointee = <R as ReprC>::CType>>
+{
+}
 unsafe impl<R: AbiCompatibleValidate + ?Sized> AbiCompatibleValidate for &mut R
 where
-    Self: RustSpec<Layout = Stable> + ReprC<CType: RefMutCarrier<Pointee = <R as ReprC>::CType>>,
+    Self: RustSpec<Layout = Specified> + ReprC<CType: RefMutCarrier<Pointee = <R as ReprC>::CType>>,
 {
     #[inline(always)]
     unsafe fn is_valid(target: &Self::CType) -> bool {
@@ -236,20 +213,44 @@ where
         unsafe { R::is_valid(&*ptr) }
     }
 }
-unsafe impl<R: AbiCompatible + ?Sized> AbiCompatible for &mut R where
-    Self: RustSpec<Layout = Stable> + ReprC<CType: RefMutCarrier<Pointee = <R as ReprC>::CType>>
+
+unsafe impl<T: AbiCompatible + ?Sized> AbiCompatible for UnsafeCell<T> {}
+unsafe impl<T: AbiCompatibleValidate + ?Sized> AbiCompatibleValidate for UnsafeCell<T>
+where
+    Self: RustSpec<Trap: CellValidation>,
 {
+    #[inline(always)]
+    unsafe fn is_valid(target: &Self::CType) -> bool {
+        <<Self as RustSpec>::Trap as CellValidation>::validate(|| {
+            // SAFETY: The validation contract requires exclusive access to these contents.
+            unsafe { T::is_valid(&*target.get()) }
+        })
+    }
+}
+
+unsafe impl<T: AbiCompatible + ?Sized> AbiCompatible for Cell<T> {}
+unsafe impl<T: AbiCompatibleValidate + ?Sized> AbiCompatibleValidate for Cell<T>
+where
+    Self: RustSpec<Trap: CellValidation>,
+{
+    #[inline(always)]
+    unsafe fn is_valid(target: &Self::CType) -> bool {
+        <<Self as RustSpec>::Trap as CellValidation>::validate(|| {
+            // SAFETY: The validation contract requires exclusive access to these contents.
+            unsafe { T::is_valid(&*target.as_ptr()) }
+        })
+    }
 }
 
 #[cfg(feature = "alloc")]
 unsafe impl<R: AbiCompatible<CType: Sized>> AbiCompatible for Box<R> where
-    Self: RustSpec<Layout = Stable> + ReprC<CType = AbiBox<<R as ReprC>::CType>>
+    Self: RustSpec<Layout = Specified> + ReprC<CType = AbiBox<<R as ReprC>::CType>>
 {
 }
 #[cfg(feature = "alloc")]
 unsafe impl<R: AbiCompatibleValidate<CType: Sized>> AbiCompatibleValidate for Box<R>
 where
-    Self: RustSpec<Layout = Stable> + ReprC<CType = AbiBox<<R as ReprC>::CType>>,
+    Self: RustSpec<Layout = Specified> + ReprC<CType = AbiBox<<R as ReprC>::CType>>,
 {
     #[inline(always)]
     unsafe fn is_valid(target: &Self::CType) -> bool {
@@ -260,9 +261,9 @@ where
     }
 }
 
-unsafe impl<R: AbiCompatibleValidate<CType: Sized>, const N: usize> AbiCompatibleValidate for [R; N]
-where
-    Self: RustSpec<Layout = Stable>,
+unsafe impl<R: AbiCompatible<CType: Sized>, const N: usize> AbiCompatible for [R; N] {}
+unsafe impl<R: AbiCompatibleValidate<CType: Sized>, const N: usize> AbiCompatibleValidate
+    for [R; N]
 {
     #[inline(always)]
     unsafe fn is_valid(target: &Self::CType) -> bool {
@@ -275,15 +276,9 @@ where
         true
     }
 }
-unsafe impl<R: AbiCompatible<CType: Sized>, const N: usize> AbiCompatible for [R; N] where
-    Self: RustSpec<Layout = Stable>
-{
-}
 
-unsafe impl<R: AbiCompatibleValidate<CType: Sized>> AbiCompatibleValidate for [R]
-where
-    Self: RustSpec<Layout = Stable>,
-{
+unsafe impl<R: AbiCompatible<CType: Sized>> AbiCompatible for [R] {}
+unsafe impl<R: AbiCompatibleValidate<CType: Sized>> AbiCompatibleValidate for [R] {
     #[inline(always)]
     unsafe fn is_valid(target: &Self::CType) -> bool {
         for item in target {
@@ -295,11 +290,26 @@ where
         true
     }
 }
-unsafe impl<R: AbiCompatible<CType: Sized>> AbiCompatible for [R] where
-    Self: RustSpec<Layout = Stable>
+
+unsafe impl<R: AbiCompatible + Niche> AbiCompatible for Option<R>
+where
+    Self: ReprC<CType = crate::marker::Native<crate::option::abi::OptionSome<<R as ReprC>::CType>>>,
+    Self: RustSpec<Layout = Specified>,
 {
 }
+unsafe impl<R: AbiCompatibleValidate + Niche> AbiCompatibleValidate for Option<R>
+where
+    Self: ReprC<CType = crate::marker::Native<crate::option::abi::OptionSome<<R as ReprC>::CType>>>,
+    Self: RustSpec<Layout = Specified>,
+{
+    #[inline(always)]
+    unsafe fn is_valid(target: &Self::CType) -> bool {
+        let target = &target.0;
+        R::is_niche(&target.0) || unsafe { R::is_valid(&target.0) }
+    }
+}
 
+unsafe impl AbiCompatible for str {}
 unsafe impl AbiCompatibleValidate for str {
     #[inline(always)]
     unsafe fn is_valid(target: &Self::CType) -> bool {
@@ -308,22 +318,6 @@ unsafe impl AbiCompatibleValidate for str {
         let bytes = unsafe { core::slice::from_raw_parts(ptr.cast::<u8>(), len) };
         core::str::from_utf8(bytes).is_ok()
     }
-}
-unsafe impl AbiCompatible for str {}
-
-unsafe impl<R: AbiCompatibleValidate + Niche> AbiCompatibleValidate for Option<R>
-where
-    Self: RustSpec<Layout = Stable> + ReprC<CType = Native<AbiOptionSome<<R as ReprC>::CType>>>,
-{
-    #[inline(always)]
-    unsafe fn is_valid(target: &Self::CType) -> bool {
-        let target = &target.0;
-        R::is_niche(&target.0) || unsafe { R::is_valid(&target.0) }
-    }
-}
-unsafe impl<R: AbiCompatible + Niche> AbiCompatible for Option<R> where
-    Self: RustSpec<Layout = Stable> + ReprC<CType = Native<AbiOptionSome<<R as ReprC>::CType>>>
-{
 }
 
 // TODO: Use this somehow to strengthen AbiCompatible assumptions
@@ -357,6 +351,7 @@ pub(crate) unsafe fn transmute_owned<S, T>(source: S) -> T {
 
 #[cfg(test)]
 mod tests {
+    use crate::CType;
     #[cfg(feature = "alloc")]
     use alloc::vec::Vec;
     use core::cell::{Cell, UnsafeCell};
@@ -367,7 +362,7 @@ mod tests {
     #[cfg(feature = "alloc")]
     use crate::wide::abi::WideBox;
     use crate::{
-        CType, ReprC,
+        ReprC,
         convert::{
             AbiCompatibleValidate, Decode, DecodeMove, Encode, EncodeMove, EncodeMoveUnchecked,
             Store,
@@ -536,7 +531,7 @@ mod tests {
             Encode,
         );
         assert_impl_all!(Option<bool>:
-            Niche<CType = Native<AbiOptionSome<<bool as crate::ReprC>::CType>>>,
+            Niche<CType = Native<crate::option::abi::OptionSome<<bool as crate::ReprC>::CType>>>,
             Decode<'static>,
             Encode,
         );

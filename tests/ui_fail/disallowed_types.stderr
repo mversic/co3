@@ -80,14 +80,14 @@ help: the following other types implement trait `BorrowedDecode<'d>`
     |
     |   unsafe impl<'d> BorrowedDecode<'d> for Box<str> {
     |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Box<str>`
-    = note: required for `Box<provider::OpaqueZst>` to implement `co3::borrow::_::BorrowedDecode_cfg0<'_, co3::boxed::abi::Box<provider::OpaqueZst>>`
+    = note: required for `Box<provider::OpaqueZst>` to implement `co3::borrow::_::BorrowedDecode0<'_, co3::boxed::abi::Box<provider::OpaqueZst>>`
     = note: required for `Box<provider::OpaqueZst>` to implement `BorrowedDecode<'_>`
 note: required by a bound in `co3::borrow::decode`
    --> src/borrow.rs
     |
     | pub unsafe fn decode<'d, T: BorrowedDecode<'d, Store: EmptyStore + 'd>>(
     |                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `decode`
-    = note: this error originates in the macro `disjoint_impls` (in Nightly builds, run with -Z macro-backtrace for more info)
+    = note: this error originates in the macro `::disjoint_impls::disjoint_impls` (in Nightly builds, run with -Z macro-backtrace for more info)
 help: consider annotating `provider::OpaqueZst` with `#[derive(Copy)]`
     |
  34 +     #[derive(Copy)]
@@ -115,8 +115,8 @@ help: the trait `BorrowedDecode<'_>` is not implemented for `provider::OpaqueZst
               `(A, B, C, D, E)` implements `BorrowedDecode<'d>`
               `(A, B, C, D, E, F)` implements `BorrowedDecode<'d>`
             and $N others
-    = note: required for `Box<provider::OpaqueZst>` to implement `co3::borrow::_::BorrowedDecode_cfg1<'_, provider::OpaqueZst, rust_spec::size::Sized<Gt<rust_spec::Zero>>>`
-    = note: required for `Box<provider::OpaqueZst>` to implement `co3::borrow::_::BorrowedDecode_cfg0<'_, co3::boxed::abi::Box<provider::OpaqueZst>>`
+    = note: required for `Box<provider::OpaqueZst>` to implement `co3::borrow::_::BorrowedDecode00<'_, provider::OpaqueZst, rust_spec::size::Sized<Gt<rust_spec::Zero>>>`
+    = note: required for `Box<provider::OpaqueZst>` to implement `co3::borrow::_::BorrowedDecode0<'_, co3::boxed::abi::Box<provider::OpaqueZst>>`
     = note: required for `Box<provider::OpaqueZst>` to implement `BorrowedDecode<'_>`
 note: required by a bound in `co3::borrow::decode`
    --> src/borrow.rs
@@ -149,7 +149,7 @@ help: the trait `BorrowedDecode<'_>` is not implemented for `provider::OpaqueZst
               `(A, B, C, D, E)` implements `BorrowedDecode<'d>`
               `(A, B, C, D, E, F)` implements `BorrowedDecode<'d>`
             and $N others
-    = note: required for `Box<provider::OpaqueZst>` to implement `co3::borrow::_::BorrowedDecode_cfg1<'_, provider::OpaqueZst, rust_spec::size::Sized<Gt<rust_spec::Zero>>>`
+    = note: required for `Box<provider::OpaqueZst>` to implement `co3::borrow::_::BorrowedDecode00<'_, provider::OpaqueZst, rust_spec::size::Sized<Gt<rust_spec::Zero>>>`
     = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0080]: evaluation panicked: Mark the return type with `move` to transfer ownership
@@ -199,7 +199,7 @@ help: the trait `BorrowedEncode` is not implemented for `provider::OpaqueZst`
               (A, B, C, D, E)
               (A, B, C, D, E, F)
             and $N others
-    = note: required for `Box<provider::OpaqueZst>` to implement `co3::borrow::_::BorrowedEncode_cfg0<co3::boxed::abi::Box<provider::OpaqueZst>, Stable, rust_spec::size::Sized<Gt<rust_spec::Zero>>>`
+    = note: required for `Box<provider::OpaqueZst>` to implement `co3::borrow::_::BorrowedEncode0<Specified, rust_spec::size::Sized<Gt<rust_spec::Zero>>, co3::boxed::abi::Box<provider::OpaqueZst>>`
     = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0080]: evaluation panicked: ABI retype size mismatch

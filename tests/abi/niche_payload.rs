@@ -7,7 +7,7 @@ use co3::{
     option::{self, OptionSome},
     result::{self, ResultErr, ResultOk},
     rust_spec::{
-        RustSpec, Stable,
+        RustSpec, Specified,
         layout::{NonRobust, Robust},
     },
 };
@@ -19,12 +19,12 @@ use static_assertions::{assert_impl_all, assert_type_eq_all, assert_type_ne_all}
 #[repr_c(NICHE = CustomNicheCType(0))]
 struct CustomNiche(u8);
 
-assert_impl_all!(OptionSome<u8>: RustSpec<Layout = Stable, Trap = Robust>);
-assert_impl_all!(ResultOk<u8>: RustSpec<Layout = Stable, Trap = Robust>);
-assert_impl_all!(ResultErr<u8>: RustSpec<Layout = Stable, Trap = Robust>);
-assert_impl_all!(OptionSome<CustomNiche>: RustSpec<Layout = Stable, Trap = NonRobust>);
-assert_impl_all!(ResultOk<CustomNiche>: RustSpec<Layout = Stable, Trap = NonRobust>);
-assert_impl_all!(ResultErr<CustomNiche>: RustSpec<Layout = Stable, Trap = NonRobust>);
+assert_impl_all!(OptionSome<u8>: RustSpec<Layout = Specified, Trap = Robust>);
+assert_impl_all!(ResultOk<u8>: RustSpec<Layout = Specified, Trap = Robust>);
+assert_impl_all!(ResultErr<u8>: RustSpec<Layout = Specified, Trap = Robust>);
+assert_impl_all!(OptionSome<CustomNiche>: RustSpec<Layout = Specified, Trap = NonRobust>);
+assert_impl_all!(ResultOk<CustomNiche>: RustSpec<Layout = Specified, Trap = NonRobust>);
+assert_impl_all!(ResultErr<CustomNiche>: RustSpec<Layout = Specified, Trap = NonRobust>);
 assert_type_eq_all!(
     <OptionSome<CustomNiche> as ReprC>::CType,
     option::abi::OptionSome<<CustomNiche as ReprC>::CType>

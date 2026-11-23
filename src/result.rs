@@ -351,6 +351,8 @@ impl<'d, T: Decode<'d, CType: Copy>, E: Decode<'d, CType: Copy>> Decode<'d> for 
 
 unsafe impl<T: AbiCompatibleValidate<CType: Copy>, E: AbiCompatibleValidate<CType: Copy>>
     AbiCompatibleValidate for Result<T, E>
+where
+    Self: crate::rust_spec::RustSpec<Layout = crate::rust_spec::Specified>,
 {
     unsafe fn is_valid(target: &Self::CType) -> bool {
         match target.tag() {
@@ -362,6 +364,8 @@ unsafe impl<T: AbiCompatibleValidate<CType: Copy>, E: AbiCompatibleValidate<CTyp
 }
 unsafe impl<T: AbiCompatible<CType: Copy>, E: AbiCompatible<CType: Copy>> AbiCompatible
     for Result<T, E>
+where
+    Self: crate::rust_spec::RustSpec<Layout = crate::rust_spec::Specified>,
 {
 }
 
@@ -400,7 +404,7 @@ impl<T, E> From<Result<T, E>> for core::result::Result<T, E> {
 unsafe impl<T: EmptyStore, E: EmptyStore> EmptyStore for core::result::Result<T, E> {}
 
 unsafe impl<T, E> CType for core::result::Result<T, E> where
-    Self: RustSpec<Layout = rust_spec::Stable, Trap = rust_spec::layout::Robust, Drop = NoDrop>
+    Self: RustSpec<Layout = rust_spec::Specified, Trap = rust_spec::layout::Robust, Drop = NoDrop>
 {
 }
 
@@ -492,12 +496,18 @@ pub mod abi {
         impl<$($generics)*> Encode for $name<Ok, Err> {}
         impl<$($generics)*> EncodeUnchecked for $name<Ok, Err> {}
         impl<'d, $($generics)*> Decode<'d> for $name<Ok, Err> {}
-        unsafe impl<$($generics)*> AbiCompatibleValidate for $name<Ok, Err> {
+        unsafe impl<$($generics)*> AbiCompatibleValidate for $name<Ok, Err>
+where
+    Self: $crate::rust_spec::RustSpec<Layout = $crate::rust_spec::Specified>,
+{
             unsafe fn is_valid(_: &Self::CType) -> bool {
                 true
             }
         }
-        unsafe impl<$($generics)*> AbiCompatible for $name<Ok, Err> {}
+        unsafe impl<$($generics)*> AbiCompatible for $name<Ok, Err>
+where
+    Self: $crate::rust_spec::RustSpec<Layout = $crate::rust_spec::Specified>,
+{}
 
         impl<$($generics)*> Copy for $name<Ok, Err> where $payload: Copy {}
         impl<$($generics)*> Clone for $name<Ok, Err> where $payload: Clone {

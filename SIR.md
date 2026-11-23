@@ -88,7 +88,7 @@ The types are lowered as follows:
 
 ## From an export to a C declaration
 
-The following example:
+Given a compliant C header generator, the following example:
 
 ```rust
 use co3::{ReprC, ffi, rust_spec::RustSpec};

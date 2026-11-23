@@ -46,7 +46,7 @@ error[E0277]: the trait bound `(dyn Trait + '__co3_0): RustSpec` is not satisfie
    = note: required for `&'__co3_0 (dyn Trait + '__co3_0)` to implement `ReprC`
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0277]: the trait bound `&(dyn Trait + '__co3_0): co3::_::ReprC_cfg0<_, _, _>` is not satisfied
+error[E0277]: the trait bound `&(dyn Trait + '__co3_0): co3::_::ReprC0<_, _, _>` is not satisfied
   --> tests/ui_fail/dyn_trait.rs:7:1
    |
  7 | / ffi! {
@@ -55,14 +55,14 @@ error[E0277]: the trait bound `&(dyn Trait + '__co3_0): co3::_::ReprC_cfg0<_, _,
 10 | |     impl dyn Trait {
 ...  |
 13 | | }
-   | |_^ the trait `co3::_::ReprC_cfg0<_, _, _>` is not implemented for `&(dyn Trait + '__co3_0)`
+   | |_^ the trait `co3::_::ReprC0<_, _, _>` is not implemented for `&(dyn Trait + '__co3_0)`
    |
-   = help: the following other types implement trait `co3::_::ReprC_cfg0<_TŠČ0, _TŠČ1, _TŠČ2>`:
-             `&'_lšč0 R` implements `co3::_::ReprC_cfg0<<R as ReprC>::CType, <R as RustSpec>::Layout, NulTerminated>`
-             `&'_lšč0 R` implements `co3::_::ReprC_cfg0<<R as ReprC>::CType, Unstable, _TŠČ0>`
-             `&'_lšč0 R` implements `co3::_::ReprC_cfg0<_TŠČ0, Unstable, co3::rust_spec::size::MetaSized<SliceLike>>`
-             `&'a R` implements `co3::_::ReprC_cfg0<<R as ReprC>::CType, Stable, _TŠČ0>`
-             `&'a R` implements `co3::_::ReprC_cfg0<_TŠČ0, Stable, co3::rust_spec::size::MetaSized<SliceLike>>`
+   = help: the following other types implement trait `co3::_::ReprC0<_TŠČ0, _TŠČ1, _TŠČ2>`:
+             `&'_lšč0 R` implements `co3::_::ReprC0<<R as ReprC>::CType, <R as RustSpec>::Layout, NulTerminated>`
+             `&'_lšč0 R` implements `co3::_::ReprC0<<R as ReprC>::CType, Unspecified, _TŠČ0>`
+             `&'_lšč0 R` implements `co3::_::ReprC0<_TŠČ0, Unspecified, co3::rust_spec::size::MetaSized<SliceLike>>`
+             `&'a R` implements `co3::_::ReprC0<<R as ReprC>::CType, Specified, _TŠČ0>`
+             `&'a R` implements `co3::_::ReprC0<_TŠČ0, Specified, co3::rust_spec::size::MetaSized<SliceLike>>`
    = note: required for `&'__co3_0 (dyn Trait + '__co3_0)` to implement `ReprC`
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
@@ -82,7 +82,7 @@ error[E0308]: mismatched types
    = note: expected fn pointer `for<'a> fn(&'a (dyn Trait + 'a)) -> u8`
                  found fn item `for<'a> fn(&'a dyn Trait) -> u8 {<dyn Trait as Trait>::value}`
 
-error[E0277]: the trait bound `&dyn Trait: co3::stored::_::DecodeMove_cfg0<'_, _, _, _, _>` is not satisfied
+error[E0277]: the trait bound `&dyn Trait: co3::stored::_::DecodeMove0<'_, _, _, _, _>` is not satisfied
   --> tests/ui_fail/dyn_trait.rs:7:1
    |
  7 | / ffi! {
@@ -91,18 +91,18 @@ error[E0277]: the trait bound `&dyn Trait: co3::stored::_::DecodeMove_cfg0<'_, _
 10 | |     impl dyn Trait {
 ...  |
 13 | | }
-   | |_^ the trait `co3::stored::_::DecodeMove_cfg0<'_, _, _, _, _>` is not implemented for `&dyn Trait`
+   | |_^ the trait `co3::stored::_::DecodeMove0<'_, _, _, _, _>` is not implemented for `&dyn Trait`
    |
-help: the following other types implement trait `co3::stored::_::DecodeMove_cfg0<'d, _TŠČ1, _TŠČ2, _TŠČ3, _TŠČ4>`
+help: the following other types implement trait `co3::stored::_::DecodeMove0<'d, _TŠČ1, _TŠČ2, _TŠČ3, _TŠČ4>`
   --> src/stored.rs
    |
    | /     unsafe impl<'d, 'r: 'd, R: AbiCompatibleValidate + ?Sized> DecodeMove<'d>
    | |         for &'r R
    | |     where
-   | |         Self: RustSpec<Layout = Stable> + ReprC<CType: crate::CType + RefCarrier<Pointee = <R as ReprC>::CType>>,
-   | |         R: RustSpec<Layout = Stable, Size: Thin>,
+   | |         Self: RustSpec<Layout = Specified> + ReprC<CType: crate::CType + RefCarrier<Pointee = <R as ReprC>::CType>>,
+   | |         R: RustSpec<Layout = Specified, Size: Thin>,
    | |         <R as RustSpec>::Mutability: InteriorTrap<Trap = Robust>,
-   | |_________________________________________________________________^ `&'r R` implements `co3::stored::_::DecodeMove_cfg0<'d, Stable, Stable, <R as RustSpec>::Mutability, _TŠČ1>`
+   | |_________________________________________________________________^ `&'r R` implements `co3::stored::_::DecodeMove0<'d, Specified, Specified, _TŠČ1, <R as RustSpec>::Mutability>`
 ...
    | /     unsafe impl<
    | |         'd,
@@ -111,12 +111,12 @@ help: the following other types implement trait `co3::stored::_::DecodeMove_cfg0
 ...  |
    | |         R: Wide<Metadata = usize>,
    | |         <R as RustSpec>::Mutability: InteriorTrap<Trap = Robust>,
-   | |_________________________________________________________________^ `&'r R` implements `co3::stored::_::DecodeMove_cfg0<'d, Unstable, Stable, <R as RustSpec>::Mutability, co3::rust_spec::size::MetaSized<SliceLike>>`
+   | |_________________________________________________________________^ `&'r R` implements `co3::stored::_::DecodeMove0<'d, Unspecified, Specified, co3::rust_spec::size::MetaSized<SliceLike>, <R as RustSpec>::Mutability>`
 ...
    | /     unsafe impl<'d, R: SoftDecodeRef<'d> + ?Sized> DecodeMove<'d> for &'d R
    | |     where
-   | |         R: RustSpec<Layout = Unstable>,
-   | |         Self: RustSpec<Layout = Unstable> + ReprC<CType: CType + Sized>,
-   | |________________________________________________________________________^ `&'d R` implements `co3::stored::_::DecodeMove_cfg0<'d, Unstable, Unstable, <R as RustSpec>::Mutability, <R as RustSpec>::Size>`
+   | |         R: RustSpec<Layout = Unspecified>,
+   | |         Self: RustSpec<Layout = Unspecified> + ReprC<CType: CType + Sized>,
+   | |___________________________________________________________________________^ `&'d R` implements `co3::stored::_::DecodeMove0<'d, Unspecified, Unspecified, <R as RustSpec>::Size, <R as RustSpec>::Mutability>`
    = note: required for `&dyn Trait` to implement `DecodeMove<'_>`
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)

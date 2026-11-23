@@ -175,6 +175,12 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
 
     let repr = parse_repr(&input.attrs)?;
     let repr_attr = repr.kind.as_ref();
+    if !cfg!(feature = "repr-rust") && repr_attr.is_none() {
+        return Err(syn::Error::new_spanned(
+            &input.ident,
+            "types without an explicit repr require the `repr-rust` feature",
+        ));
+    }
     let repr_alignment = repr.alignment.as_ref();
     let repr_c_attrs = parse_repr_c_attrs(&input.attrs)?;
     let mut variant_attrs = Vec::new();
@@ -533,17 +539,24 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
             Ok(quote! {
                 const _: () = {
                     #[allow(unused_imports, reason = "alias usage depends on the generated layout constraints")]
-                    use co3::{marker::Native as __Co3Native, rust_spec::Unstable as __Co3Unstable};
+                    use co3::{marker::Native as __Co3Native, rust_spec::Unspecified as __Co3Unstable};
 
                     co3::disjoint_impls! {
                         trait __Co3CFnReturnLayout {}
 
-                        impl<T> __Co3CFnReturnLayout for T
-                        where T: co3::rust_spec::RustSpec<Size = co3::rust_spec::size::Sized<co3::rust_spec::Gt<co3::rust_spec::Zero>>>
-                        {}
-                        impl<T> __Co3CFnReturnLayout for T
-                        where T: co3::rust_spec::RustSpec<Size = co3::rust_spec::size::Sized<co3::rust_spec::Zero>, __Alignment = co3::rust_spec::One>
-                        {}
+                        impl<T> __Co3CFnReturnLayout for T where
+                            T: co3::rust_spec::RustSpec<
+                                    Size = co3::rust_spec::size::Sized<co3::rust_spec::Gt<co3::rust_spec::Zero>>,
+                                >
+                        {
+                        }
+                        impl<T> __Co3CFnReturnLayout for T where
+                            T: co3::rust_spec::RustSpec<
+                                    Size = co3::rust_spec::size::Sized<co3::rust_spec::Zero>,
+                                    __Alignment = co3::rust_spec::One,
+                                >
+                        {
+                        }
                     }
                     #body
                 };
@@ -604,7 +617,7 @@ fn gen_source_ctype_impl(
         unsafe impl #impl_generics co3::CType for #name #ty_generics
         where
             #speculative Self: co3::rust_spec::RustSpec<
-                Layout = co3::rust_spec::Stable,
+                Layout = co3::rust_spec::Specified,
                 Trap = co3::rust_spec::layout::Robust,
                 Drop = co3::rust_spec::drop::NoDrop,
             >,

@@ -3383,7 +3383,7 @@ fn gen_extern_type_impls(
             }
 
             unsafe impl #impl_generics co3::rust_spec::RustSpec for #ident #ty_generics #where_clause {
-                type Layout = co3::rust_spec::Stable;
+                type Layout = co3::rust_spec::Specified;
                 type Size = co3::rust_spec::size::ExternTypeLike;
                 type __Alignment = co3::rust_spec::One;
                 type Trap = co3::rust_spec::layout::Robust;
@@ -3554,11 +3554,11 @@ fn gen_owned_extern_type_impls(
 
     quote! {
         unsafe impl #impl_generics #co3::rust_spec::RustSpec for #owned_ident #ty_generics #where_clause {
-            type Layout = #co3::rust_spec::Stable;
+            type Layout = #co3::rust_spec::Specified;
             type Size = #co3::rust_spec::size::Sized<#co3::rust_spec::Gt<#co3::rust_spec::Zero>>;
             type __Alignment = <usize as #co3::rust_spec::RustSpec>::__Alignment;
             type Trap = #co3::rust_spec::layout::NonRobust;
-            type Niche = #co3::rust_spec::niche::WithNiche<#co3::rust_spec::Stable>;
+            type Niche = #co3::rust_spec::niche::WithNiche<#co3::rust_spec::Specified>;
             type Mutability = #co3::rust_spec::mutability::Exclusive<#co3::rust_spec::mutability::WithoutInterior>;
             type Drop = #co3::rust_spec::drop::CustomDrop<#co3::rust_spec::drop::NoDrop>;
             type Opacity = #co3::rust_spec::NonOpaque;
@@ -3690,6 +3690,7 @@ fn derive_opaque_item(
         .predicates
         .push(syn::parse_quote!(Self: co3::rust_spec::RustSpec<Opacity = co3::rust_spec::Opaque>));
     let (impl_generics, ty_generics, where_clause) = opaque_generics.split_for_impl();
+
     let tag_family_impl = id.map(|id| gen_tag_family_impl(ident, generics, id));
 
     quote! {

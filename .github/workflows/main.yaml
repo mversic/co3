@@ -45,8 +45,12 @@ jobs:
     - name: Lint workspace (derive only)
       run: cargo clippy --workspace --benches --tests --examples --no-default-features --features derive -- --deny warnings
 
-    - name: Lint no-alloc fixture
-      run: cargo clippy --manifest-path fixtures/no_alloc/Cargo.toml -- --deny warnings
+    - name: Check all fixtures
+      run: |
+        for manifest in fixtures/*/Cargo.toml; do
+          cargo fmt --manifest-path "$manifest" --check
+          cargo clippy --manifest-path "$manifest" -- --deny warnings
+        done
 
   test:
     runs-on: ${{ matrix.os }}

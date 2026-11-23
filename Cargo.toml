@@ -30,18 +30,19 @@ alloc = ["rust-spec/alloc", "co3-derive?/alloc"]
 
 # Enables:
 # - deriving C-compatible representations with `#[derive(ReprC)]`
+# - generating `extern "C"` companion functions via `raw!`
 # - writing exports/extern FFI declarations via `ffi!`
 derive = ["co3-derive"]
 
-# Enables [allocator API](https://github.com/rust-lang/rust/issues/32838)
-allocator-api = ["alloc"]
+# Enables conversions for types with unspecified Rust layouts.
+repr-rust = ["co3-derive?/repr-rust"]
 
-default = ["alloc", "derive"]
+default = ["alloc", "derive", "repr-rust"]
 
 [dependencies]
-co3-derive = { version = "0.8.2", path = "derive", optional = true }
+co3-derive = { version = "0.8.2", path = "derive", optional = true, default-features = false }
 
-rust-spec = { version = "0.7.2", default-features = false, features = ["derive"] }
+rust-spec = { version = "0.7.3", default-features = false, features = ["derive"] }
 disjoint_impls = "1.4.5"
 impls = "1.0.3"
 sealed = "0.7.0"
@@ -52,16 +53,16 @@ trybuild = "1.0.121"
 
 [[test]]
 name = "ui"
-required-features = ["alloc", "derive"]
+required-features = ["alloc", "derive", "repr-rust"]
 
 [[test]]
 name = "abi"
-required-features = ["alloc", "derive"]
+required-features = ["alloc", "derive", "repr-rust"]
 
 [[test]]
 name = "export"
-required-features = ["alloc", "derive"]
+required-features = ["alloc", "derive", "repr-rust"]
 
 [[test]]
 name = "import"
-required-features = ["alloc", "derive"]
+required-features = ["alloc", "derive", "repr-rust"]
