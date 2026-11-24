@@ -1,4 +1,9 @@
 // A record containing a borrow and a lifetime parameter.
+
+
+
+use co3::convert::{lang};
+
 include!("../support/mod.rs");
 
 #[derive(Clone, Copy)]
@@ -16,20 +21,25 @@ pub struct View<'a> {
 #[cfg_attr(feature = "boltffi", boltffi::export)]
 #[cfg_attr(feature = "interoptopus", interoptopus::ffi)]
 #[cfg_attr(feature = "safer_ffi", safer_ffi::ffi_export)]
-pub fn read(view: View<'_>) -> u32 {
+pub fn read_view<'a>(view: View<'a>) -> u32 {
     *view.input
 }
 
 #[cfg(feature = "diplomat")]
 #[diplomat::bridge]
 pub mod diplomat_case {
+use co3::convert::{lang};
+
+
+
+
     #[derive(Clone, Copy)]
     #[repr(C)]
     pub struct View<'a> {
         pub input: &'a u32,
     }
 
-    pub fn read(view: View<'_>) -> u32 {
+    pub fn read_view<'a>(view: View<'a>) -> u32 {
         *view.input
     }
 }
@@ -38,7 +48,7 @@ pub mod diplomat_case {
 co3::ffi! {
     #![unsafe(export("C"))]
 
-    fn read(view: View<'_>) -> u32;
+    fn read_view(view: View<'_>) -> u32;
 }
 
 fn main() {}

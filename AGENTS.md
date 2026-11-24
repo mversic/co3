@@ -15,3 +15,10 @@
 - use `raw fn` or `_` instead of lowered types in fn args.
 - keep direct use of encode/decode traits in unit tests.
 - refrain from mentioning lowered abi types directly.
+
+# Imports
+
+- Organize imports into three groups, separated by a blank line: standard library (`std`, `core`, `alloc`), external crates, then internal paths (`crate`, `super`, `self`).
+- Combine imports from the same root into one `use` declaration; never add parallel imports from that root. Preserve conditional-compilation requirements when grouping imports.
+- Import `Language` and the `lang` module; write `L: Language` and `lang::C` (or another language marker), rather than importing individual language markers.
+- Within the library, use `crate::` for internal paths. Doctests and integration tests use `co3::` as external callers.

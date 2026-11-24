@@ -8,8 +8,11 @@ autoexamples = false
 [workspace]
 
 [features]
+diplomat-audit = ["dep:diplomat_core", "dep:syn"]
 default = []
 tracing = []
+abi_stable = ["dep:abi_stable"]
+stabby = ["dep:stabby"]
 co3 = ["dep:co3"]
 uniffi = ["dep:uniffi"]
 boltffi = ["dep:boltffi"]
@@ -18,6 +21,10 @@ interoptopus = ["dep:interoptopus"]
 diplomat = ["dep:diplomat", "dep:diplomat-runtime"]
 
 [dependencies]
+diplomat_core = { version = "=0.17.0", features = ["hir"], optional = true }
+syn = { version = "3", features = ["full"], optional = true }
+abi_stable = { version = "=0.11.3", optional = true }
+stabby = { version = "=36.2.2", optional = true }
 comparison-types = { path = "support/types" }
 co3 = { path = "..", optional = true }
 uniffi = { git = "https://github.com/mozilla/uniffi-rs", rev = "2124d553b73444890fd913b90d8fdd98620def1d", default-features = false, features = ["macro-scaffolding"], optional = true }
@@ -26,6 +33,11 @@ diplomat-runtime = { version = "=0.16.1", optional = true }
 interoptopus = { version = "=0.16.6", optional = true }
 safer-ffi = { version = "=0.1.13", features = ["headers", "dyn-traits"], optional = true }
 boltffi = { version = "=0.32.1", default-features = false, optional = true }
+
+[[bin]]
+name = "check-diplomat-interface"
+path = "support/check_diplomat_interface.rs"
+required-features = ["diplomat-audit"]
 
 [[example]]
 name = "byte_alias"
@@ -48,12 +60,28 @@ name = "mutable_record"
 path = "cases/borrowing/mutable_record.rs"
 
 [[example]]
+name = "unstable_shared"
+path = "cases/borrowing/unstable_shared.rs"
+
+[[example]]
+name = "unstable_exclusive"
+path = "cases/borrowing/unstable_exclusive.rs"
+
+[[example]]
 name = "mutable_slice"
 path = "cases/borrowing/mutable_slice.rs"
 
 [[example]]
 name = "mutable_receiver"
 path = "cases/borrowing/mutable_receiver.rs"
+
+[[example]]
+name = "opaque_mutable_receiver"
+path = "cases/borrowing/opaque_mutable_receiver.rs"
+
+[[example]]
+name = "opaque_type"
+path = "cases/types/opaque_type.rs"
 
 [[example]]
 name = "borrowed_return"
@@ -210,3 +238,99 @@ path = "cases/interior_mutability/shared_cell.rs"
 [[example]]
 name = "trait_object"
 path = "cases/traits/trait_object.rs"
+
+[[example]]
+name = "control_stable_slice"
+path = "cases/controls/control_stable_slice.rs"
+
+[[example]]
+name = "stable_slice_alias"
+path = "cases/syntax/stable_slice_alias.rs"
+
+[[example]]
+name = "control_callback_field"
+path = "cases/controls/control_callback_field.rs"
+
+[[example]]
+name = "callback_field_alias"
+path = "cases/syntax/callback_field_alias.rs"
+
+[[example]]
+name = "callback_field_macro"
+path = "cases/syntax/callback_field_macro.rs"
+
+[[example]]
+name = "control_recursive_pointer"
+path = "cases/controls/control_recursive_pointer.rs"
+
+[[example]]
+name = "recursive_pointer_alias"
+path = "cases/syntax/recursive_pointer_alias.rs"
+
+[[example]]
+name = "control_recursive_reference"
+path = "cases/controls/control_recursive_reference.rs"
+
+[[example]]
+name = "recursive_reference_alias"
+path = "cases/syntax/recursive_reference_alias.rs"
+
+[[example]]
+name = "control_optional_box"
+path = "cases/controls/control_optional_box.rs"
+
+[[example]]
+name = "recursive_optional_box"
+path = "cases/types/recursive_optional_box.rs"
+
+[[example]]
+name = "control_vector_field"
+path = "cases/controls/control_vector_field.rs"
+
+[[example]]
+name = "recursive_vector_field"
+path = "cases/types/recursive_vector_field.rs"
+
+[[example]]
+name = "control_stable_vector_field"
+path = "cases/controls/control_stable_vector_field.rs"
+
+[[example]]
+name = "recursive_stable_vector_field"
+path = "cases/types/recursive_stable_vector_field.rs"
+
+[[example]]
+name = "recursive_vector_default_repr"
+path = "cases/types/recursive_vector_default_repr.rs"
+
+[[example]]
+name = "slice_renamed_import"
+path = "cases/syntax/slice_renamed_import.rs"
+
+[[example]]
+name = "slice_reexport"
+path = "cases/syntax/slice_reexport.rs"
+
+[[example]]
+name = "slice_associated_projection"
+path = "cases/syntax/slice_associated_projection.rs"
+
+[[example]]
+name = "slice_type_macro"
+path = "cases/syntax/slice_type_macro.rs"
+
+[[example]]
+name = "nested_reference_named"
+path = "cases/borrowing/nested_reference_named.rs"
+
+[[example]]
+name = "niche_nonzero"
+path = "cases/types/niche_nonzero.rs"
+
+[[example]]
+name = "niche_bool"
+path = "cases/types/niche_bool.rs"
+
+[[example]]
+name = "framework_option_bool"
+path = "cases/types/framework_option_bool.rs"

@@ -1,2 +1,2 @@
 // Deliberately defined in another crate, outside any framework macro input.
-pub type Count = u32;
+pub type Bytes = [u8];

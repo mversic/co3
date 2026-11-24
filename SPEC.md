@@ -74,6 +74,7 @@ It must always start with a declaration of direction and ABI (e.g. `#![unsafe(ex
 - Free function symbol names are inferred as `{symbol_prefix}__{fn_name}`.
 - Inherent method symbol names are inferred as `{symbol_prefix}__{SelfTy}__{method}`.
 - Trait method symbol names are inferred as `{symbol_prefix}__{TraitPath}__{SelfTy}__{method}`.
+- `#![lang = "Lang"]` selects the foreign language contract (defaults to C) for conversions.
 - `#![symbol_prefix = "..."]` defines the symbol prefix (defaults to `CARGO_CRATE_NAME`).
 - `#[symbol_name = "..."]` overrides the name mangling enforced by the `ffi` macro.
 - `#![symbol_fragments(Ty = "frag", ...)]` declares symbol interpolation values for types used to concretize parameters.

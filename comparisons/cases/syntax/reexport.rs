@@ -6,6 +6,9 @@ mod model {
 }
 use model::Count;
 
+#[cfg_attr(feature = "abi_stable", abi_stable::sabi_extern_fn)]
+#[cfg_attr(feature = "stabby", no_mangle)]
+#[cfg_attr(feature = "stabby", stabby::stabby)]
 #[cfg_attr(feature = "uniffi", uniffi::export)]
 #[cfg_attr(feature = "boltffi", boltffi::export)]
 #[cfg_attr(feature = "interoptopus", interoptopus::ffi)]
@@ -33,5 +36,8 @@ co3::ffi! {
 
     fn identity(input: Count) -> Count;
 }
+
+#[cfg(feature = "abi_stable")]
+abi_stable_signature!(identity: (Count) -> Count);
 
 fn main() {}

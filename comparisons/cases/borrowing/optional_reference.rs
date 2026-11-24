@@ -5,14 +5,14 @@ include!("../support/mod.rs");
 #[cfg_attr(feature = "boltffi", boltffi::export)]
 #[cfg_attr(feature = "interoptopus", interoptopus::ffi)]
 #[cfg_attr(feature = "safer_ffi", safer_ffi::ffi_export)]
-pub fn read(input: Option<&u32>) -> u32 {
+pub fn read_optional(input: Option<&u32>) -> u32 {
     input.copied().unwrap_or_default()
 }
 
 #[cfg(feature = "diplomat")]
 #[diplomat::bridge]
 pub mod diplomat_case {
-    pub fn read(input: Option<&u32>) -> u32 {
+    pub fn read_optional(input: Option<&u32>) -> u32 {
         input.copied().unwrap_or_default()
     }
 }
@@ -21,7 +21,7 @@ pub mod diplomat_case {
 co3::ffi! {
     #![unsafe(export("C"))]
 
-    fn read(input: Option<&u32>) -> u32;
+    fn read_optional(input: Option<&u32>) -> u32;
 }
 
 fn main() {}

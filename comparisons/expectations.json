@@ -5,7 +5,9 @@
     "diplomat",
     "interoptopus",
     "safer_ffi",
-    "boltffi"
+    "boltffi",
+    "abi_stable",
+    "stabby"
   ],
   "cases": {
     "byte_alias": {
@@ -16,10 +18,12 @@
         },
         "uniffi": {
           "status": "fail",
-          "diagnostic": "mismatched types"
+          "diagnostic": "expected mutable reference `&mut _`"
         },
         "diplomat": {
-          "status": "pass"
+          "status": "pass",
+          "note": "The Byte alias is defined inside the #[diplomat::bridge] module; this result does not establish support for aliases defined outside it.",
+          "hir_diagnostic": "Could not resolve Byte"
         },
         "interoptopus": {
           "status": "fail",
@@ -32,6 +36,14 @@
         "boltffi": {
           "status": "fail",
           "diagnostic": "cannot find macro `Byte` in this scope"
+        },
+        "abi_stable": {
+          "status": "fail",
+          "diagnostic": "the trait bound `[u8]: StableAbi` is not satisfied"
+        },
+        "stabby": {
+          "status": "fail",
+          "diagnostic": "the trait bound `[u8]: IStable` is not satisfied"
         }
       }
     },
@@ -43,10 +55,11 @@
         },
         "uniffi": {
           "status": "fail",
-          "diagnostic": "mismatched types"
+          "diagnostic": "expected mutable reference `&mut _`"
         },
         "diplomat": {
-          "status": "pass"
+          "status": "pass",
+          "hir_diagnostic": "Could not resolve core"
         },
         "interoptopus": {
           "status": "fail",
@@ -59,6 +72,14 @@
         "boltffi": {
           "status": "fail",
           "diagnostic": "cannot find `u8` in `primitive`"
+        },
+        "abi_stable": {
+          "status": "fail",
+          "diagnostic": "the trait bound `[u8]: StableAbi` is not satisfied"
+        },
+        "stabby": {
+          "status": "fail",
+          "diagnostic": "the trait bound `[u8]: IStable` is not satisfied"
         }
       }
     },
@@ -85,6 +106,14 @@
         },
         "boltffi": {
           "status": "pass"
+        },
+        "abi_stable": {
+          "status": "skip",
+          "reason": "No equivalent fixture implemented for this framework."
+        },
+        "stabby": {
+          "status": "skip",
+          "reason": "No equivalent fixture implemented for this framework."
         }
       }
     },
@@ -96,19 +125,30 @@
         },
         "uniffi": {
           "status": "fail",
-          "diagnostic": "mismatched types"
+          "diagnostic": "expected mutable reference `&mut _`"
         },
         "diplomat": {
-          "status": "pass"
+          "status": "pass",
+          "hir_diagnostic": "found &T in input where T isn't a custom type and therefore not opaque. T = u32"
         },
         "interoptopus": {
           "status": "pass"
         },
         "safer_ffi": {
-          "status": "pass"
+          "status": "pass",
+          "c_symbol": "increment"
         },
         "boltffi": {
-          "status": "pass"
+          "status": "pass",
+          "note": "The export takes u32 by value and returns only FfiStatus. The increment acts on a local copy."
+        },
+        "abi_stable": {
+          "status": "skip",
+          "reason": "No equivalent fixture implemented for this framework."
+        },
+        "stabby": {
+          "status": "skip",
+          "reason": "No equivalent fixture implemented for this framework."
         }
       }
     },
@@ -120,7 +160,7 @@
         },
         "uniffi": {
           "status": "fail",
-          "diagnostic": "mismatched types"
+          "diagnostic": "expected mutable reference `&mut Point`"
         },
         "diplomat": {
           "status": "pass"
@@ -129,9 +169,81 @@
           "status": "pass"
         },
         "safer_ffi": {
-          "status": "pass"
+          "status": "pass",
+          "c_symbol": "update"
         },
         "boltffi": {
+          "status": "pass"
+        },
+        "abi_stable": {
+          "status": "skip",
+          "reason": "No equivalent fixture implemented for this framework."
+        },
+        "stabby": {
+          "status": "skip",
+          "reason": "No equivalent fixture implemented for this framework."
+        }
+      }
+    },
+    "unstable_shared": {
+      "path": "cases/borrowing/unstable_shared.rs",
+      "expected": {
+        "co3": {
+          "status": "pass"
+        },
+        "uniffi": {
+          "status": "pass"
+        },
+        "diplomat": {
+          "status": "pass"
+        },
+        "interoptopus": {
+          "status": "pass"
+        },
+        "safer_ffi": {
+          "status": "fail",
+          "diagnostic": "missing explicit `#[repr(…)]` annotation"
+        },
+        "boltffi": {
+          "status": "pass"
+        },
+        "abi_stable": {
+          "status": "fail",
+          "diagnostic": "the #[repr(..)] attribute must be one of the supported attributes"
+        },
+        "stabby": {
+          "status": "pass"
+        }
+      }
+    },
+    "unstable_exclusive": {
+      "path": "cases/borrowing/unstable_exclusive.rs",
+      "expected": {
+        "co3": {
+          "status": "pass"
+        },
+        "uniffi": {
+          "status": "fail",
+          "diagnostic": "expected mutable reference `&mut Point`"
+        },
+        "diplomat": {
+          "status": "pass"
+        },
+        "interoptopus": {
+          "status": "pass"
+        },
+        "safer_ffi": {
+          "status": "fail",
+          "diagnostic": "missing explicit `#[repr(…)]` annotation"
+        },
+        "boltffi": {
+          "status": "pass"
+        },
+        "abi_stable": {
+          "status": "fail",
+          "diagnostic": "the #[repr(..)] attribute must be one of the supported attributes"
+        },
+        "stabby": {
           "status": "pass"
         }
       }
@@ -144,7 +256,7 @@
         },
         "uniffi": {
           "status": "fail",
-          "diagnostic": "mismatched types"
+          "diagnostic": "expected mutable reference `&mut _`"
         },
         "diplomat": {
           "status": "pass"
@@ -159,6 +271,14 @@
         },
         "boltffi": {
           "status": "pass"
+        },
+        "abi_stable": {
+          "status": "skip",
+          "reason": "No equivalent fixture implemented for this framework."
+        },
+        "stabby": {
+          "status": "skip",
+          "reason": "No equivalent fixture implemented for this framework."
         }
       }
     },
@@ -170,21 +290,29 @@
         },
         "uniffi": {
           "status": "fail",
-          "diagnostic": "cannot borrow data in an `Arc` as mutable"
+          "diagnostic": "cannot borrow value as mutable, as `uniffi_args` is not declared as mutable"
         },
         "diplomat": {
           "status": "pass"
         },
         "interoptopus": {
-          "status": "pass"
+          "status": "fail",
+          "diagnostic": "This type is not declared as a service type."
         },
         "safer_ffi": {
           "status": "skip",
           "reason": "safer_ffi exports free functions; this method-declaration fixture would need a free-function adapter."
         },
         "boltffi": {
-          "status": "pass",
-          "note": "Uses #[export(single_threaded)]; caller must guarantee single-threaded access."
+          "status": "pass"
+        },
+        "abi_stable": {
+          "status": "skip",
+          "reason": "No equivalent fixture implemented for this framework."
+        },
+        "stabby": {
+          "status": "skip",
+          "reason": "No equivalent fixture implemented for this framework."
         }
       }
     },
@@ -199,17 +327,27 @@
           "diagnostic": "use of undeclared lifetime name `'a`"
         },
         "diplomat": {
-          "status": "pass"
+          "status": "pass",
+          "hir_diagnostic": "found &T in input where T isn't a custom type and therefore not opaque. T = u32"
         },
         "interoptopus": {
           "status": "pass"
         },
         "safer_ffi": {
-          "status": "pass"
+          "status": "pass",
+          "c_symbol": "borrow_first"
         },
         "boltffi": {
           "status": "fail",
           "diagnostic": "BoltFFI: `function borrow_first` cannot use generics"
+        },
+        "abi_stable": {
+          "status": "skip",
+          "reason": "No equivalent fixture implemented for this framework."
+        },
+        "stabby": {
+          "status": "skip",
+          "reason": "No equivalent fixture implemented for this framework."
         }
       }
     },
@@ -224,17 +362,27 @@
           "diagnostic": "implicit elided lifetime not allowed here"
         },
         "diplomat": {
-          "status": "pass"
+          "status": "pass",
+          "hir_diagnostic": "found &T in input where T isn't a custom type and therefore not opaque. T = u32"
         },
         "interoptopus": {
           "status": "pass"
         },
         "safer_ffi": {
-          "status": "pass"
+          "status": "pass",
+          "c_symbol": "read_view"
         },
         "boltffi": {
           "status": "fail",
           "diagnostic": "BoltFFI: `record View` cannot use generics"
+        },
+        "abi_stable": {
+          "status": "skip",
+          "reason": "No equivalent fixture implemented for this framework."
+        },
+        "stabby": {
+          "status": "skip",
+          "reason": "No equivalent fixture implemented for this framework."
         }
       }
     },
@@ -249,17 +397,27 @@
           "diagnostic": "the trait bound `&u32: Lift<UniFfiTag>` is not satisfied"
         },
         "diplomat": {
-          "status": "pass"
+          "status": "pass",
+          "hir_diagnostic": "found Option<&T> in input, but T isn't a custom type and therefore not opaque. T = u32"
         },
         "interoptopus": {
           "status": "pass"
         },
         "safer_ffi": {
-          "status": "pass"
+          "status": "pass",
+          "c_symbol": "read_optional"
         },
         "boltffi": {
           "status": "fail",
           "diagnostic": "BoltFFI: unsupported source type `&u32`"
+        },
+        "abi_stable": {
+          "status": "skip",
+          "reason": "No equivalent fixture implemented for this framework."
+        },
+        "stabby": {
+          "status": "skip",
+          "reason": "No equivalent fixture implemented for this framework."
         }
       }
     },
@@ -274,18 +432,27 @@
           "diagnostic": "the trait bound `&u32: LiftRef<UniFfiTag>` is not satisfied"
         },
         "diplomat": {
-          "status": "pass"
+          "status": "pass",
+          "hir_diagnostic": "found &T in input where T isn't a custom type and therefore not opaque. T = &u32"
         },
         "interoptopus": {
           "status": "pass"
         },
         "safer_ffi": {
           "status": "fail",
-          "diagnostic": "lifetime mismatch"
+          "diagnostic": "each elided lifetime in input position becomes a distinct lifetime"
         },
         "boltffi": {
           "status": "fail",
           "diagnostic": "BoltFFI: unsupported source type `&u32`"
+        },
+        "abi_stable": {
+          "status": "skip",
+          "reason": "No equivalent fixture implemented for this framework."
+        },
+        "stabby": {
+          "status": "skip",
+          "reason": "No equivalent fixture implemented for this framework."
         }
       }
     },
@@ -314,6 +481,14 @@
         "boltffi": {
           "status": "fail",
           "diagnostic": "BoltFFI: `function identity` cannot use generics"
+        },
+        "abi_stable": {
+          "status": "skip",
+          "reason": "No equivalent fixture implemented for this framework."
+        },
+        "stabby": {
+          "status": "skip",
+          "reason": "No equivalent fixture implemented for this framework."
         }
       }
     },
@@ -342,6 +517,14 @@
         "boltffi": {
           "status": "fail",
           "diagnostic": "BoltFFI: `function first` cannot use generics"
+        },
+        "abi_stable": {
+          "status": "skip",
+          "reason": "No equivalent fixture implemented for this framework."
+        },
+        "stabby": {
+          "status": "skip",
+          "reason": "No equivalent fixture implemented for this framework."
         }
       }
     },
@@ -363,11 +546,20 @@
           "status": "pass"
         },
         "safer_ffi": {
-          "status": "pass"
+          "status": "pass",
+          "c_symbol": "first"
         },
         "boltffi": {
           "status": "fail",
           "diagnostic": "BoltFFI: unsupported source type `unrecognized type`"
+        },
+        "abi_stable": {
+          "status": "skip",
+          "reason": "No equivalent fixture implemented for this framework."
+        },
+        "stabby": {
+          "status": "skip",
+          "reason": "No equivalent fixture implemented for this framework."
         }
       }
     },
@@ -395,6 +587,14 @@
         },
         "boltffi": {
           "status": "pass"
+        },
+        "abi_stable": {
+          "status": "skip",
+          "reason": "No equivalent fixture implemented for this framework."
+        },
+        "stabby": {
+          "status": "skip",
+          "reason": "No equivalent fixture implemented for this framework."
         }
       }
     },
@@ -415,10 +615,19 @@
           "status": "pass"
         },
         "safer_ffi": {
-          "status": "pass"
+          "status": "pass",
+          "c_symbol": "identity"
         },
         "boltffi": {
           "status": "pass"
+        },
+        "abi_stable": {
+          "status": "skip",
+          "reason": "No equivalent fixture implemented for this framework."
+        },
+        "stabby": {
+          "status": "skip",
+          "reason": "No equivalent fixture implemented for this framework."
         }
       }
     },
@@ -446,6 +655,14 @@
         "boltffi": {
           "status": "fail",
           "diagnostic": "cannot find macro `u128` in this scope"
+        },
+        "abi_stable": {
+          "status": "skip",
+          "reason": "No equivalent fixture implemented for this framework."
+        },
+        "stabby": {
+          "status": "skip",
+          "reason": "No equivalent fixture implemented for this framework."
         }
       }
     },
@@ -460,7 +677,8 @@
           "diagnostic": "the trait bound `char: Lift<UniFfiTag>` is not satisfied"
         },
         "diplomat": {
-          "status": "pass"
+          "status": "pass",
+          "hir_diagnostic": "Could not resolve char"
         },
         "interoptopus": {
           "status": "fail",
@@ -473,6 +691,14 @@
         "boltffi": {
           "status": "fail",
           "diagnostic": "cannot find macro `char` in this scope"
+        },
+        "abi_stable": {
+          "status": "skip",
+          "reason": "No equivalent fixture implemented for this framework."
+        },
+        "stabby": {
+          "status": "skip",
+          "reason": "No equivalent fixture implemented for this framework."
         }
       }
     },
@@ -501,6 +727,14 @@
         "boltffi": {
           "status": "fail",
           "diagnostic": "the size for values of type `[u8]` cannot be known at compilation time"
+        },
+        "abi_stable": {
+          "status": "fail",
+          "diagnostic": "the trait bound `[u8]: StableAbi` is not satisfied"
+        },
+        "stabby": {
+          "status": "fail",
+          "diagnostic": "the trait bound `[u8]: IStable` is not satisfied"
         }
       }
     },
@@ -515,17 +749,27 @@
           "diagnostic": "the trait bound `extern \"C\" fn(u32) -> u32: Lift<UniFfiTag>` is not satisfied"
         },
         "diplomat": {
-          "status": "pass"
+          "status": "pass",
+          "hir_diagnostic": "Could not resolve Callback"
         },
         "interoptopus": {
           "status": "pass"
         },
         "safer_ffi": {
-          "status": "pass"
+          "status": "pass",
+          "c_symbol": "apply"
         },
         "boltffi": {
           "status": "fail",
           "diagnostic": "cannot find macro `Callback` in this scope"
+        },
+        "abi_stable": {
+          "status": "skip",
+          "reason": "No equivalent fixture implemented for this framework."
+        },
+        "stabby": {
+          "status": "skip",
+          "reason": "No equivalent fixture implemented for this framework."
         }
       }
     },
@@ -554,6 +798,14 @@
         "boltffi": {
           "status": "fail",
           "diagnostic": "BoltFFI: `trait Source::Item` is not supported in exported traits"
+        },
+        "abi_stable": {
+          "status": "skip",
+          "reason": "No equivalent fixture implemented for this framework."
+        },
+        "stabby": {
+          "status": "skip",
+          "reason": "No equivalent fixture implemented for this framework."
         }
       }
     },
@@ -582,6 +834,14 @@
         "boltffi": {
           "status": "fail",
           "diagnostic": "BoltFFI: `trait Named::name` cannot define a default body"
+        },
+        "abi_stable": {
+          "status": "skip",
+          "reason": "No equivalent fixture implemented for this framework."
+        },
+        "stabby": {
+          "status": "skip",
+          "reason": "No equivalent fixture implemented for this framework."
         }
       }
     },
@@ -608,6 +868,14 @@
         "boltffi": {
           "status": "pass",
           "note": "Uses #[export(single_threaded)]; caller must guarantee single-threaded access."
+        },
+        "abi_stable": {
+          "status": "skip",
+          "reason": "No equivalent fixture implemented for this framework."
+        },
+        "stabby": {
+          "status": "skip",
+          "reason": "No equivalent fixture implemented for this framework."
         }
       }
     },
@@ -621,17 +889,27 @@
           "status": "pass"
         },
         "diplomat": {
-          "status": "pass"
+          "status": "pass",
+          "hir_diagnostic": "Could not resolve Byte"
         },
         "interoptopus": {
           "status": "pass"
         },
         "safer_ffi": {
-          "status": "pass"
+          "status": "pass",
+          "c_symbol": "identity"
         },
         "boltffi": {
           "status": "fail",
           "diagnostic": "cannot find macro `Byte` in this scope"
+        },
+        "abi_stable": {
+          "status": "skip",
+          "reason": "No equivalent fixture implemented for this framework."
+        },
+        "stabby": {
+          "status": "skip",
+          "reason": "No equivalent fixture implemented for this framework."
         }
       }
     },
@@ -657,6 +935,14 @@
         },
         "boltffi": {
           "status": "pass"
+        },
+        "abi_stable": {
+          "status": "fail",
+          "diagnostic": "the trait bound `[u8]: StableAbi` is not satisfied"
+        },
+        "stabby": {
+          "status": "fail",
+          "diagnostic": "the trait bound `[u8]: IStable` is not satisfied"
         }
       }
     },
@@ -676,9 +962,16 @@
           "status": "pass"
         },
         "safer_ffi": {
-          "status": "pass"
+          "status": "pass",
+          "c_symbol": "increment"
         },
         "boltffi": {
+          "status": "pass"
+        },
+        "abi_stable": {
+          "status": "pass"
+        },
+        "stabby": {
           "status": "pass"
         }
       }
@@ -693,17 +986,25 @@
           "status": "pass"
         },
         "diplomat": {
-          "status": "pass"
+          "status": "pass",
+          "hir_diagnostic": "Could not resolve core"
         },
         "interoptopus": {
           "status": "pass"
         },
         "safer_ffi": {
-          "status": "pass"
+          "status": "pass",
+          "c_symbol": "identity"
         },
         "boltffi": {
           "status": "fail",
           "diagnostic": "cannot find macro `Count` in this scope"
+        },
+        "abi_stable": {
+          "status": "pass"
+        },
+        "stabby": {
+          "status": "pass"
         }
       }
     },
@@ -717,17 +1018,25 @@
           "status": "pass"
         },
         "diplomat": {
-          "status": "pass"
+          "status": "pass",
+          "hir_diagnostic": "Could not resolve Count"
         },
         "interoptopus": {
           "status": "pass"
         },
         "safer_ffi": {
-          "status": "pass"
+          "status": "pass",
+          "c_symbol": "identity"
         },
         "boltffi": {
           "status": "fail",
           "diagnostic": "cannot find macro `Count` in this scope"
+        },
+        "abi_stable": {
+          "status": "pass"
+        },
+        "stabby": {
+          "status": "pass"
         }
       }
     },
@@ -748,11 +1057,18 @@
           "status": "pass"
         },
         "safer_ffi": {
-          "status": "pass"
+          "status": "pass",
+          "c_symbol": "identity"
         },
         "boltffi": {
           "status": "fail",
           "diagnostic": "BoltFFI: unsupported source type `Element::Item`"
+        },
+        "abi_stable": {
+          "status": "pass"
+        },
+        "stabby": {
+          "status": "pass"
         }
       }
     },
@@ -764,7 +1080,7 @@
         },
         "uniffi": {
           "status": "fail",
-          "diagnostic": "mismatched types"
+          "diagnostic": "expected mutable reference `&mut _`"
         },
         "diplomat": {
           "status": "fail",
@@ -781,6 +1097,14 @@
         "boltffi": {
           "status": "fail",
           "diagnostic": "cannot find macro `Buffer` in this scope"
+        },
+        "abi_stable": {
+          "status": "fail",
+          "diagnostic": "the trait bound `[u8]: StableAbi` is not satisfied"
+        },
+        "stabby": {
+          "status": "fail",
+          "diagnostic": "the trait bound `[u8]: IStable` is not satisfied"
         }
       }
     },
@@ -802,11 +1126,18 @@
           "status": "pass"
         },
         "safer_ffi": {
-          "status": "pass"
+          "status": "pass",
+          "c_symbol": "read_optional"
         },
         "boltffi": {
           "status": "fail",
           "diagnostic": "cannot find macro `Maybe` in this scope"
+        },
+        "abi_stable": {
+          "status": "pass"
+        },
+        "stabby": {
+          "status": "pass"
         }
       }
     },
@@ -817,36 +1148,13 @@
           "status": "pass"
         },
         "uniffi": {
-          "status": "pass"
-        },
-        "diplomat": {
-          "status": "pass"
-        },
-        "interoptopus": {
-          "status": "pass"
-        },
-        "safer_ffi": {
-          "status": "pass"
-        },
-        "boltffi": {
           "status": "fail",
-          "diagnostic": "cannot find macro `Count` in this scope"
-        }
-      }
-    },
-    "slice_alias": {
-      "path": "cases/syntax/slice_alias.rs",
-      "expected": {
-        "co3": {
-          "status": "pass"
-        },
-        "uniffi": {
-          "status": "fail",
-          "diagnostic": "mismatched types"
+          "diagnostic": "expected mutable reference `&mut _`"
         },
         "diplomat": {
           "status": "pass",
-          "abi_issue": "Inspected wrapper retains &mut Bytes (a Rust slice reference). The native slice fixture uses DiplomatSliceMut<u8>."
+          "abi_issue": "The generated diplomat_external_fill takes &mut Bytes from comparison_types. The direct slice export takes DiplomatSliceMut<u8>.",
+          "hir_diagnostic": "Could not resolve comparison_types"
         },
         "interoptopus": {
           "status": "fail",
@@ -859,6 +1167,51 @@
         "boltffi": {
           "status": "fail",
           "diagnostic": "cannot find macro `Bytes` in this scope"
+        },
+        "abi_stable": {
+          "status": "fail",
+          "diagnostic": "the trait bound `[u8]: StableAbi` is not satisfied"
+        },
+        "stabby": {
+          "status": "fail",
+          "diagnostic": "the trait bound `[u8]: IStable` is not satisfied"
+        }
+      }
+    },
+    "slice_alias": {
+      "path": "cases/syntax/slice_alias.rs",
+      "expected": {
+        "co3": {
+          "status": "pass"
+        },
+        "uniffi": {
+          "status": "fail",
+          "diagnostic": "expected mutable reference `&mut _`"
+        },
+        "diplomat": {
+          "status": "pass",
+          "abi_issue": "Inspected wrapper retains &mut Bytes (a Rust slice reference). The native slice fixture uses DiplomatSliceMut<u8>.",
+          "hir_diagnostic": "Could not resolve Bytes"
+        },
+        "interoptopus": {
+          "status": "fail",
+          "diagnostic": "the trait bound `[u8]: TypeInfo` is not satisfied"
+        },
+        "safer_ffi": {
+          "status": "fail",
+          "diagnostic": "type mismatch resolving `<OpaqueLayout_<PhantomData<&mut [u8]>> as CType>::OPAQUE_KIND == Concrete`"
+        },
+        "boltffi": {
+          "status": "fail",
+          "diagnostic": "cannot find macro `Bytes` in this scope"
+        },
+        "abi_stable": {
+          "status": "fail",
+          "diagnostic": "the trait bound `[u8]: StableAbi` is not satisfied"
+        },
+        "stabby": {
+          "status": "fail",
+          "diagnostic": "the trait bound `[u8]: IStable` is not satisfied"
         }
       }
     },
@@ -873,7 +1226,9 @@
           "diagnostic": "the trait bound `&mut [u8]: Lift<UniFfiTag>` is not satisfied"
         },
         "diplomat": {
-          "status": "pass"
+          "status": "pass",
+          "hir_diagnostic": "Could not resolve BytesMut",
+          "abi_issue": "The expanded entry point takes BytesMut, an alias for a Rust slice reference."
         },
         "interoptopus": {
           "status": "fail",
@@ -886,6 +1241,14 @@
         "boltffi": {
           "status": "fail",
           "diagnostic": "cannot find macro `BytesMut` in this scope"
+        },
+        "abi_stable": {
+          "status": "fail",
+          "diagnostic": "the trait bound `[u8]: StableAbi` is not satisfied"
+        },
+        "stabby": {
+          "status": "fail",
+          "diagnostic": "the trait bound `[u8]: IStable` is not satisfied"
         }
       }
     },
@@ -900,7 +1263,9 @@
           "status": "pass"
         },
         "diplomat": {
-          "status": "pass"
+          "status": "pass",
+          "hir_diagnostic": "Could not resolve Text",
+          "abi_issue": "The expanded entry point takes Text, an alias for Rust String."
         },
         "interoptopus": {
           "status": "fail",
@@ -913,6 +1278,14 @@
         "boltffi": {
           "status": "fail",
           "diagnostic": "cannot find macro `Text` in this scope"
+        },
+        "abi_stable": {
+          "status": "fail",
+          "diagnostic": "the trait bound `String: StableAbi` is not satisfied"
+        },
+        "stabby": {
+          "status": "fail",
+          "diagnostic": "the trait bound `std::string::String: IStable` is not satisfied"
         }
       }
     },
@@ -928,10 +1301,11 @@
         },
         "diplomat": {
           "status": "fail",
-          "diagnostic": "mismatched types"
+          "diagnostic": "expected `u32`, found future"
         },
         "interoptopus": {
-          "status": "pass"
+          "status": "fail",
+          "diagnostic": "`await` is only allowed inside `async` functions and blocks"
         },
         "safer_ffi": {
           "status": "skip",
@@ -939,6 +1313,14 @@
         },
         "boltffi": {
           "status": "pass"
+        },
+        "abi_stable": {
+          "status": "skip",
+          "reason": "No equivalent fixture implemented for this framework."
+        },
+        "stabby": {
+          "status": "skip",
+          "reason": "No equivalent fixture implemented for this framework."
         }
       }
     },
@@ -959,11 +1341,19 @@
           "status": "pass"
         },
         "safer_ffi": {
-          "status": "pass"
+          "status": "pass",
+          "c_symbol": "identity"
         },
         "boltffi": {
           "status": "fail",
           "diagnostic": "BoltFFI: unsupported source type `unrecognized type`"
+        },
+        "abi_stable": {
+          "status": "fail",
+          "diagnostic": "Cannot currently use type macros safely."
+        },
+        "stabby": {
+          "status": "pass"
         }
       }
     },
@@ -977,17 +1367,25 @@
           "status": "pass"
         },
         "diplomat": {
-          "status": "pass"
+          "status": "pass",
+          "hir_diagnostic": "Could not resolve Done"
         },
         "interoptopus": {
           "status": "pass"
         },
         "safer_ffi": {
-          "status": "pass"
+          "status": "pass",
+          "c_symbol": "finish"
         },
         "boltffi": {
           "status": "fail",
           "diagnostic": "cannot find macro `Done` in this scope"
+        },
+        "abi_stable": {
+          "status": "pass"
+        },
+        "stabby": {
+          "status": "pass"
         }
       }
     },
@@ -1016,6 +1414,14 @@
         "boltffi": {
           "status": "fail",
           "diagnostic": "BoltFFI: unsupported source type `&[u8]`"
+        },
+        "abi_stable": {
+          "status": "skip",
+          "reason": "No equivalent fixture implemented for this framework."
+        },
+        "stabby": {
+          "status": "skip",
+          "reason": "No equivalent fixture implemented for this framework."
         }
       }
     },
@@ -1043,6 +1449,14 @@
         "boltffi": {
           "status": "fail",
           "diagnostic": "BoltFFI: unsupported source type `unrecognized type`"
+        },
+        "abi_stable": {
+          "status": "skip",
+          "reason": "No equivalent fixture implemented for this framework."
+        },
+        "stabby": {
+          "status": "skip",
+          "reason": "No equivalent fixture implemented for this framework."
         }
       }
     },
@@ -1071,6 +1485,12 @@
         "boltffi": {
           "status": "fail",
           "diagnostic": "cannot find `UnsafeCell` in `cell`"
+        },
+        "abi_stable": {
+          "status": "pass"
+        },
+        "stabby": {
+          "status": "pass"
         }
       }
     },
@@ -1085,7 +1505,8 @@
           "diagnostic": "the trait bound `NonZero<u8>: LiftRef<UniFfiTag>` is not satisfied"
         },
         "diplomat": {
-          "status": "pass"
+          "status": "pass",
+          "hir_diagnostic": "Could not resolve core"
         },
         "interoptopus": {
           "status": "pass"
@@ -1097,6 +1518,14 @@
         "boltffi": {
           "status": "fail",
           "diagnostic": "cannot find macro `NonZeroU8` in this scope"
+        },
+        "abi_stable": {
+          "status": "skip",
+          "reason": "No equivalent fixture implemented for this framework."
+        },
+        "stabby": {
+          "status": "skip",
+          "reason": "No equivalent fixture implemented for this framework."
         }
       }
     },
@@ -1125,6 +1554,14 @@
         "boltffi": {
           "status": "fail",
           "diagnostic": "BoltFFI: `function read` cannot use generics"
+        },
+        "abi_stable": {
+          "status": "skip",
+          "reason": "No equivalent fixture implemented for this framework."
+        },
+        "stabby": {
+          "status": "skip",
+          "reason": "No equivalent fixture implemented for this framework."
         }
       }
     },
@@ -1153,6 +1590,14 @@
         "boltffi": {
           "status": "fail",
           "diagnostic": "does not support `#[cfg]` on parameters"
+        },
+        "abi_stable": {
+          "status": "skip",
+          "reason": "No equivalent fixture implemented for this framework."
+        },
+        "stabby": {
+          "status": "skip",
+          "reason": "No equivalent fixture implemented for this framework."
         }
       }
     },
@@ -1181,6 +1626,12 @@
         "boltffi": {
           "status": "fail",
           "diagnostic": "cannot find `UnsafeCell` in `cell`"
+        },
+        "abi_stable": {
+          "status": "pass"
+        },
+        "stabby": {
+          "status": "pass"
         }
       }
     },
@@ -1201,9 +1652,920 @@
           "status": "pass"
         },
         "safer_ffi": {
-          "status": "pass"
+          "status": "pass",
+          "c_symbol": "read_source"
         },
         "boltffi": {
+          "status": "pass"
+        },
+        "abi_stable": {
+          "status": "pass"
+        },
+        "stabby": {
+          "status": "pass"
+        }
+      }
+    },
+    "control_stable_slice": {
+      "path": "cases/controls/control_stable_slice.rs",
+      "expected": {
+        "co3": {
+          "status": "skip",
+          "reason": "Control for framework-provided stable slice types."
+        },
+        "uniffi": {
+          "status": "skip",
+          "reason": "Control for framework-provided stable slice types."
+        },
+        "diplomat": {
+          "status": "skip",
+          "reason": "Control for framework-provided stable slice types."
+        },
+        "interoptopus": {
+          "status": "skip",
+          "reason": "Control for framework-provided stable slice types."
+        },
+        "safer_ffi": {
+          "status": "skip",
+          "reason": "Control for framework-provided stable slice types."
+        },
+        "boltffi": {
+          "status": "skip",
+          "reason": "Control for framework-provided stable slice types."
+        },
+        "abi_stable": {
+          "status": "pass"
+        },
+        "stabby": {
+          "status": "pass"
+        }
+      }
+    },
+    "stable_slice_alias": {
+      "path": "cases/syntax/stable_slice_alias.rs",
+      "expected": {
+        "co3": {
+          "status": "skip",
+          "reason": "Control for framework-provided stable slice types."
+        },
+        "uniffi": {
+          "status": "skip",
+          "reason": "Control for framework-provided stable slice types."
+        },
+        "diplomat": {
+          "status": "skip",
+          "reason": "Control for framework-provided stable slice types."
+        },
+        "interoptopus": {
+          "status": "skip",
+          "reason": "Control for framework-provided stable slice types."
+        },
+        "safer_ffi": {
+          "status": "skip",
+          "reason": "Control for framework-provided stable slice types."
+        },
+        "boltffi": {
+          "status": "skip",
+          "reason": "Control for framework-provided stable slice types."
+        },
+        "abi_stable": {
+          "status": "pass"
+        },
+        "stabby": {
+          "status": "pass"
+        }
+      }
+    },
+    "control_callback_field": {
+      "path": "cases/controls/control_callback_field.rs",
+      "expected": {
+        "co3": {
+          "status": "pass"
+        },
+        "uniffi": {
+          "status": "skip",
+          "reason": "Record-derive control for callback field spelling."
+        },
+        "diplomat": {
+          "status": "skip",
+          "reason": "Record-derive control for callback field spelling."
+        },
+        "interoptopus": {
+          "status": "skip",
+          "reason": "Record-derive control for callback field spelling."
+        },
+        "safer_ffi": {
+          "status": "skip",
+          "reason": "Record-derive control for callback field spelling."
+        },
+        "boltffi": {
+          "status": "skip",
+          "reason": "Record-derive control for callback field spelling."
+        },
+        "abi_stable": {
+          "status": "pass"
+        },
+        "stabby": {
+          "status": "pass"
+        }
+      }
+    },
+    "callback_field_alias": {
+      "path": "cases/syntax/callback_field_alias.rs",
+      "expected": {
+        "co3": {
+          "status": "pass"
+        },
+        "uniffi": {
+          "status": "skip",
+          "reason": "Record-derive control for callback field spelling."
+        },
+        "diplomat": {
+          "status": "skip",
+          "reason": "Record-derive control for callback field spelling."
+        },
+        "interoptopus": {
+          "status": "skip",
+          "reason": "Record-derive control for callback field spelling."
+        },
+        "safer_ffi": {
+          "status": "skip",
+          "reason": "Record-derive control for callback field spelling."
+        },
+        "boltffi": {
+          "status": "skip",
+          "reason": "Record-derive control for callback field spelling."
+        },
+        "abi_stable": {
+          "status": "fail",
+          "diagnostic": "the trait bound `extern \"C\" fn(u32) -> u32: StableAbi` is not satisfied"
+        },
+        "stabby": {
+          "status": "pass"
+        }
+      }
+    },
+    "callback_field_macro": {
+      "path": "cases/syntax/callback_field_macro.rs",
+      "expected": {
+        "co3": {
+          "status": "pass"
+        },
+        "uniffi": {
+          "status": "skip",
+          "reason": "Record-derive control for callback field spelling."
+        },
+        "diplomat": {
+          "status": "skip",
+          "reason": "Record-derive control for callback field spelling."
+        },
+        "interoptopus": {
+          "status": "skip",
+          "reason": "Record-derive control for callback field spelling."
+        },
+        "safer_ffi": {
+          "status": "skip",
+          "reason": "Record-derive control for callback field spelling."
+        },
+        "boltffi": {
+          "status": "skip",
+          "reason": "Record-derive control for callback field spelling."
+        },
+        "abi_stable": {
+          "status": "fail",
+          "diagnostic": "Cannot currently use type macros safely."
+        },
+        "stabby": {
+          "status": "pass"
+        }
+      }
+    },
+    "control_recursive_pointer": {
+      "path": "cases/controls/control_recursive_pointer.rs",
+      "expected": {
+        "co3": {
+          "status": "pass"
+        },
+        "uniffi": {
+          "status": "skip",
+          "reason": "Compares CO3, abi_stable, and stabby record derives for recursive fields."
+        },
+        "diplomat": {
+          "status": "skip",
+          "reason": "Compares CO3, abi_stable, and stabby record derives for recursive fields."
+        },
+        "interoptopus": {
+          "status": "skip",
+          "reason": "Compares CO3, abi_stable, and stabby record derives for recursive fields."
+        },
+        "safer_ffi": {
+          "status": "skip",
+          "reason": "Compares CO3, abi_stable, and stabby record derives for recursive fields."
+        },
+        "boltffi": {
+          "status": "skip",
+          "reason": "Compares CO3, abi_stable, and stabby record derives for recursive fields."
+        },
+        "abi_stable": {
+          "status": "pass"
+        },
+        "stabby": {
+          "status": "pass"
+        }
+      }
+    },
+    "recursive_pointer_alias": {
+      "path": "cases/syntax/recursive_pointer_alias.rs",
+      "expected": {
+        "co3": {
+          "status": "fail",
+          "diagnostic": "overflow evaluating the requirement `<Node as RustSpec>::Layout == _`"
+        },
+        "uniffi": {
+          "status": "skip",
+          "reason": "Compares CO3, abi_stable, and stabby record derives for recursive fields."
+        },
+        "diplomat": {
+          "status": "skip",
+          "reason": "Compares CO3, abi_stable, and stabby record derives for recursive fields."
+        },
+        "interoptopus": {
+          "status": "skip",
+          "reason": "Compares CO3, abi_stable, and stabby record derives for recursive fields."
+        },
+        "safer_ffi": {
+          "status": "skip",
+          "reason": "Compares CO3, abi_stable, and stabby record derives for recursive fields."
+        },
+        "boltffi": {
+          "status": "skip",
+          "reason": "Compares CO3, abi_stable, and stabby record derives for recursive fields."
+        },
+        "abi_stable": {
+          "status": "pass"
+        },
+        "stabby": {
+          "status": "fail",
+          "diagnostic": "overflow evaluating the requirement `Node: IStable`"
+        }
+      }
+    },
+    "control_recursive_reference": {
+      "path": "cases/controls/control_recursive_reference.rs",
+      "expected": {
+        "co3": {
+          "status": "fail",
+          "diagnostic": "cannot satisfy `<&'static Node as ReprC>::CType == _`"
+        },
+        "uniffi": {
+          "status": "skip",
+          "reason": "Compares CO3, abi_stable, and stabby record derives for recursive fields."
+        },
+        "diplomat": {
+          "status": "skip",
+          "reason": "Compares CO3, abi_stable, and stabby record derives for recursive fields."
+        },
+        "interoptopus": {
+          "status": "skip",
+          "reason": "Compares CO3, abi_stable, and stabby record derives for recursive fields."
+        },
+        "safer_ffi": {
+          "status": "skip",
+          "reason": "Compares CO3, abi_stable, and stabby record derives for recursive fields."
+        },
+        "boltffi": {
+          "status": "skip",
+          "reason": "Compares CO3, abi_stable, and stabby record derives for recursive fields."
+        },
+        "abi_stable": {
+          "status": "pass"
+        },
+        "stabby": {
+          "status": "pass"
+        }
+      }
+    },
+    "recursive_reference_alias": {
+      "path": "cases/syntax/recursive_reference_alias.rs",
+      "expected": {
+        "co3": {
+          "status": "fail",
+          "diagnostic": "overflow evaluating the requirement `<Node as RustSpec>::Layout == _`"
+        },
+        "uniffi": {
+          "status": "skip",
+          "reason": "Compares CO3, abi_stable, and stabby record derives for recursive fields."
+        },
+        "diplomat": {
+          "status": "skip",
+          "reason": "Compares CO3, abi_stable, and stabby record derives for recursive fields."
+        },
+        "interoptopus": {
+          "status": "skip",
+          "reason": "Compares CO3, abi_stable, and stabby record derives for recursive fields."
+        },
+        "safer_ffi": {
+          "status": "skip",
+          "reason": "Compares CO3, abi_stable, and stabby record derives for recursive fields."
+        },
+        "boltffi": {
+          "status": "skip",
+          "reason": "Compares CO3, abi_stable, and stabby record derives for recursive fields."
+        },
+        "abi_stable": {
+          "status": "pass"
+        },
+        "stabby": {
+          "status": "fail",
+          "diagnostic": "overflow evaluating the requirement `Node: IStable`"
+        }
+      }
+    },
+    "control_optional_box": {
+      "path": "cases/controls/control_optional_box.rs",
+      "expected": {
+        "co3": {
+          "status": "pass"
+        },
+        "uniffi": {
+          "status": "pass"
+        },
+        "diplomat": {
+          "status": "pass",
+          "hir_diagnostic": "found Option<Box<T>> in input, but box isn't allowed in inputs. T = u32"
+        },
+        "interoptopus": {
+          "status": "fail",
+          "diagnostic": "the trait bound `Box<u32>: WireIO` is not satisfied"
+        },
+        "safer_ffi": {
+          "status": "fail",
+          "diagnostic": "the trait bound `std::boxed::Box<u32>: __HasNiche__` is not satisfied"
+        },
+        "boltffi": {
+          "status": "fail",
+          "diagnostic": "BoltFFI: opaque Rust pointer container cannot be represented in binding IR yet"
+        },
+        "abi_stable": {
+          "status": "fail",
+          "diagnostic": "the trait bound `Box<u32>: StableAbi` is not satisfied"
+        },
+        "stabby": {
+          "status": "fail",
+          "diagnostic": "the trait bound `std::boxed::Box<u32>: IStable` is not satisfied"
+        }
+      }
+    },
+    "recursive_optional_box": {
+      "path": "cases/types/recursive_optional_box.rs",
+      "expected": {
+        "co3": {
+          "status": "pass"
+        },
+        "uniffi": {
+          "status": "pass"
+        },
+        "diplomat": {
+          "status": "pass",
+          "hir_diagnostic": "found Option<Box<T>> in input, but box isn't allowed in inputs. T = Node"
+        },
+        "interoptopus": {
+          "status": "fail",
+          "diagnostic": "the trait bound `Box<Node>: WireIO` is not satisfied"
+        },
+        "safer_ffi": {
+          "status": "fail",
+          "diagnostic": "the trait bound `std::boxed::Box<Node>: __HasNiche__` is not satisfied"
+        },
+        "boltffi": {
+          "status": "fail",
+          "diagnostic": "BoltFFI: opaque Rust pointer container cannot be represented in binding IR yet"
+        },
+        "abi_stable": {
+          "status": "fail",
+          "diagnostic": "the trait bound `Box<Node>: StableAbi` is not satisfied"
+        },
+        "stabby": {
+          "status": "fail",
+          "diagnostic": "the trait bound `std::boxed::Box<_Self>: IStable` is not satisfied"
+        }
+      }
+    },
+    "control_vector_field": {
+      "path": "cases/controls/control_vector_field.rs",
+      "expected": {
+        "co3": {
+          "status": "pass"
+        },
+        "uniffi": {
+          "status": "pass"
+        },
+        "diplomat": {
+          "status": "fail",
+          "diagnostic": "Diplomat error: Generic type arguments are unsupported (check stderr for more)"
+        },
+        "interoptopus": {
+          "status": "fail",
+          "diagnostic": "evaluation panicked: This type cannot be safely passed over FFI boundaries."
+        },
+        "safer_ffi": {
+          "status": "fail",
+          "diagnostic": "type mismatch resolving `<OpaqueLayout_<PhantomData<Vec<u32>>> as CType>::OPAQUE_KIND == Concrete`"
+        },
+        "boltffi": {
+          "status": "pass"
+        },
+        "abi_stable": {
+          "status": "fail",
+          "diagnostic": "the trait bound `Vec<u32>: StableAbi` is not satisfied"
+        },
+        "stabby": {
+          "status": "fail",
+          "diagnostic": "the trait bound `std::vec::Vec<u32>: IStable` is not satisfied"
+        }
+      }
+    },
+    "recursive_vector_field": {
+      "path": "cases/types/recursive_vector_field.rs",
+      "expected": {
+        "co3": {
+          "status": "pass"
+        },
+        "uniffi": {
+          "status": "pass"
+        },
+        "diplomat": {
+          "status": "fail",
+          "diagnostic": "Diplomat error: Generic type arguments are unsupported (check stderr for more)"
+        },
+        "interoptopus": {
+          "status": "fail",
+          "diagnostic": "overflow evaluating the requirement `Node: WireIO`"
+        },
+        "safer_ffi": {
+          "status": "fail",
+          "diagnostic": "type mismatch resolving `<OpaqueLayout_<PhantomData<Vec<Node>>> as CType>::OPAQUE_KIND == Concrete`"
+        },
+        "boltffi": {
+          "status": "pass"
+        },
+        "abi_stable": {
+          "status": "fail",
+          "diagnostic": "the trait bound `Vec<Node>: StableAbi` is not satisfied"
+        },
+        "stabby": {
+          "status": "fail",
+          "diagnostic": "the trait bound `std::vec::Vec<_Self>: IStable` is not satisfied"
+        }
+      }
+    },
+    "control_stable_vector_field": {
+      "path": "cases/controls/control_stable_vector_field.rs",
+      "expected": {
+        "co3": {
+          "status": "pass"
+        },
+        "uniffi": {
+          "status": "skip",
+          "reason": "Compares the CO3, abi_stable, and stabby stable vector types."
+        },
+        "diplomat": {
+          "status": "skip",
+          "reason": "Compares the CO3, abi_stable, and stabby stable vector types."
+        },
+        "interoptopus": {
+          "status": "skip",
+          "reason": "Compares the CO3, abi_stable, and stabby stable vector types."
+        },
+        "safer_ffi": {
+          "status": "skip",
+          "reason": "Compares the CO3, abi_stable, and stabby stable vector types."
+        },
+        "boltffi": {
+          "status": "skip",
+          "reason": "Compares the CO3, abi_stable, and stabby stable vector types."
+        },
+        "abi_stable": {
+          "status": "pass"
+        },
+        "stabby": {
+          "status": "pass"
+        }
+      }
+    },
+    "recursive_stable_vector_field": {
+      "path": "cases/types/recursive_stable_vector_field.rs",
+      "expected": {
+        "co3": {
+          "status": "fail",
+          "diagnostic": "the trait bound `co3::vec::Vec<Node>: SameType<std::vec::Vec<Node>>` is not satisfied"
+        },
+        "uniffi": {
+          "status": "skip",
+          "reason": "Compares the CO3, abi_stable, and stabby stable vector types."
+        },
+        "diplomat": {
+          "status": "skip",
+          "reason": "Compares the CO3, abi_stable, and stabby stable vector types."
+        },
+        "interoptopus": {
+          "status": "skip",
+          "reason": "Compares the CO3, abi_stable, and stabby stable vector types."
+        },
+        "safer_ffi": {
+          "status": "skip",
+          "reason": "Compares the CO3, abi_stable, and stabby stable vector types."
+        },
+        "boltffi": {
+          "status": "skip",
+          "reason": "Compares the CO3, abi_stable, and stabby stable vector types."
+        },
+        "abi_stable": {
+          "status": "pass"
+        },
+        "stabby": {
+          "status": "pass"
+        }
+      }
+    },
+    "recursive_vector_default_repr": {
+      "path": "cases/types/recursive_vector_default_repr.rs",
+      "expected": {
+        "co3": {
+          "status": "pass"
+        },
+        "uniffi": {
+          "status": "pass"
+        },
+        "diplomat": {
+          "status": "fail",
+          "diagnostic": "Diplomat error: Generic type arguments are unsupported (check stderr for more)"
+        },
+        "interoptopus": {
+          "status": "fail",
+          "diagnostic": "overflow evaluating the requirement `Node: WireIO`"
+        },
+        "safer_ffi": {
+          "status": "fail",
+          "diagnostic": "`#[::safer_ffi::derive_ReprC]`: missing explicit `#[repr(…)]` annotation"
+        },
+        "boltffi": {
+          "status": "pass"
+        },
+        "abi_stable": {
+          "status": "fail",
+          "diagnostic": "the #[repr(..)] attribute must be one of the supported attributes:"
+        },
+        "stabby": {
+          "status": "fail",
+          "diagnostic": "the trait bound `std::vec::Vec<_Self>: IStable` is not satisfied"
+        }
+      }
+    },
+    "slice_renamed_import": {
+      "path": "cases/syntax/slice_renamed_import.rs",
+      "expected": {
+        "co3": {
+          "status": "pass"
+        },
+        "uniffi": {
+          "status": "fail",
+          "diagnostic": "expected mutable reference `&mut _`"
+        },
+        "diplomat": {
+          "status": "pass",
+          "hir_diagnostic": "Could not resolve core"
+        },
+        "interoptopus": {
+          "status": "fail",
+          "diagnostic": "the trait bound `[u8]: TypeInfo` is not satisfied"
+        },
+        "safer_ffi": {
+          "status": "fail",
+          "diagnostic": "type mismatch resolving `<OpaqueLayout_<PhantomData<&mut [u8]>> as CType>::OPAQUE_KIND == Concrete`"
+        },
+        "boltffi": {
+          "status": "fail",
+          "diagnostic": "cannot find macro `Byte` in this scope"
+        },
+        "abi_stable": {
+          "status": "fail",
+          "diagnostic": "the trait bound `[u8]: StableAbi` is not satisfied"
+        },
+        "stabby": {
+          "status": "fail",
+          "diagnostic": "the trait bound `[u8]: IStable` is not satisfied"
+        }
+      }
+    },
+    "slice_reexport": {
+      "path": "cases/syntax/slice_reexport.rs",
+      "expected": {
+        "co3": {
+          "status": "pass"
+        },
+        "uniffi": {
+          "status": "fail",
+          "diagnostic": "expected mutable reference `&mut _`"
+        },
+        "diplomat": {
+          "status": "pass",
+          "hir_diagnostic": "Could not resolve Byte"
+        },
+        "interoptopus": {
+          "status": "fail",
+          "diagnostic": "the trait bound `[u8]: TypeInfo` is not satisfied"
+        },
+        "safer_ffi": {
+          "status": "fail",
+          "diagnostic": "type mismatch resolving `<OpaqueLayout_<PhantomData<&mut [u8]>> as CType>::OPAQUE_KIND == Concrete`"
+        },
+        "boltffi": {
+          "status": "fail",
+          "diagnostic": "cannot find macro `Byte` in this scope"
+        },
+        "abi_stable": {
+          "status": "fail",
+          "diagnostic": "the trait bound `[u8]: StableAbi` is not satisfied"
+        },
+        "stabby": {
+          "status": "fail",
+          "diagnostic": "the trait bound `[u8]: IStable` is not satisfied"
+        }
+      }
+    },
+    "slice_associated_projection": {
+      "path": "cases/syntax/slice_associated_projection.rs",
+      "expected": {
+        "co3": {
+          "status": "pass"
+        },
+        "uniffi": {
+          "status": "fail",
+          "diagnostic": "expected mutable reference `&mut _`"
+        },
+        "diplomat": {
+          "status": "fail",
+          "diagnostic": "ambiguous associated type"
+        },
+        "interoptopus": {
+          "status": "fail",
+          "diagnostic": "the trait bound `[u8]: TypeInfo` is not satisfied"
+        },
+        "safer_ffi": {
+          "status": "fail",
+          "diagnostic": "type mismatch resolving `<OpaqueLayout_<PhantomData<&mut [u8]>> as CType>::OPAQUE_KIND == Concrete`"
+        },
+        "boltffi": {
+          "status": "fail",
+          "diagnostic": "BoltFFI: unsupported source type `Element::Item`"
+        },
+        "abi_stable": {
+          "status": "fail",
+          "diagnostic": "the trait bound `[u8]: StableAbi` is not satisfied"
+        },
+        "stabby": {
+          "status": "fail",
+          "diagnostic": "the trait bound `[u8]: IStable` is not satisfied"
+        }
+      }
+    },
+    "slice_type_macro": {
+      "path": "cases/syntax/slice_type_macro.rs",
+      "expected": {
+        "co3": {
+          "status": "pass"
+        },
+        "uniffi": {
+          "status": "fail",
+          "diagnostic": "expected mutable reference `&mut _`"
+        },
+        "diplomat": {
+          "status": "fail",
+          "diagnostic": "message: Diplomat error: Found unsupported type (check stderr for more)"
+        },
+        "interoptopus": {
+          "status": "fail",
+          "diagnostic": "the trait bound `[u8]: TypeInfo` is not satisfied"
+        },
+        "safer_ffi": {
+          "status": "fail",
+          "diagnostic": "type mismatch resolving `<OpaqueLayout_<PhantomData<&mut [u8]>> as CType>::OPAQUE_KIND == Concrete`"
+        },
+        "boltffi": {
+          "status": "fail",
+          "diagnostic": "BoltFFI: unsupported source type `unrecognized type`"
+        },
+        "abi_stable": {
+          "status": "fail",
+          "diagnostic": "Cannot currently use type macros safely."
+        },
+        "stabby": {
+          "status": "fail",
+          "diagnostic": "the trait bound `[u8]: IStable` is not satisfied"
+        }
+      }
+    },
+    "nested_reference_named": {
+      "path": "cases/borrowing/nested_reference_named.rs",
+      "expected": {
+        "co3": {
+          "status": "pass"
+        },
+        "uniffi": {
+          "status": "fail",
+          "diagnostic": "use of undeclared lifetime name `'inner`"
+        },
+        "diplomat": {
+          "status": "pass",
+          "hir_diagnostic": "T = &'inner u32"
+        },
+        "interoptopus": {
+          "status": "fail",
+          "diagnostic": "expected one of `,`, `=`, or `>`, found `:`"
+        },
+        "safer_ffi": {
+          "status": "pass",
+          "c_symbol": "read_nested"
+        },
+        "boltffi": {
+          "status": "fail",
+          "diagnostic": "BoltFFI: `function read_nested` cannot use generics"
+        },
+        "abi_stable": {
+          "status": "skip",
+          "reason": "No equivalent fixture implemented for this framework."
+        },
+        "stabby": {
+          "status": "skip",
+          "reason": "No equivalent fixture implemented for this framework."
+        }
+      }
+    },
+    "opaque_mutable_receiver": {
+      "path": "cases/borrowing/opaque_mutable_receiver.rs",
+      "expected": {
+        "co3": {
+          "status": "pass"
+        },
+        "uniffi": {
+          "status": "fail",
+          "diagnostic": "cannot borrow data in an `Arc` as mutable"
+        },
+        "diplomat": {
+          "status": "pass"
+        },
+        "interoptopus": {
+          "status": "pass"
+        },
+        "safer_ffi": {
+          "status": "skip",
+          "reason": "safer_ffi exports free functions; this method-declaration fixture would need a free-function adapter."
+        },
+        "boltffi": {
+          "status": "pass",
+          "note": "Uses #[export(single_threaded)]; caller must guarantee single-threaded access."
+        },
+        "abi_stable": {
+          "status": "skip",
+          "reason": "No equivalent fixture implemented for this framework."
+        },
+        "stabby": {
+          "status": "skip",
+          "reason": "No equivalent fixture implemented for this framework."
+        }
+      }
+    },
+    "opaque_type": {
+      "path": "cases/types/opaque_type.rs",
+      "expected": {
+        "co3": {
+          "status": "pass"
+        },
+        "uniffi": {
+          "status": "pass"
+        },
+        "diplomat": {
+          "status": "pass"
+        },
+        "interoptopus": {
+          "status": "pass"
+        },
+        "safer_ffi": {
+          "status": "pass",
+          "c_symbol": "counter_value"
+        },
+        "boltffi": {
+          "status": "pass"
+        },
+        "abi_stable": {
+          "status": "fail",
+          "diagnostic": "the trait bound `Counter: StableAbi` is not satisfied"
+        },
+        "stabby": {
+          "status": "fail",
+          "diagnostic": "the trait bound `Counter: IStable` is not satisfied"
+        }
+      }
+    },
+    "niche_nonzero": {
+      "path": "cases/types/niche_nonzero.rs",
+      "expected": {
+        "co3": {
+          "status": "pass"
+        },
+        "uniffi": {
+          "status": "fail",
+          "diagnostic": "the trait bound `NonZero<u8>: Lift<UniFfiTag>` is not satisfied"
+        },
+        "diplomat": {
+          "status": "pass",
+          "hir_diagnostic": "Could not resolve core"
+        },
+        "interoptopus": {
+          "status": "fail",
+          "diagnostic": "evaluation panicked: This type cannot be safely passed over FFI boundaries."
+        },
+        "safer_ffi": {
+          "status": "fail",
+          "diagnostic": "the trait bound `NonZero<u8>: __HasNiche__` is not satisfied"
+        },
+        "boltffi": {
+          "status": "fail",
+          "diagnostic": "cannot find macro `NonZeroU8` in this scope"
+        },
+        "abi_stable": {
+          "status": "pass"
+        },
+        "stabby": {
+          "status": "pass"
+        }
+      }
+    },
+    "niche_bool": {
+      "path": "cases/types/niche_bool.rs",
+      "expected": {
+        "co3": {
+          "status": "pass"
+        },
+        "uniffi": {
+          "status": "pass"
+        },
+        "diplomat": {
+          "status": "pass"
+        },
+        "interoptopus": {
+          "status": "fail",
+          "diagnostic": "evaluation panicked: This type cannot be safely passed over FFI boundaries."
+        },
+        "safer_ffi": {
+          "status": "fail",
+          "diagnostic": "the trait bound `bool: __HasNiche__` is not satisfied"
+        },
+        "boltffi": {
+          "status": "pass"
+        },
+        "abi_stable": {
+          "status": "fail",
+          "diagnostic": "type mismatch resolving `<bool as StableAbi>::IsNonZeroType == True`"
+        },
+        "stabby": {
+          "status": "fail",
+          "diagnostic": "the trait bound `HasExactlyOneNiche<Option<bool>, Saturator>: IStable` is not satisfied"
+        }
+      }
+    },
+    "framework_option_bool": {
+      "path": "cases/types/framework_option_bool.rs",
+      "expected": {
+        "co3": {
+          "status": "skip",
+          "reason": "Compares abi_stable and stabby option types."
+        },
+        "uniffi": {
+          "status": "skip",
+          "reason": "Compares abi_stable and stabby option types."
+        },
+        "diplomat": {
+          "status": "skip",
+          "reason": "Compares abi_stable and stabby option types."
+        },
+        "interoptopus": {
+          "status": "skip",
+          "reason": "Compares abi_stable and stabby option types."
+        },
+        "safer_ffi": {
+          "status": "skip",
+          "reason": "Compares abi_stable and stabby option types."
+        },
+        "boltffi": {
+          "status": "skip",
+          "reason": "Compares abi_stable and stabby option types."
+        },
+        "abi_stable": {
+          "status": "pass"
+        },
+        "stabby": {
           "status": "pass"
         }
       }

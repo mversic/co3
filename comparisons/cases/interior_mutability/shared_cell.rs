@@ -1,6 +1,9 @@
 // Return the backing address without reading the shared cell.
 include!("../support/mod.rs");
 
+#[cfg_attr(feature = "abi_stable", abi_stable::sabi_extern_fn)]
+#[cfg_attr(feature = "stabby", no_mangle)]
+#[cfg_attr(feature = "stabby", stabby::stabby)]
 #[cfg_attr(feature = "uniffi", uniffi::export)]
 #[cfg_attr(feature = "boltffi", boltffi::export)]
 #[cfg_attr(feature = "interoptopus", interoptopus::ffi)]
@@ -44,6 +47,9 @@ co3::ffi! {
     #[symbol_name = "comparison_cell_store"]
     unsafe fn store(cell: &core::cell::UnsafeCell<u32>, value: u32) -> u64;
 }
+
+#[cfg(feature = "abi_stable")]
+abi_stable_signature!(storage: (&core::cell::UnsafeCell<u32>) -> u64);
 
 fn main() {
     #[cfg(feature = "co3")]

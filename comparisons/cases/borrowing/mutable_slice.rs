@@ -24,4 +24,32 @@ co3::ffi! {
     fn fill(values: &mut [u32]);
 }
 
-fn main() {}
+#[cfg(feature = "co3")]
+mod caller {
+    co3::ffi! {
+        #![unsafe(extern("C"))]
+        pub fn fill(values: &mut [u32]);
+    }
+}
+
+fn main() {
+    #[cfg(any(feature = "co3", feature = "diplomat", feature = "boltffi"))]
+    {
+        let mut values = [500, 700, 900];
+        #[cfg(feature = "co3")]
+        caller::fill(&mut values);
+        #[cfg(feature = "diplomat")]
+        {
+            unsafe extern "C" {
+                fn diplomat_external_fill(values: diplomat_runtime::DiplomatSliceMut<'_, u32>);
+            }
+            unsafe { diplomat_external_fill(values.as_mut_slice().into()) };
+        }
+        #[cfg(feature = "boltffi")]
+        assert!(unsafe {
+            boltffi_function_13mutable_slice4fill(values.as_mut_ptr(), values.len())
+        }
+        .is_ok());
+        assert_eq!(values, [42; 3]);
+    }
+}

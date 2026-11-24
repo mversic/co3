@@ -24,4 +24,20 @@ co3::ffi! {
     fn halves(input: &[u8]) -> (&[u8], &[u8]);
 }
 
-fn main() {}
+#[cfg(feature = "co3")]
+mod caller {
+    co3::ffi! {
+        #![unsafe(extern("C"))]
+        pub fn halves(input: &[u8]) -> (&[u8], &[u8]);
+    }
+}
+
+fn main() {
+    #[cfg(feature = "co3")]
+    {
+        let data = [11, 22, 33, 44, 55];
+        let (left, right) = caller::halves(&data);
+        assert!(std::ptr::eq(left, &data[..2]));
+        assert!(std::ptr::eq(right, &data[2..]));
+    }
+}
