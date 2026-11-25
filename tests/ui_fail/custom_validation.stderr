@@ -54,9 +54,6 @@ error[E0277]: the trait bound `[u8]: Copy` is not satisfied
    |
 help: the trait `Copy` is implemented for `[T; N]`
   --> $RUST/core/src/array/mod.rs
-   |
-   | impl<T: Copy, const N: usize> Copy for [T; N] {}
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 note: required for `Parametrized<[u8]>` to implement `Niche`
   --> tests/ui_fail/custom_validation.rs:55:12
    |

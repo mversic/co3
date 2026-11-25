@@ -5,7 +5,55 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.9.0] - 2026-11-25
+
+### Added
+
+- Gate unspecified-layout conversions behind the default-enabled `repr-rust` feature.
+- Add `#![lang = "..."]` to `ffi!` for language-specific conversion contracts.
+- Add an explicit language parameter to checked conversion functions.
+- Accept unit-like zero-sized types as C-compatible function returns.
+- Add stable counterparts for vectors, strings, and wide pointers.
+- Support `#[unpack(_, _)]` for wide `NonNull` pointers.
+- Support recursive types in `#[derive(ReprC)]`.
+
+### Changed
+
+- Make `encode` and `soft_encode` unsafe.
+- Allow `#[soft]` on `move` arguments and receivers.
+- Wrap native Rust type carriers in `marker::Native`.
+- Lower `*const T` and `*mut T` to pointers to `T::CType`.
+- Use independent checked and unchecked conversion traits and stores.
+- Move built-in carriers into each type's `abi` module and parameterize them by lowered field types.
+- Generate `NameCType<T>` for `Name<T>` and expose the companion through `ReprC::CType`.
+- Represent vectors with pointer, capacity, and length, and UTF-8 strings with byte vectors.
+- Rename `ReprCTupleN` to `tuple::TupleN` and lower native tuples to `Native<tuple::abi::TupleN<...>>`.
+- Add lifetimes to direct reference carriers and use shared carriers for interior-mutable pointees.
+- Lower `PhantomData<T>` to `PhantomData<T::CType>`, which now requires `T: ReprC`.
+- Replace `ReprCOption`/`ReprCResult` with the stable Rust enums `option::Option`/`result::Result`
+- Separate tagged `Option` and `Result` carriers from transparent niche payload wrappers.
+- Represent nonzero integers and `NonNull<T>` with `marker::NonZero` around the underlying type.
+- Mark references such as `&mut Box<T>` and `&UnsafeCell<Box<T>>` as `Borrowed`.
+- Require `move` for by-value transfer of derived types with custom `Drop`.
+- Make `call` and `soft_call` honor borrowed and moved ABI carriers.
+- Replace `CheckedTransmute` with `marker::AbiCompatible` and `convert::AbiValidate`.
+- Expose value and reference codecs in `convert` and move packing traits from `slice` to `pack`.
+- Require `Niche::is_niche` and matching `RustSpec` classifications for custom niches and validators.
+- Make null reference and zero-valued `marker::NonZero` carriers compare unequal to themselves.
+- Limit `cfg_attr` expansion by `ffi!` and `raw!` to leading inner attributes.
+
+### Removed
+
+- Replace `stored::{DirectEncodeOwned, EncodeOwned, DecodeOwned}` with checked and unchecked value codecs.
+- Replace `Borrow`, `BorrowCast`, `BorrowCastMut`, and `FromBorrow` with explicit borrowed conversion codecs.
+- Remove the `#[repr_c(transparent)]` derive option for delegating a wrapper's representation to its inner field.
+- Require `Copy` for imported static reads and shared-access validation for read-only accessors.
+- Replace `utf8::Utf8Str` with `primitive::abi::str`.
+
+### Fixed
+
+- Validate shared records with robust interior-mutable fields without reading them.
+- Allow qualified primitive aliases such as `shadow::i32` in `raw!` signatures.
 
 ## [0.8.2] - 2026-10-21
 

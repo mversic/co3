@@ -190,7 +190,7 @@ checksum = "4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600"
 
 [[package]]
 name = "co3"
-version = "0.8.2"
+version = "0.9.0"
 dependencies = [
  "co3-derive",
  "disjoint_impls",
@@ -201,7 +201,7 @@ dependencies = [
 
 [[package]]
 name = "co3-derive"
-version = "0.8.2"
+version = "0.9.0"
 dependencies = [
  "manyhow",
  "proc-macro-crate",

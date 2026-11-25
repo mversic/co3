@@ -52,31 +52,9 @@ jobs:
           cargo clippy --manifest-path "$manifest" -- --deny warnings
         done
 
-  test:
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 10
-
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-
-    steps:
-    - uses: actions/checkout@v7
-    - uses: dtolnay/rust-toolchain@stable
-      with:
-        components: rust-src
-    - uses: Swatinem/rust-cache@v2
-      with:
-        key: test-${{ matrix.os }}
-
-    - name: Run Tests
-      env:
-        RUSTFLAGS: -D warnings
-      run: cargo test --workspace
-
   no-std:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
 
     steps:
     - uses: actions/checkout@v7
@@ -89,6 +67,46 @@ jobs:
 
     - name: Check all features on target without std
       run: cargo check -p co3 --target thumbv7em-none-eabi --all-features
+
+  test:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+    - uses: actions/checkout@v7
+    - uses: dtolnay/rust-toolchain@stable
+    - uses: Swatinem/rust-cache@v2
+      with:
+        key: test-${{ matrix.os }}
+
+    - name: Run Tests
+      env:
+        RUSTFLAGS: -D warnings
+      run: cargo test --workspace
+
+  wasm-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip1
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install wasmtime
+        run: |
+          curl -fsSL https://wasmtime.dev/install.sh | bash
+          echo "$HOME/.wasmtime/bin" >> $GITHUB_PATH
+
+      - name: Run Tests (WASIp1)
+        # `trybuild` invokes Cargo for each fixture, which WASI cannot support.
+        run: cargo test --workspace --target wasm32-wasip1 --lib --test abi --test export --test import
 
   miri:
     runs-on: ubuntu-latest
@@ -139,23 +157,3 @@ jobs:
       run: |
         MIRIFLAGS='-Zmiri-tree-borrows -Zmiri-ignore-leaks' cargo miri test --all-features --lib tests::encode_stored_mut_box_allows_pointer_replacement -- --exact
         MIRIFLAGS='-Zmiri-ignore-leaks' cargo miri test --all-features --lib tests::encode_stored_mut_box_allows_pointer_replacement -- --exact
-
-  wasm-test:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-wasip1
-      - uses: Swatinem/rust-cache@v2
-
-      - name: Install wasmtime
-        run: |
-          curl -fsSL https://wasmtime.dev/install.sh | bash
-          echo "$HOME/.wasmtime/bin" >> $GITHUB_PATH
-
-      - name: Run Tests (WASIp1)
-        # `trybuild` invokes Cargo for each fixture, which WASI cannot support.
-        run: cargo test --workspace --target wasm32-wasip1 --lib --test abi --test export --test import

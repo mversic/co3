@@ -172,18 +172,19 @@ To see what `CO3` is capable of and what using it looks like in practice, check 
 
 Check the [framework comparison](comparisons/README.md) for full feature comparison.
 
-### ABI-stable Rust-to-Rust interop
+### ABI-stable types for Rust
 
 * [abi_stable](https://docs.rs/abi_stable/latest/abi_stable/)
 * [stabby](https://github.com/ZettaScaleLabs/stabby)
 
-Both crates let independently compiled Rust components share ABI-stable types and check compatibility when binding a library or symbol.
+Both crates provide ABI-stable types for independently compiled Rust components.
 
-Since this is assumed to be Rust-to-Rust interop only, the compatibility checks do not validate argument or return values at decode and do not protect against data corruption that violates Rust validity invariants. For example, a zero byte supplied as `NonZeroU8` is undefined behavior rather than a decode error.
+Unlike `CO3`, **they don't provide**:
 
-Likewise, native Rust API like `Vec<T>` or `String` isn't supported. In general, all types without a stable representation aren't. The user can make use of custom-defined stable types by the respective library or define their own stable counterpart.
+* Automatic conversion of standard types like `Vec<T>` and `String` to stable ABI representations.
+* Validity checks on incoming values. For example, `CO3` rejects zero when decoding a `NonZeroU8`.
 
-**`CO3` can also connect two Rust components** (validity is opt-out) and provides the support to use native types directly (also opt-out).
+In `CO3`, disable `repr-rust` and set `#![lang = "Rust"]` for a comparable stable ABI subset.
 
 ### Cross-language interface generators
 

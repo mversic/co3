@@ -19,12 +19,8 @@
 //! ABI contract, including symbol names, calling convention, complete item signatures, ownership,
 //! lifetime, mutability, and aliasing requirements.
 //!
-//! The unsafe import or export declaration also promises the mapped native source guarantees
-//! of `#![lang = "..."]` (C by default) for values decoded from the foreign side: exported
-//! arguments, imported return values, and imported static values. Exports accept C and Rust,
-//! while imports accept every supported language. Rust selects unchecked conversions. The selected language can
-//! elide validity checks; violating its guarantees can cause undefined behavior. A matching
-//! calling convention or a manually constructed raw carrier does not establish these guarantees.
+//! `#![lang = "..."]` asserts that the other side upholds the specified language's validity
+//! guarantees, allowing validity checks to be omitted. Violating these guarantees can cause UB.
 //!
 //! Foreign callers must ensure that non-null pointer-backed arguments satisfy Rust's reference
 //! rules for the types declared by the exported function for the duration of the call.
@@ -102,6 +98,30 @@
 //! # fn main() {}
 //! # }
 //! ```
+//!
+//! # Language contracts
+//!
+//! Set `#![lang = "..."]` inside an [`ffi!`] block to select the validity guarantees
+//! supplied by the foreign language's mapped native types. The default is `"C"`.
+//!
+//! For example, a Rust provider returning a native boolean can use the C calling convention
+//! while supplying the Rust boolean validity guarantee:
+//!
+//! ```rust
+//! # #[cfg(feature = "derive")]
+//! # mod _doctest {
+//! use co3::ffi;
+//!
+//! ffi! {
+//!     #![unsafe(extern("C"))]
+//!     #![lang = "Rust"]
+//!
+//!     fn is_ready() -> bool;
+//! }
+//! # }
+//! ```
+//!
+//! The selected contract lets conversions omit checks guaranteed by the mapped source type.
 //!
 //! # Naming convention
 //!
