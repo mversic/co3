@@ -38,7 +38,7 @@ mod provider {
 }
 
 ffi! {
-    //! Documentation
+    // Documentation
     #![unsafe(extern("C"))]
 
     impl Value {

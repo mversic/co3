@@ -1,4 +1,7 @@
 // RustSpec supports the recursive box. ReprC should preserve that support.
+
+use co3::lang;
+
 #[derive(co3::rust_spec::RustSpec)]
 #[repr(C)]
 struct RustNode {
@@ -36,12 +39,15 @@ fn main() {
             next: None,
         })),
     };
-    let encoded = co3::encode(list());
-    assert_eq!(unsafe { co3::decode(encoded) }, Some(list()));
+    let encoded = unsafe { co3::encode::<_, lang::C>(list()) };
+    assert_eq!(unsafe { co3::decode::<_, lang::C>(encoded) }, Some(list()));
 
     let mut owner = Default::default();
-    let encoded = co3::borrow::encode(list(), &mut owner);
-    assert_eq!(unsafe { co3::borrow::decode(encoded) }, Some(list()));
+    let encoded = unsafe { co3::borrow::encode::<_, lang::C>(list(), &mut owner) };
+    assert_eq!(
+        unsafe { co3::borrow::decode::<_, lang::C>(encoded) },
+        Some(list())
+    );
 
     let tree = || Tree {
         value: 1,
@@ -56,6 +62,6 @@ fn main() {
             },
         ],
     };
-    let encoded = co3::encode(tree());
-    assert_eq!(unsafe { co3::decode(encoded) }, Some(tree()));
+    let encoded = unsafe { co3::encode::<_, lang::C>(tree()) };
+    assert_eq!(unsafe { co3::decode::<_, lang::C>(encoded) }, Some(tree()));
 }

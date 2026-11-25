@@ -12,16 +12,20 @@ use core::{ffi::c_void, mem::ManuallyDrop};
 
 use rust_spec::RustSpec;
 
-#[cfg(all(feature = "alloc", feature = "repr-rust"))]
-use crate::borrow::{self, ToOwned};
 use crate::{
     CFnArg, CFnReturn, CType, ReprC,
-    convert::{Decode, DecodeMove, Encode, EncodeMove, EncodeMoveUnchecked},
+    convert::{Decode, DecodeMove, DecodeMoveUnchecked, DecodeUnchecked, Encode, EncodeMove},
+    lang::Language,
     marker::AbiCompatible,
     primitive::primitive_derive,
 };
 #[cfg(all(feature = "alloc", feature = "repr-rust"))]
-use crate::{boxed::abi::Box as AbiBox, niche::Niche};
+use crate::{
+    borrow::{self, ToOwned},
+    boxed::abi::Box as AbiBox,
+    convert::EncodeMoveUnchecked,
+    niche::Niche,
+};
 
 macro_rules! c_alias_carrier {
     ($name:ident, $alias:ty) => {
@@ -569,7 +573,7 @@ impl ReprC for CString {
 }
 #[cfg(feature = "alloc")]
 #[cfg(feature = "repr-rust")]
-unsafe impl EncodeMove for CString {
+unsafe impl<L: Language> EncodeMove<L> for CString {
     type Store = ();
 
     #[inline(always)]
@@ -577,7 +581,7 @@ unsafe impl EncodeMove for CString {
     where
         Self: 'itm,
     {
-        unsafe { self.soft_encode_unchecked(&mut ()) }
+        unsafe { crate::convert::EncodeMoveUnchecked::soft_encode_unchecked(self, &mut ()) }
     }
 }
 #[cfg(feature = "alloc")]
@@ -589,28 +593,47 @@ unsafe impl EncodeMoveUnchecked for CString {
     where
         Self: 'itm,
     {
-        unsafe { self.into_boxed_c_str().soft_encode_unchecked(&mut ()) }
+        unsafe {
+            crate::convert::EncodeMoveUnchecked::soft_encode_unchecked(
+                self.into_boxed_c_str(),
+                &mut (),
+            )
+        }
     }
 }
 #[cfg(feature = "alloc")]
 #[cfg(feature = "repr-rust")]
-unsafe impl<'d> DecodeMove<'d> for CString {
+unsafe impl<'d> DecodeMoveUnchecked<'d> for CString {
+    type SoftStore = ();
+
+    unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, store: &'itm mut ()) -> Self {
+        unsafe { <Box<CStr> as DecodeMoveUnchecked<'d>>::soft_decode_unchecked(source, store) }
+            .into()
+    }
+}
+#[cfg(feature = "alloc")]
+#[cfg(feature = "repr-rust")]
+unsafe impl<'d, L: Language> DecodeMove<'d, L> for CString {
     type Store = ();
 
-    unsafe fn soft_decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
-        unsafe { Box::<CStr>::soft_decode(source, &mut ()) }.map(Into::into)
+    unsafe fn soft_decode<'itm: 'd>(source: Self::CType, store: &'itm mut ()) -> Option<Self> {
+        unsafe { <Box<CStr> as crate::convert::DecodeMove<'d, L>>::soft_decode(source, store) }
+            .map(Into::into)
     }
 }
 
-#[cfg(feature = "alloc")]
-#[cfg(feature = "repr-rust")]
-impl Encode for CString {}
 #[cfg(feature = "alloc")]
 #[cfg(feature = "repr-rust")]
 impl crate::convert::EncodeUnchecked for CString {}
 #[cfg(feature = "alloc")]
 #[cfg(feature = "repr-rust")]
-impl Decode<'_> for CString {}
+impl<L: Language> Encode<L> for CString {}
+#[cfg(feature = "alloc")]
+#[cfg(feature = "repr-rust")]
+impl DecodeUnchecked<'_> for CString {}
+#[cfg(feature = "alloc")]
+#[cfg(feature = "repr-rust")]
+impl<L: Language> Decode<'_, L> for CString {}
 
 #[cfg(feature = "alloc")]
 #[cfg(feature = "repr-rust")]
@@ -631,19 +654,24 @@ unsafe impl CType for c_void {}
 
 #[cfg(feature = "alloc")]
 #[cfg(feature = "repr-rust")]
-unsafe impl<'d> borrow::BorrowedDecode<'d> for alloc::ffi::CString {
+unsafe impl<'d> borrow::BorrowedDecodeUnchecked<'d> for alloc::ffi::CString {
+    type SoftStore = ();
+
+    unsafe fn soft_decode_unchecked<'itm: 'd>(
+        source: Self::CType,
+        _: &'itm mut Self::SoftStore,
+    ) -> Self {
+        unsafe { CStr::from_ptr(source.as_ptr().cast()) }.to_owned()
+    }
+}
+#[cfg(feature = "alloc")]
+#[cfg(feature = "repr-rust")]
+unsafe impl<'d, L: Language> borrow::BorrowedDecode<'d, L> for alloc::ffi::CString {
     type Store = ();
 
     unsafe fn soft_decode<'itm: 'd>(source: Self::CType, _: &'itm mut Self::Store) -> Option<Self> {
         let ptr = core::ptr::NonNull::new(source.as_ptr())?;
         Some(unsafe { CStr::from_ptr(ptr.as_ptr().cast()) }.to_owned())
-    }
-
-    unsafe fn soft_decode_unchecked<'itm: 'd>(
-        source: Self::CType,
-        _: &'itm mut Self::Store,
-    ) -> Self {
-        unsafe { CStr::from_ptr(source.as_ptr().cast()) }.to_owned()
     }
 }
 
@@ -673,8 +701,8 @@ unsafe impl borrow::BorrowedEncodeUnchecked for alloc::ffi::CString {
 
 #[cfg(feature = "alloc")]
 #[cfg(feature = "repr-rust")]
-unsafe impl borrow::BorrowedEncode for alloc::ffi::CString {
-    type Store = <Box<CStr> as borrow::BorrowedEncode>::Store;
+unsafe impl<L: Language> borrow::BorrowedEncode<L> for alloc::ffi::CString {
+    type Store = <Box<CStr> as borrow::BorrowedEncode<L>>::Store;
 
     fn soft_encode<'itm>(
         self,
@@ -684,16 +712,14 @@ unsafe impl borrow::BorrowedEncode for alloc::ffi::CString {
     where
         Self: 'itm,
     {
-        <Box<CStr> as borrow::BorrowedEncode>::soft_encode(self.into_boxed_c_str(), store, owner)
+        <Box<CStr> as borrow::BorrowedEncode<L>>::soft_encode(self.into_boxed_c_str(), store, owner)
     }
 }
 
 #[cfg(test)]
 mod tests {
     #[cfg(all(feature = "alloc", feature = "derive"))]
-    use alloc::string::String;
-    #[cfg(all(feature = "alloc", feature = "derive"))]
-    use alloc::vec::Vec;
+    use alloc::{string::String, vec::Vec};
     use core::cell::{Cell, UnsafeCell};
     #[cfg(all(feature = "alloc", feature = "derive"))]
     use core::{
@@ -715,7 +741,7 @@ mod tests {
         string::abi::String as AbiString,
         tuple::abi::Tuple3 as AbiTuple3,
     };
-    use crate::{convert::Decode, marker::Native};
+    use crate::{convert::Decode, lang, marker::Native};
 
     #[test]
     fn c_int_checked_length_conversion() {
@@ -790,13 +816,15 @@ mod tests {
     #[test]
     fn cstr_reference_round_trip() {
         let original = c"hello";
-        let encoded = crate::encode(original);
+        let encoded = unsafe { crate::encode::<_, lang::C>(original) };
         assert_eq!(encoded.as_ptr().cast(), original.as_ptr());
 
-        let decoded: &CStr = unsafe { crate::decode(encoded) }.unwrap();
+        let decoded: &CStr = unsafe { crate::decode::<_, lang::C>(encoded) }.unwrap();
         assert_eq!(decoded, original);
 
-        let none: Option<&CStr> = unsafe { crate::decode(crate::encode(None::<&CStr>)) }.unwrap();
+        let none: Option<&CStr> =
+            unsafe { crate::decode::<_, lang::C>(crate::encode::<_, lang::C>(None::<&CStr>)) }
+                .unwrap();
         assert!(none.is_none());
     }
 
@@ -805,9 +833,10 @@ mod tests {
     fn cstr_box_round_trip() {
         let original = CString::new("owned").unwrap().into_boxed_c_str();
         let ptr = original.as_ptr();
-        let encoded = crate::convert::encode_move(original);
+        let encoded = unsafe { crate::convert::encode_move::<_, lang::C>(original) };
         assert_eq!(encoded.as_ptr().cast_const().cast(), ptr);
-        let decoded: Box<CStr> = unsafe { crate::convert::decode_move(encoded) }.unwrap();
+        let decoded: Box<CStr> =
+            unsafe { crate::convert::decode_move::<_, lang::C>(encoded) }.unwrap();
         assert_eq!(decoded.as_ptr(), ptr);
         assert_eq!(&*decoded, c"owned");
     }
@@ -816,8 +845,8 @@ mod tests {
     #[test]
     fn cstring_round_trip() {
         let original = CString::new("owned").unwrap();
-        let encoded = crate::encode(original.clone());
-        let decoded: CString = unsafe { crate::decode(encoded) }.unwrap();
+        let encoded = unsafe { crate::encode::<_, lang::C>(original.clone()) };
+        let decoded: CString = unsafe { crate::decode::<_, lang::C>(encoded) }.unwrap();
         assert_eq!(decoded, original);
     }
 
@@ -830,7 +859,8 @@ mod tests {
     #[test]
     fn alias_fields_preserve_borrowed_types_and_values() {
         let view = AliasFields(c_int::new(3), 4_u32, c_long::new(5));
-        let borrowed_lowered = co3::borrow::encode(view, &mut Default::default()).0;
+        let borrowed_lowered =
+            unsafe { crate::borrow::encode::<_, lang::C>(view, &mut Default::default()) }.0;
         let _: c_int = borrowed_lowered.0;
         let _: c_long = borrowed_lowered.2;
         let view = AliasFields(c_int::new(3), 4_u32, c_long::new(5));
@@ -848,12 +878,13 @@ mod tests {
     struct Value(u8);
 
     #[cfg(all(feature = "alloc", feature = "derive"))]
-    extern "C" fn borrowed_return() -> co3::marker::Borrowed<<Box<Value> as co3::ReprC>::CType> {
-        co3::marker::Borrowed(co3::boxed::abi::Box::null())
+    extern "C" fn borrowed_return() -> crate::marker::Borrowed<<Box<Value> as crate::ReprC>::CType>
+    {
+        crate::marker::Borrowed(crate::boxed::abi::Box::null())
     }
 
     #[cfg(all(feature = "alloc", feature = "derive"))]
-    co3::ffi! {
+    crate::ffi! {
         #![unsafe(extern("C"))]
         type BorrowedReturn = raw extern "C" fn() -> Box<Value>;
         type InteriorUnpacked = extern "C" fn(#[unpack(*const core::cell::Cell<u8>, usize)] &[core::cell::Cell<u8>]) -> usize;
@@ -879,7 +910,7 @@ mod tests {
             Composite,
             <(
                 String,
-                unsafe extern "C" fn(co3::marker::Borrowed<<String as co3::ReprC>::CType>)
+                unsafe extern "C" fn(crate::marker::Borrowed<<String as crate::ReprC>::CType>)
             ) as ReprC>::CType
         );
     }
@@ -890,7 +921,7 @@ mod tests {
     }
 
     #[cfg(all(feature = "alloc", feature = "derive"))]
-    co3::ffi! {
+    crate::ffi! {
         #![unsafe(extern("C"))]
         #[symbol_name = "co3_unit_borrowed_import"]
         raw fn borrowed_import<'a>(value: &'a u8) -> &'a u8;
@@ -899,13 +930,13 @@ mod tests {
     #[cfg(all(feature = "alloc", feature = "derive"))]
     #[test]
     fn raw_import_uses_plain_reference_carrier_without_ownership() {
-        use co3::reference::abi::Ref;
+        use crate::reference::abi::Ref;
         fn check<'a>(_: &'a u8) {
             let _: unsafe extern "C" fn(Ref<'a, u8>) -> Ref<'a, u8> = borrowed_import;
         }
         let input = 7;
         check(&input);
-        let output = unsafe { borrowed_import(co3::encode(&input)) };
+        let output = unsafe { borrowed_import(crate::encode::<_, lang::C>(&input)) };
         assert_eq!(output.as_ptr(), core::ptr::from_ref(&input));
     }
 
@@ -921,7 +952,7 @@ mod tests {
         input.len()
     }
     #[cfg(all(feature = "alloc", feature = "derive"))]
-    co3::raw! {
+    crate::raw! {
         fn string_len(#[soft] input: &String) -> usize;
         fn alias_len(#[soft] input: &Text) -> usize;
     }
@@ -971,8 +1002,8 @@ mod tests {
         }
 
         unsafe extern "C" fn echo_raw(
-            value: Borrowed<<Self as co3::ReprC>::CType>,
-        ) -> Borrowed<<Self as co3::ReprC>::CType>;
+            value: Borrowed<<Self as crate::ReprC>::CType>,
+        ) -> Borrowed<<Self as crate::ReprC>::CType>;
     }
 
     #[cfg(all(feature = "alloc", feature = "derive"))]
@@ -1043,9 +1074,9 @@ mod tests {
 
     #[cfg(all(feature = "alloc", feature = "derive"))]
     extern "C" fn sum_pair(
-        left: Borrowed<<CallbackValue as co3::ReprC>::CType>,
-        right: Borrowed<<CallbackValue as co3::ReprC>::CType>,
-    ) -> Borrowed<<CallbackValue as co3::ReprC>::CType> {
+        left: Borrowed<<CallbackValue as crate::ReprC>::CType>,
+        right: Borrowed<<CallbackValue as crate::ReprC>::CType>,
+    ) -> Borrowed<<CallbackValue as crate::ReprC>::CType> {
         Borrowed::new(CallbackValue(
             Borrowed::into_inner(left).0 + Borrowed::into_inner(right).0,
         ))
@@ -1306,24 +1337,25 @@ mod tests {
         let _: Option<CallbackBorrowedReturn> = None;
         let _: BorrowedRustValue = borrow_rust_value_raw;
         let _: OwnedTransform = return_owned_raw;
-        let result = unsafe { return_owned_raw(co3::encode(Box::new(CallbackValue(42)))) };
+        let result =
+            unsafe { return_owned_raw(crate::encode::<_, lang::C>(Box::new(CallbackValue(42)))) };
         assert_eq!(
-            unsafe { co3::decode::<Box<CallbackValue>>(result) },
+            unsafe { crate::decode::<Box<CallbackValue>, lang::C>(result) },
             Some(Box::new(CallbackValue(42)))
         );
         fn assert_existing_fn_pointer_impls<T>(_: T) {}
         assert_existing_fn_pointer_impls(sum_native_raw as CCallback);
-        let raw_value = co3::encode(CallbackRustValue(21));
+        let raw_value = unsafe { crate::encode::<_, lang::C>(CallbackRustValue(21)) };
         let raw_result = unsafe { double_rust_raw(Borrowed::new(raw_value)) };
         assert_eq!(
-            unsafe { co3::decode::<CallbackRustValue>(raw_result) },
+            unsafe { crate::decode::<CallbackRustValue, lang::C>(raw_result) },
             Some(CallbackRustValue(42))
         );
-        let encoded = co3::encode(CallbackRustValue(7));
+        let encoded = unsafe { crate::encode::<_, lang::C>(CallbackRustValue(7)) };
         let raw_result =
             unsafe { CallbackRustValue::scaled_raw(Borrowed::new(SoftRef::from_ref(&encoded)), 6) };
         assert_eq!(
-            unsafe { co3::decode::<CallbackRustValue>(raw_result) },
+            unsafe { crate::decode::<CallbackRustValue, lang::C>(raw_result) },
             Some(CallbackRustValue(42))
         );
         assert_eq!(
@@ -1416,7 +1448,10 @@ mod tests {
     #[cfg(all(feature = "alloc", feature = "derive"))]
     fn raw_cstr_uses_thin_char_pointer() {
         let callback: unsafe extern "C" fn(_) -> _ = cstr_len_raw;
-        assert_eq!(unsafe { callback(co3::encode(c"hello")) }, 5);
+        assert_eq!(
+            unsafe { callback(crate::encode::<_, lang::C>(c"hello")) },
+            5
+        );
     }
 
     #[unsafe(export_name = "abi_cstr__borrowed")]
@@ -1446,7 +1481,7 @@ mod tests {
         let callback: unsafe extern "C" fn(_) -> _ = borrowed;
         let original = c"hello";
         assert_eq!(
-            unsafe { callback(co3::encode(original)) }
+            unsafe { callback(crate::encode::<_, lang::C>(original)) }
                 .as_ptr()
                 .cast::<u8>(),
             original.as_ptr().cast::<u8>()
@@ -1525,9 +1560,9 @@ mod tests {
         assert_eq!(
             unsafe {
                 raw_order_tuple_raw(Borrowed::new(Native(AbiTuple3(
-                    <RawOrderProbe as co3::ReprC>::CType::from_fields(1),
-                    <RawOrderProbe as co3::ReprC>::CType::from_fields(2),
-                    <RawOrderProbe as co3::ReprC>::CType::from_fields(3),
+                    <RawOrderProbe as crate::ReprC>::CType::from_fields(1),
+                    <RawOrderProbe as crate::ReprC>::CType::from_fields(2),
+                    <RawOrderProbe as crate::ReprC>::CType::from_fields(3),
                 ))))
             },
             6
@@ -1537,9 +1572,9 @@ mod tests {
         assert_eq!(
             unsafe {
                 raw_order_record_raw(Borrowed::new(
-                    <RawOrderRecord as co3::ReprC>::CType::from_fields(
-                        <RawOrderProbe as co3::ReprC>::CType::from_fields(1),
-                        <RawOrderProbe as co3::ReprC>::CType::from_fields(2),
+                    <RawOrderRecord as crate::ReprC>::CType::from_fields(
+                        <RawOrderProbe as crate::ReprC>::CType::from_fields(1),
+                        <RawOrderProbe as crate::ReprC>::CType::from_fields(2),
                         [3],
                     ),
                 ))
@@ -1617,7 +1652,7 @@ mod tests {
         assert_eq!(unsafe { callback.call() }, Some(4usize));
         let byte = 9_u8;
         assert_eq!(
-            unsafe { *generic_borrowed_raw(co3::encode(&byte)).as_ptr() },
+            unsafe { *generic_borrowed_raw(crate::encode::<_, lang::C>(&byte)).as_ptr() },
             9
         );
 
@@ -1720,8 +1755,8 @@ mod tests {
         let _ = borrowed_generic_raw::<u8>;
         let _ = MethodHost::borrowed_generic_raw::<u8>;
         let _: unsafe extern "C" fn(
-            <[u8; 2] as co3::ReprC>::CType,
-        ) -> <[u8; 2] as co3::ReprC>::CType = signature_identity_raw::<[u8; 2]>;
+            <[u8; 2] as crate::ReprC>::CType,
+        ) -> <[u8; 2] as crate::ReprC>::CType = signature_identity_raw::<[u8; 2]>;
 
         let value = 7_u8;
         unsafe {
@@ -1798,7 +1833,7 @@ mod tests {
     type OrdinaryAlias<T> = Option<T>;
 
     #[cfg(all(feature = "alloc", feature = "derive"))]
-    co3::ffi! {
+    crate::ffi! {
         #![unsafe(export("C"))]
         type SystemCallback = raw extern "system" fn(u8) -> u8;
         type UnpackedCallback = raw fn(#[unpack(_, _)] &mut [u8]) -> usize;
@@ -1887,7 +1922,7 @@ mod tests {
         let _: Option<AliasExplicitAbi> = None;
         static_assertions::assert_type_eq_all!(AliasExplicitAbi, unsafe extern "system" fn(u8));
         static_assertions::assert_type_eq_all!(AliasInheritedAbi, unsafe extern "C" fn(u8));
-        static_assertions::assert_type_eq_all!(AliasOrdinary, co3::marker::NonZero<u8>);
+        static_assertions::assert_type_eq_all!(AliasOrdinary, crate::marker::NonZero<u8>);
         static_assertions::assert_type_eq_all!(AliasRegular, Option<extern "C" fn(u8)>);
         static_assertions::assert_type_eq_all!(
             AliasSharedUnpacked,
@@ -1904,15 +1939,19 @@ mod tests {
         let _: Option<AliasComposite> = None;
         static_assertions::assert_type_eq_all!(
             AliasMaybeCallback,
-            Native<co3::option::abi::OptionSome<<unsafe extern "C" fn(u8) as crate::ReprC>::CType>>
+            Native<
+                crate::option::abi::OptionSome<<unsafe extern "C" fn(u8) as crate::ReprC>::CType>,
+            >
         );
         static_assertions::assert_type_eq_all!(
             AliasNicheOk,
-            Native<co3::result::abi::ResultOk<<core::num::NonZeroU8 as crate::ReprC>::CType, ()>>
+            Native<crate::result::abi::ResultOk<<core::num::NonZeroU8 as crate::ReprC>::CType, ()>>
         );
         static_assertions::assert_type_eq_all!(
             AliasNicheErr,
-            Native<co3::result::abi::ResultErr<(), <core::num::NonZeroU8 as crate::ReprC>::CType>>
+            Native<
+                crate::result::abi::ResultErr<(), <core::num::NonZeroU8 as crate::ReprC>::CType>,
+            >
         );
         static_assertions::assert_type_eq_all!(
             AliasCompositeReturn,
@@ -1941,8 +1980,8 @@ mod tests {
         static_assertions::assert_type_eq_all!(
             AliasBorrowed<u8>,
             unsafe extern "C" fn(
-                Borrowed<<u8 as co3::ReprC>::CType>,
-            ) -> Borrowed<<u8 as co3::ReprC>::CType>
+                Borrowed<<u8 as crate::ReprC>::CType>,
+            ) -> Borrowed<<u8 as crate::ReprC>::CType>
         );
         static_assertions::assert_type_eq_all!(
             AliasArray<2>,
@@ -2010,7 +2049,7 @@ mod tests {
 
         #[unsafe(export_name = "co3_unit_single_part_borrowed")]
         extern "C" fn foreign(value: u8) -> <CustomStatus as ReprC>::CType {
-            co3::encode(accept(value))
+            unsafe { crate::encode::<_, lang::C>(accept(value)) }
         }
 
         ffi! {
@@ -2040,7 +2079,7 @@ mod tests {
     #[unsafe(export_name = "kita_failure__extern_error_invalid_return")]
     #[cfg(all(feature = "alloc", feature = "derive"))]
     unsafe extern "C" fn extern_error_invalid_return() -> <CustomStatus as ReprC>::CType {
-        <CustomStatus as co3::ReprC>::CType::from_u8(7)
+        <CustomStatus as crate::ReprC>::CType::from_u8(7)
     }
 
     #[cfg(all(feature = "alloc", feature = "derive"))]
@@ -2062,18 +2101,18 @@ mod tests {
 
     #[cfg(all(feature = "alloc", feature = "derive"))]
     fn decode_status(source: <CustomStatus as ReprC>::CType) -> CustomStatus {
-        unsafe { co3::decode(source) }.expect("status should decode")
+        unsafe { crate::decode::<_, lang::C>(source) }.expect("status should decode")
     }
 
     #[test]
     #[cfg(all(feature = "alloc", feature = "derive"))]
     fn fieldless_enum_variant_constructors_expose_tags() {
         assert_eq!(
-            <CustomStatus as co3::ReprC>::CType::UnknownHandle().tag(),
+            <CustomStatus as crate::ReprC>::CType::UnknownHandle().tag(),
             CustomStatus::UnknownHandle as u8
         );
         assert_eq!(
-            <CustomStatus as co3::ReprC>::CType::SoftSyncError().tag(),
+            <CustomStatus as crate::ReprC>::CType::SoftSyncError().tag(),
             CustomStatus::SoftSyncError as u8
         );
     }
@@ -2138,7 +2177,7 @@ mod tests {
 
     #[unsafe(export_name = "field_order_record")]
     #[cfg(all(feature = "alloc", feature = "derive"))]
-    extern "C" fn receive_record(value: <ImportedOrderRecord as co3::ReprC>::CType) -> u8 {
+    extern "C" fn receive_record(value: <ImportedOrderRecord as crate::ReprC>::CType) -> u8 {
         value.0.0 + value.1.0 + value.2[0]
     }
 

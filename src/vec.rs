@@ -1,8 +1,5 @@
 //! Stable vector ownership and its robust C-compatible representation.
 
-#[cfg(feature = "repr-rust")]
-use crate::{convert::EncodeUnchecked, marker::Native};
-
 use alloc::boxed::Box;
 use core::{
     hash::Hash,
@@ -15,17 +12,24 @@ use rust_spec::RustSpec;
 
 use crate::{
     CFnArg, CFnReturn, CType, ReprC,
-    convert::{AbiCompatibleValidate, Decode, DecodeMove, Encode, EncodeMove, EncodeMoveUnchecked},
+    convert::{
+        AbiValidate, Decode, DecodeMove, DecodeMoveUnchecked, DecodeUnchecked, Encode, EncodeMove,
+        EncodeMoveUnchecked,
+    },
+    lang::Language,
     marker::{AbiCompatible, Zeroable},
     wide::impl_identity_carrier,
 };
 #[cfg(feature = "alloc")]
 use crate::{
+    SupportedLayout,
     borrow::{
         self, borrowed_decode_slice, decode_borrowed_elements, decode_borrowed_elements_unchecked,
     },
     stored::map_vec,
 };
+#[cfg(feature = "repr-rust")]
+use crate::{convert::EncodeUnchecked, marker::Native};
 
 /// A vector with a stable three-field representation.
 #[repr(C)]
@@ -251,9 +255,11 @@ impl<T: ReprC<CType: Sized>> ReprC for Vec<T> {
     type CType = abi::Vec<T::CType>;
 }
 
-impl<T> Encode for Vec<T> where Self: EncodeMove + crate::convert::EncodeUnchecked {}
 impl<T> crate::convert::EncodeUnchecked for Vec<T> where Self: EncodeMoveUnchecked {}
-impl<'d, T> Decode<'d> for Vec<T> where Self: DecodeMove<'d> {}
+impl<L: Language, T> Encode<L> for Vec<T> where Self: EncodeMove<L> + crate::convert::EncodeUnchecked
+{}
+impl<'d, T> DecodeUnchecked<'d> for Vec<T> where Self: DecodeMoveUnchecked<'d> {}
+impl<'d, L: Language, T> Decode<'d, L> for Vec<T> where Self: DecodeMove<'d, L> {}
 impl<T: ReprC<CType: CType + Sized>> crate::niche::Niche for Vec<T> {
     const NICHE: Self::CType = abi::Vec::null();
 
@@ -261,7 +267,14 @@ impl<T: ReprC<CType: CType + Sized>> crate::niche::Niche for Vec<T> {
         value.as_ptr().is_null()
     }
 }
-unsafe impl<T: AbiCompatibleValidate<CType: CType + Sized>> AbiCompatibleValidate for Vec<T>
+unsafe impl<T: AbiCompatible<CType: CType + Sized>> AbiCompatible for Vec<T> where
+    T: RustSpec<
+            Layout = rust_spec::Specified,
+            Mutability: rust_spec::mutability::PointerMutability,
+        >
+{
+}
+unsafe impl<L: Language, T: AbiValidate<L, CType: CType + Sized>> AbiValidate<L> for Vec<T>
 where
     T: RustSpec<
             Layout = rust_spec::Specified,
@@ -274,21 +287,34 @@ where
         }
         // The caller establishes allocation validity. Validate only initialized elements;
         // each element validator must respect interior mutability.
-        (0..value.len).all(|i| unsafe { T::is_valid(&*value.data.add(i)) })
+        (0..value.len).all(|i| unsafe {
+            <T as crate::convert::AbiValidate<L>>::is_valid(&*value.data.add(i))
+        })
     }
-}
-unsafe impl<T: AbiCompatible<CType: CType + Sized>> AbiCompatible for Vec<T> where
-    T: RustSpec<
-            Layout = rust_spec::Specified,
-            Mutability: rust_spec::mutability::PointerMutability,
-        >
-{
 }
 
 #[cfg(feature = "alloc")]
-unsafe impl<'d, T: borrow::BorrowedDecode<'d>> borrow::BorrowedDecode<'d> for Vec<T>
+unsafe impl<'d, T: borrow::BorrowedDecodeUnchecked<'d>> borrow::BorrowedDecodeUnchecked<'d>
+    for Vec<T>
 where
-    T: ReprC<CType: CType + Copy>,
+    T: SupportedLayout + ReprC<CType: CType + Copy>,
+    Self: ReprC<CType = abi::Vec<<T as ReprC>::CType>>,
+{
+    type SoftStore = Box<[T::SoftStore]>;
+
+    unsafe fn soft_decode_unchecked<'itm: 'd>(
+        source: Self::CType,
+        store: &'itm mut Self::SoftStore,
+    ) -> Self {
+        let fields = unsafe { core::slice::from_raw_parts(source.as_ptr(), source.len()) };
+        unsafe { decode_borrowed_elements_unchecked::<T, _>(fields, store) }
+    }
+}
+#[cfg(feature = "alloc")]
+unsafe impl<'d, L: Language, T: borrow::BorrowedDecode<'d, L>> borrow::BorrowedDecode<'d, L>
+    for Vec<T>
+where
+    T: SupportedLayout + ReprC<CType: CType + Copy>,
     Self: ReprC<CType = abi::Vec<<T as ReprC>::CType>>,
 {
     type Store = Box<[T::Store]>;
@@ -301,21 +327,13 @@ where
             return None;
         }
         let fields = unsafe { borrowed_decode_slice(source.as_ptr(), source.len())? };
-        unsafe { decode_borrowed_elements::<T, _>(fields, store) }
-    }
-
-    unsafe fn soft_decode_unchecked<'itm: 'd>(
-        source: Self::CType,
-        store: &'itm mut Self::Store,
-    ) -> Self {
-        let fields = unsafe { core::slice::from_raw_parts(source.as_ptr(), source.len()) };
-        unsafe { decode_borrowed_elements_unchecked::<T, _>(fields, store) }
+        unsafe { decode_borrowed_elements::<T, _, L>(fields, store) }
     }
 }
 
 // Elements can need encoding storage even when the vector layout is stable and robust.
 #[cfg(feature = "alloc")]
-unsafe impl<R: EncodeMove> EncodeMove for Vec<R>
+unsafe impl<L: Language, R: EncodeMove<L>> EncodeMove<L> for Vec<R>
 where
     R: ReprC<CType: CType + Sized>,
     Self: EncodeMoveUnchecked + ReprC<CType = abi::Vec<<R as ReprC>::CType>>,
@@ -326,13 +344,13 @@ where
     where
         Self: 'itm,
     {
-        abi::Vec::from_vec(encode_vec_elements(self.into(), store))
+        abi::Vec::from_vec(encode_vec_elements::<_, L>(self.into(), store))
     }
 }
 
 #[cfg(feature = "alloc")]
 #[inline(always)]
-fn encode_vec_elements<R: EncodeMove>(
+fn encode_vec_elements<R: EncodeMove<L>, L: Language>(
     value: alloc::vec::Vec<R>,
     store: &mut Box<[R::Store]>,
 ) -> alloc::vec::Vec<R::CType> {
@@ -341,7 +359,7 @@ fn encode_vec_elements<R: EncodeMove>(
         value.into_iter(),
         capacity,
         store,
-        crate::stored::EncodeMove::soft_encode,
+        crate::stored::EncodeMove::<L>::soft_encode,
     )
 }
 
@@ -360,13 +378,16 @@ impl<R: ReprC<CType: Sized>> ReprC for alloc::vec::Vec<R> {
 }
 #[cfg(feature = "alloc")]
 #[cfg(feature = "repr-rust")]
-impl<R> Encode for alloc::vec::Vec<R> where Self: EncodeMove {}
-#[cfg(feature = "alloc")]
-#[cfg(feature = "repr-rust")]
 impl<R> EncodeUnchecked for alloc::vec::Vec<R> where Self: EncodeMoveUnchecked {}
 #[cfg(feature = "alloc")]
 #[cfg(feature = "repr-rust")]
-impl<'d, R> Decode<'d> for alloc::vec::Vec<R> where Self: DecodeMove<'d> {}
+impl<L: Language, R> Encode<L> for alloc::vec::Vec<R> where Self: EncodeMove<L> {}
+#[cfg(feature = "alloc")]
+#[cfg(feature = "repr-rust")]
+impl<'d, R> DecodeUnchecked<'d> for alloc::vec::Vec<R> where Self: DecodeMoveUnchecked<'d> {}
+#[cfg(feature = "alloc")]
+#[cfg(feature = "repr-rust")]
+impl<'d, L: Language, R> Decode<'d, L> for alloc::vec::Vec<R> where Self: DecodeMove<'d, L> {}
 
 // The header has C layout; reachable element layout and mutability follow T.
 
@@ -400,12 +421,12 @@ where
 
 #[cfg(feature = "alloc")]
 #[cfg(feature = "repr-rust")]
-unsafe impl<T> borrow::BorrowedEncode for alloc::vec::Vec<T>
+unsafe impl<L: Language, T> borrow::BorrowedEncode<L> for alloc::vec::Vec<T>
 where
     T: ReprC<CType: CType + Sized>,
-    Vec<T>: borrow::BorrowedEncode + ReprC<CType = abi::Vec<<T as ReprC>::CType>>,
+    Vec<T>: borrow::BorrowedEncode<L> + ReprC<CType = abi::Vec<<T as ReprC>::CType>>,
 {
-    type Store = <Vec<T> as borrow::BorrowedEncode>::Store;
+    type Store = <Vec<T> as borrow::BorrowedEncode<L>>::Store;
 
     fn soft_encode<'itm>(
         self,
@@ -415,7 +436,7 @@ where
     where
         Self: 'itm,
     {
-        Native(<Vec<T> as borrow::BorrowedEncode>::soft_encode(
+        Native(<Vec<T> as borrow::BorrowedEncode<L>>::soft_encode(
             self.into(),
             store,
             owner,
@@ -425,30 +446,38 @@ where
 
 #[cfg(feature = "alloc")]
 #[cfg(feature = "repr-rust")]
-unsafe impl<'d, T: borrow::BorrowedDecode<'d>> borrow::BorrowedDecode<'d> for alloc::vec::Vec<T>
+unsafe impl<'d, T> borrow::BorrowedDecodeUnchecked<'d> for alloc::vec::Vec<T>
 where
-    T: ReprC<CType: CType + Copy>,
-    Self: ReprC<CType = Native<abi::Vec<<T as ReprC>::CType>>>,
+    T: ReprC<CType: Sized>,
+    Vec<T>: borrow::BorrowedDecodeUnchecked<'d> + ReprC<CType = abi::Vec<T::CType>>,
 {
-    type Store = Box<[T::Store]>;
+    type SoftStore = <Vec<T> as borrow::BorrowedDecodeUnchecked<'d>>::SoftStore;
+
+    unsafe fn soft_decode_unchecked<'itm: 'd>(
+        source: Self::CType,
+        store: &'itm mut Self::SoftStore,
+    ) -> Self {
+        unsafe {
+            <Vec<T> as borrow::BorrowedDecodeUnchecked<'d>>::soft_decode_unchecked(source.0, store)
+        }
+        .into()
+    }
+}
+#[cfg(feature = "alloc")]
+#[cfg(feature = "repr-rust")]
+unsafe impl<'d, L: Language, T> borrow::BorrowedDecode<'d, L> for alloc::vec::Vec<T>
+where
+    T: ReprC<CType: Sized>,
+    Vec<T>: borrow::BorrowedDecode<'d, L> + ReprC<CType = abi::Vec<T::CType>>,
+{
+    type Store = <Vec<T> as borrow::BorrowedDecode<'d, L>>::Store;
 
     unsafe fn soft_decode<'itm: 'd>(
         source: Self::CType,
         store: &'itm mut Self::Store,
     ) -> Option<Self> {
-        if source.len() > source.capacity() {
-            return None;
-        }
-        let fields = unsafe { borrowed_decode_slice(source.as_ptr(), source.len())? };
-        unsafe { decode_borrowed_elements::<T, _>(fields, store) }
-    }
-
-    unsafe fn soft_decode_unchecked<'itm: 'd>(
-        source: Self::CType,
-        store: &'itm mut Self::Store,
-    ) -> Self {
-        let fields = unsafe { core::slice::from_raw_parts(source.as_ptr(), source.len()) };
-        unsafe { decode_borrowed_elements_unchecked::<T, _>(fields, store) }
+        unsafe { <Vec<T> as borrow::BorrowedDecode<'d, L>>::soft_decode(source.0, store) }
+            .map(Into::into)
     }
 }
 
@@ -470,12 +499,12 @@ where
 
 #[cfg(feature = "alloc")]
 #[cfg(feature = "repr-rust")]
-unsafe impl<R: ReprC<CType: CType + Sized>> EncodeMove for alloc::vec::Vec<R>
+unsafe impl<L: Language, R: ReprC<CType: CType + Sized>> EncodeMove<L> for alloc::vec::Vec<R>
 where
-    Vec<R>: EncodeMove + ReprC<CType = abi::Vec<<R as ReprC>::CType>>,
+    Vec<R>: EncodeMove<L> + ReprC<CType = abi::Vec<<R as ReprC>::CType>>,
     Self: ReprC<CType = Native<abi::Vec<<R as ReprC>::CType>>>,
 {
-    type Store = <Vec<R> as EncodeMove>::Store;
+    type Store = <Vec<R> as EncodeMove<L>>::Store;
 
     fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
     where
@@ -487,22 +516,38 @@ where
 
 #[cfg(feature = "alloc")]
 #[cfg(feature = "repr-rust")]
-unsafe impl<'d, R: ReprC<CType: CType + Sized>> DecodeMove<'d> for alloc::vec::Vec<R>
+unsafe impl<'d, R: ReprC<CType: CType + Sized>> DecodeMoveUnchecked<'d> for alloc::vec::Vec<R>
 where
-    Vec<R>: DecodeMove<'d> + ReprC<CType = abi::Vec<<R as ReprC>::CType>>,
+    Vec<R>: DecodeMoveUnchecked<'d> + ReprC<CType = abi::Vec<<R as ReprC>::CType>>,
 {
-    type Store = <Vec<R> as DecodeMove<'d>>::Store;
+    type SoftStore = <Vec<R> as DecodeMoveUnchecked<'d>>::SoftStore;
+
+    unsafe fn soft_decode_unchecked<'itm: 'd>(
+        source: Self::CType,
+        store: &'itm mut Self::SoftStore,
+    ) -> Self {
+        unsafe {
+            <Vec<R> as crate::convert::DecodeMoveUnchecked<'d>>::soft_decode_unchecked(
+                source.0, store,
+            )
+        }
+        .into()
+    }
+}
+#[cfg(feature = "alloc")]
+#[cfg(feature = "repr-rust")]
+unsafe impl<'d, L: Language, R: ReprC<CType: CType + Sized>> DecodeMove<'d, L>
+    for alloc::vec::Vec<R>
+where
+    Vec<R>: DecodeMove<'d, L> + ReprC<CType = abi::Vec<<R as ReprC>::CType>>,
+{
+    type Store = <Vec<R> as DecodeMove<'d, L>>::Store;
     unsafe fn soft_decode<'itm: 'd>(
         source: Self::CType,
         store: &'itm mut Self::Store,
     ) -> Option<Self> {
-        unsafe { Vec::<R>::soft_decode(source.0, store) }.map(Into::into)
-    }
-    unsafe fn soft_decode_unchecked<'itm: 'd>(
-        source: Self::CType,
-        store: &'itm mut Self::Store,
-    ) -> Self {
-        unsafe { Vec::<R>::soft_decode_unchecked(source.0, store) }.into()
+        unsafe { <Vec<R> as crate::convert::DecodeMove<'d, L>>::soft_decode(source.0, store) }
+            .map(Into::into)
     }
 }
 
@@ -519,10 +564,9 @@ impl<R: ReprC<CType: CType + Sized>> crate::niche::Niche for alloc::vec::Vec<R> 
 #[doc(hidden)]
 pub mod abi {
     use super::*;
+    use crate::lang::Language;
     #[cfg(feature = "repr-rust")]
-    use crate::boxed::OwnedBoxCarrier;
-    #[cfg(feature = "repr-rust")]
-    use crate::{marker::Native, wide};
+    use crate::{boxed::OwnedBoxCarrier, marker::Native, wide};
 
     /// An owned allocation represented by its data pointer, length, and capacity.
     /// A null pointer is reserved as a niche and does not represent a vector.
@@ -691,6 +735,7 @@ mod tests {
     use alloc::{vec, vec::Vec};
 
     use super::abi;
+    use crate::lang;
 
     #[test]
     fn nullable_vector_layout_is_not_guaranteed() {
@@ -706,7 +751,8 @@ mod tests {
 
         for value in [None, Some(super::Vec::new()), Some(vec![1u32, 2, 3].into())] {
             let expected = value.clone();
-            let decoded = unsafe { crate::decode(crate::encode(value)) };
+            let decoded =
+                unsafe { crate::decode::<_, lang::C>(crate::encode::<_, lang::C>(value)) };
             assert_eq!(decoded, Some(expected));
         }
     }
@@ -780,8 +826,10 @@ mod tests {
                 2,
             )]);
         assert!(
-            unsafe { crate::soft_decode::<super::Vec<bool>>(invalid, &mut Default::default()) }
-                .is_none()
+            unsafe {
+                crate::soft_decode::<super::Vec<bool>, lang::C>(invalid, &mut Default::default())
+            }
+            .is_none()
         );
     }
 }

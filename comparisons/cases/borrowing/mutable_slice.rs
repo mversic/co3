@@ -32,24 +32,51 @@ mod caller {
     }
 }
 
+#[cfg(feature = "co3")]
 fn main() {
-    #[cfg(any(feature = "co3", feature = "diplomat", feature = "boltffi"))]
     {
         let mut values = [500, 700, 900];
-        #[cfg(feature = "co3")]
+
         caller::fill(&mut values);
-        #[cfg(feature = "diplomat")]
+
+        assert_eq!(values, [42; 3]);
+    }
+}
+
+#[cfg(any(
+    feature = "uniffi",
+    feature = "interoptopus",
+    feature = "safer_ffi",
+    feature = "abi_stable",
+    feature = "stabby"
+))]
+fn main() {}
+
+#[cfg(feature = "diplomat")]
+fn main() {
+    {
+        let mut values = [500, 700, 900];
+
         {
             unsafe extern "C" {
                 fn diplomat_external_fill(values: diplomat_runtime::DiplomatSliceMut<'_, u32>);
             }
             unsafe { diplomat_external_fill(values.as_mut_slice().into()) };
         }
-        #[cfg(feature = "boltffi")]
-        assert!(unsafe {
-            boltffi_function_13mutable_slice4fill(values.as_mut_ptr(), values.len())
-        }
-        .is_ok());
+
+        assert_eq!(values, [42; 3]);
+    }
+}
+
+#[cfg(feature = "boltffi")]
+fn main() {
+    {
+        let mut values = [500, 700, 900];
+
+        assert!(
+            unsafe { boltffi_function_13mutable_slice4fill(values.as_mut_ptr(), values.len()) }
+                .is_ok()
+        );
         assert_eq!(values, [42; 3]);
     }
 }

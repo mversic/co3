@@ -362,11 +362,8 @@ impl<'a> RecursiveFields<'a> {
             let header = super::wide::header_repr_c_predicate(tail, generics);
             let lowered = parse_quote!(<#tail as co3::ReprC>::CType);
             let metadata = super::wide::wide_usize_predicate(&lowered, generics);
-            self.tail_bounds.extend([
-                parse_quote!(#header),
-                parse_quote!(#tail: co3::ReprC),
-                parse_quote!(#metadata),
-            ]);
+            self.tail_bounds
+                .extend([header, parse_quote!(#tail: co3::ReprC), metadata]);
         }
     }
 

@@ -51,8 +51,8 @@ co3::ffi! {
 #[cfg(feature = "abi_stable")]
 abi_stable_signature!(storage: (&core::cell::UnsafeCell<u32>) -> u64);
 
+#[cfg(feature = "co3")]
 fn main() {
-    #[cfg(feature = "co3")]
     {
         let cell = core::cell::UnsafeCell::new(3u32);
         let alias = &cell;
@@ -64,3 +64,14 @@ fn main() {
         assert_eq!(cell.into_inner(), 7);
     }
 }
+
+#[cfg(any(
+    feature = "uniffi",
+    feature = "diplomat",
+    feature = "interoptopus",
+    feature = "safer_ffi",
+    feature = "boltffi",
+    feature = "abi_stable",
+    feature = "stabby"
+))]
+fn main() {}

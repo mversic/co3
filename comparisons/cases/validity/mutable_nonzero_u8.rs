@@ -56,13 +56,11 @@ fn check_writeback() {
     }
 }
 
+#[cfg(feature = "co3")]
 fn main() {
-    #[cfg(any(feature = "diplomat", feature = "interoptopus", feature = "co3"))]
     {
         unsafe extern "C" {
-            #[cfg_attr(feature = "diplomat", link_name = "diplomat_external_update")]
-            #[cfg_attr(feature = "interoptopus", link_name = "update")]
-            #[cfg_attr(feature = "co3", link_name = "mutable_nonzero_u8__update")]
+            #[link_name = "mutable_nonzero_u8__update"]
             fn exported_update(input: *mut u8);
         }
 
@@ -72,6 +70,44 @@ fn main() {
         assert_eq!(byte, 1);
     }
 
-    #[cfg(feature = "co3")]
     check_writeback();
+}
+
+#[cfg(any(
+    feature = "uniffi",
+    feature = "safer_ffi",
+    feature = "boltffi",
+    feature = "abi_stable",
+    feature = "stabby"
+))]
+fn main() {}
+
+#[cfg(feature = "diplomat")]
+fn main() {
+    {
+        unsafe extern "C" {
+            #[link_name = "diplomat_external_update"]
+            fn exported_update(input: *mut u8);
+        }
+
+        let mut byte = 7u8;
+        // The caller supplies exclusively borrowed storage containing a valid NonZeroU8.
+        unsafe { exported_update(&mut byte) };
+        assert_eq!(byte, 1);
+    }
+}
+
+#[cfg(feature = "interoptopus")]
+fn main() {
+    {
+        unsafe extern "C" {
+            #[link_name = "update"]
+            fn exported_update(input: *mut u8);
+        }
+
+        let mut byte = 7u8;
+        // The caller supplies exclusively borrowed storage containing a valid NonZeroU8.
+        unsafe { exported_update(&mut byte) };
+        assert_eq!(byte, 1);
+    }
 }

@@ -1,7 +1,5 @@
 //! Logic related to the conversion of [`Option<T>`] to and from FFI-compatible representation
 
-#[cfg(feature = "repr-rust")]
-use crate::{marker::Native, option::abi::Option as AbiOption, tuple::abi::Tuple2 as AbiTuple2};
 #[cfg(feature = "alloc")]
 use alloc::boxed::Box;
 
@@ -26,6 +24,18 @@ use crate::{
 };
 #[cfg(feature = "alloc")]
 use crate::{boxed::abi::Box as AbiBox, wide::abi::WideBox as AbiWideBox};
+#[cfg(feature = "repr-rust")]
+use crate::{marker::Native, option::abi::Option as AbiOption, tuple::abi::Tuple2 as AbiTuple2};
+
+pub(crate) fn checked_option_payload<T: Niche>(encoded: Option<T::CType>) -> T::CType {
+    match encoded {
+        Some(value) => {
+            debug_assert!(!T::is_niche(&value), "encoding produced NICHE value");
+            value
+        }
+        None => T::NICHE,
+    }
+}
 
 disjoint_impls! {
     /// Type that has a trap representation that can be used as a niche value.
@@ -315,6 +325,7 @@ mod tests {
     use crate::{
         CType,
         convert::{Decode, Encode},
+        lang,
     };
 
     #[test]
@@ -356,35 +367,61 @@ mod tests {
         ));
         assert!(!bool::is_niche(&crate::primitive::abi::bool(0)));
         assert_eq!(
-            unsafe { crate::decode::<Option<bool>>(crate::encode(None::<bool>)) },
-            Some(None)
-        );
-        assert_eq!(
-            unsafe { crate::decode::<Option<Ordering>>(crate::encode(None::<Ordering>)) },
-            Some(None)
-        );
-        assert_eq!(
-            unsafe { crate::decode::<Option<char>>(crate::encode(None::<char>)) },
+            unsafe {
+                crate::decode::<Option<bool>, lang::C>(crate::encode::<_, lang::C>(None::<bool>))
+            },
             Some(None)
         );
         assert_eq!(
             unsafe {
-                crate::decode::<Option<crate::option::Option<u32>>>(crate::encode(
+                crate::decode::<Option<Ordering>, lang::C>(crate::encode::<_, lang::C>(
+                    None::<Ordering>,
+                ))
+            },
+            Some(None)
+        );
+        assert_eq!(
+            unsafe {
+                crate::decode::<Option<char>, lang::C>(crate::encode::<_, lang::C>(None::<char>))
+            },
+            Some(None)
+        );
+        assert_eq!(
+            unsafe {
+                crate::decode::<Option<crate::option::Option<u32>>, lang::C>(crate::encode::<
+                    _,
+                    lang::C,
+                >(
                     None::<crate::option::Option<u32>>,
                 ))
             },
             Some(None)
         );
         assert_eq!(
-            unsafe { crate::decode::<Option<Option<bool>>>(crate::encode(None::<Option<bool>>,)) },
+            unsafe {
+                crate::decode::<Option<Option<bool>>, lang::C>(crate::encode::<_, lang::C>(
+                    None::<Option<bool>>,
+                ))
+            },
             Some(None)
         );
         assert_eq!(
-            unsafe { crate::decode::<Option<(u8, bool)>>(crate::encode(None::<(u8, bool)>,)) },
+            unsafe {
+                crate::decode::<Option<(u8, bool)>, lang::C>(crate::encode::<_, lang::C>(
+                    None::<(u8, bool)>,
+                ))
+            },
             Some(None)
         );
         assert_eq!(
-            unsafe { crate::decode::<Result<bool, ()>>(crate::encode(Err::<bool, ()>((),))) },
+            unsafe {
+                crate::decode::<Result<bool, ()>, lang::C>(crate::encode::<_, lang::C>(Err::<
+                    bool,
+                    (),
+                >(
+                    ()
+                )))
+            },
             Some(Err(()))
         );
     }
@@ -414,15 +451,19 @@ mod tests {
         assert!(crate::marker::NonZero(1u32) < crate::marker::NonZero(2u32));
         assert_eq!(
             unsafe {
-                crate::decode::<Option<core::num::NonZeroU32>>(crate::encode(
-                    None::<core::num::NonZeroU32>,
-                ))
+                crate::decode::<Option<core::num::NonZeroU32>, lang::C>(
+                    crate::encode::<_, lang::C>(None::<core::num::NonZeroU32>),
+                )
             },
             Some(None)
         );
         #[cfg(feature = "alloc")]
         assert_eq!(
-            unsafe { crate::decode::<Option<Box<u8>>>(crate::encode(None::<Box<u8>>)) },
+            unsafe {
+                crate::decode::<Option<Box<u8>>, lang::C>(crate::encode::<_, lang::C>(
+                    None::<Box<u8>>,
+                ))
+            },
             Some(None)
         );
         let value = 7u8;
@@ -434,30 +475,43 @@ mod tests {
 
     #[test]
     fn niche_values() {
-        assert!(<&bool>::is_niche(&crate::encode(None::<&bool>).0.0));
+        assert!(<&bool>::is_niche(
+            &unsafe { crate::encode::<_, lang::C>(None::<&bool>) }.0.0
+        ));
         assert!(<&mut bool>::is_niche(
-            &co3::soft_encode(None::<&mut bool>, &mut Default::default())
-                .0
-                .0
+            &unsafe {
+                crate::soft_encode::<_, lang::C>(None::<&mut bool>, &mut Default::default())
+            }
+            .0
+            .0
         ));
 
         #[cfg(feature = "alloc")]
-        assert!(String::is_niche(&crate::encode(None::<String>).0.0));
+        assert!(String::is_niche(
+            &unsafe { crate::encode::<_, lang::C>(None::<String>) }.0.0
+        ));
         #[cfg(feature = "alloc")]
-        assert!(<Box<str>>::is_niche(&crate::encode(None::<Box<str>>).0.0));
+        assert!(<Box<str>>::is_niche(
+            &unsafe { crate::encode::<_, lang::C>(None::<Box<str>>) }.0.0
+        ));
 
-        assert!(<&str>::is_niche(&crate::encode(None::<&str>).0.0));
+        assert!(<&str>::is_niche(
+            &unsafe { crate::encode::<_, lang::C>(None::<&str>) }.0.0
+        ));
 
         #[cfg(feature = "alloc")]
         assert!(<&mut str>::is_niche(
-            &crate::soft_encode(None::<&mut str>, &mut Default::default())
+            &unsafe { crate::soft_encode::<_, lang::C>(None::<&mut str>, &mut Default::default()) }
                 .0
                 .0
         ));
 
         assert_eq!(
             core::ptr::null_mut(),
-            crate::encode(None::<NonNull<u32>>).0.0.0
+            unsafe { crate::encode::<_, lang::C>(None::<NonNull<u32>>) }
+                .0
+                .0
+                .0
         );
 
         #[cfg(feature = "alloc")]
@@ -466,7 +520,9 @@ mod tests {
         ));
 
         assert!(<ManuallyDrop<bool> as Niche>::is_niche(
-            &crate::encode(None::<ManuallyDrop<bool>>).0.0
+            &unsafe { crate::encode::<_, lang::C>(None::<ManuallyDrop<bool>>) }
+                .0
+                .0
         ));
     }
 }

@@ -9,9 +9,9 @@ use core::{
     marker::PhantomData,
     ptr::NonNull,
 };
+
 #[cfg(feature = "alloc")]
 use rust_spec::Unspecified;
-
 use rust_spec::{
     RustSpec,
     size::{MetaSized, SliceLike},
@@ -19,7 +19,11 @@ use rust_spec::{
 
 use crate::{
     CFnArg, CFnReturn, CType, ReprC,
-    convert::{Decode, DecodeMove, Encode, EncodeMove, EncodeMoveUnchecked},
+    convert::{
+        Decode, DecodeMove, DecodeMoveUnchecked, DecodeUnchecked, Encode, EncodeMove,
+        EncodeMoveUnchecked,
+    },
+    lang::Language,
     marker::{AbiCompatible, Zeroable},
 };
 
@@ -267,7 +271,7 @@ macro_rules! impl_non_null_wide {
             }
         }
 
-        unsafe impl<$($lifetime,)? R> EncodeMove for $direct<$($lifetime,)? R>
+        unsafe impl<$($lifetime,)? L: Language, R> EncodeMove<L> for $direct<$($lifetime,)? R>
         where
             R: CType + ReprC<CType = R> + Wide<Header: CType + WideHeader<Data: CType>> + ?Sized,
             Self: ReprC<CType = abi::$carrier<$($lifetime,)? <R as ReprC>::CType>>,
@@ -278,11 +282,26 @@ macro_rules! impl_non_null_wide {
             where
                 Self: 'itm,
             {
-                unsafe { self.soft_encode_unchecked(store) }
+                unsafe { crate::convert::EncodeMoveUnchecked::soft_encode_unchecked(self, store) }
             }
         }
 
-        unsafe impl<'d, $($lifetime,)? R> DecodeMove<'d> for $direct<$($lifetime,)? R>
+        unsafe impl<'d, $($lifetime,)?  R> DecodeMoveUnchecked<'d> for $direct<$($lifetime,)? R>
+        where
+            R: CType + ReprC<CType = R> + Wide<Header: CType + WideHeader<Data: CType>> + ?Sized,
+            Self: ReprC<CType = abi::$carrier<$($lifetime,)? <R as ReprC>::CType>>,
+        {
+            type SoftStore = ();
+
+            unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, (): &mut ()) -> Self {
+                Self {
+                    data: unsafe { NonNull::new_unchecked(source.data as *mut PointeeData<R>) },
+                    metadata: source.metadata,
+                    $(lifetime: PhantomData::<&$lifetime $($mutability)? ()>,)?
+                }
+            }
+        }
+        unsafe impl<'d, $($lifetime,)? L: Language, R> DecodeMove<'d, L> for $direct<$($lifetime,)? R>
         where
             R: CType + ReprC<CType = R> + Wide<Header: CType + WideHeader<Data: CType>> + ?Sized,
             Self: ReprC<CType = abi::$carrier<$($lifetime,)? <R as ReprC>::CType>>,
@@ -299,12 +318,14 @@ macro_rules! impl_non_null_wide {
             }
         }
 
-        impl<$($lifetime,)? R: Wide + ?Sized> Encode for $direct<$($lifetime,)? R>
-        where Self: EncodeMove {}
         impl<$($lifetime,)? R: Wide + ?Sized> crate::convert::EncodeUnchecked for $direct<$($lifetime,)? R>
         where Self: EncodeMoveUnchecked {}
-        impl<'d, $($lifetime,)? R: Wide + ?Sized> Decode<'d> for $direct<$($lifetime,)? R>
-        where Self: DecodeMove<'d> {}
+        impl<$($lifetime,)? L: Language, R: Wide + ?Sized> Encode<L> for $direct<$($lifetime,)? R>
+        where Self: EncodeMove<L> {}
+        impl<'d, $($lifetime,)?  R: Wide + ?Sized> DecodeUnchecked<'d> for $direct<$($lifetime,)? R>
+        where Self: DecodeMoveUnchecked<'d> {}
+        impl<'d, $($lifetime,)? L: Language, R: Wide + ?Sized> Decode<'d, L> for $direct<$($lifetime,)? R>
+        where Self: DecodeMove<'d, L> {}
 
     };
 }
@@ -533,11 +554,18 @@ where
 impl_non_null_wide! { [] WideBox => WideBox [] }
 
 macro_rules! impl_identity_carrier {
+    ($ty:ident, [$lifetime:lifetime, $($params:tt)*], [$($args:tt)*]) => {
+        $crate::wide::impl_identity_carrier!(@impl [$lifetime,] $ty, [$($params)*], [$($args)*]);
+    };
     ($ty:ident, [$($params:tt)*], [$($args:tt)*]) => {
-        impl<$($params)*> ReprC for $ty<$($args)*> {
+        $crate::wide::impl_identity_carrier!(@impl [] $ty, [$($params)*], [$($args)*]);
+    };
+
+    (@impl [$($lifetimes:tt)*] $ty:ident, [$($params:tt)*], [$($args:tt)*]) => {
+        impl<$($lifetimes)* $($params)*> ReprC for $ty<$($args)*> {
             type CType = Self;
         }
-        unsafe impl<$($params)*> EncodeMove for $ty<$($args)*> {
+        unsafe impl<$($lifetimes)* L: Language, $($params)*> EncodeMove<L> for $ty<$($args)*> {
             type Store = ();
 
             #[inline(always)]
@@ -548,14 +576,22 @@ macro_rules! impl_identity_carrier {
                 self
             }
         }
-        unsafe impl<$($params)*> EncodeMoveUnchecked for $ty<$($args)*> {
+        unsafe impl<$($lifetimes)* $($params)*> EncodeMoveUnchecked for $ty<$($args)*> {
             type SoftStore = ();
 
             unsafe fn soft_encode_unchecked<'itm>(self, (): &'itm mut ()) -> Self::CType where Self: 'itm {
                 self
             }
         }
-        unsafe impl<'d, $($params)*> DecodeMove<'d> for $ty<$($args)*> {
+        unsafe impl<'d,$($lifetimes)*  $($params)*> DecodeMoveUnchecked<'d> for $ty<$($args)*> {
+            type SoftStore = ();
+
+            #[inline(always)]
+            unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, (): &mut ()) -> Self { {
+                source
+            } }
+        }
+        unsafe impl<'d,$($lifetimes)* L: Language, $($params)*> DecodeMove<'d, L> for $ty<$($args)*> {
             type Store = ();
 
             #[inline(always)]
@@ -564,28 +600,28 @@ macro_rules! impl_identity_carrier {
             }
         }
 
-        impl<$($params)*> Encode for $ty<$($args)*> {}
-        impl<$($params)*> crate::convert::EncodeUnchecked for $ty<$($args)*> {}
-        impl<'d, $($params)*> Decode<'d> for $ty<$($args)*> {}
+        impl<$($lifetimes)* $($params)*> crate::convert::EncodeUnchecked for $ty<$($args)*> {}
+        impl<$($lifetimes)* L: Language, $($params)*> Encode<L> for $ty<$($args)*> {}
+        impl<'d,$($lifetimes)*  $($params)*> DecodeUnchecked<'d> for $ty<$($args)*> {}
+        impl<'d,$($lifetimes)* L: Language, $($params)*> Decode<'d, L> for $ty<$($args)*> {}
 
+        unsafe impl<$($lifetimes)* $($params)*> AbiCompatible for $ty<$($args)*>
+        where
+            Self: $crate::rust_spec::RustSpec<Layout = $crate::rust_spec::Specified>,
+        {}
 
-        unsafe impl<$($params)*> $crate::convert::AbiCompatibleValidate for $ty<$($args)*>
-where
-    Self: $crate::rust_spec::RustSpec<Layout = $crate::rust_spec::Specified>,
-{
+        unsafe impl<$($lifetimes)* L: $crate::lang::Language, $($params)*> $crate::convert::AbiValidate<L> for $ty<$($args)*>
+        where
+            Self: $crate::rust_spec::RustSpec<Layout = $crate::rust_spec::Specified>,
+        {
             #[inline(always)]
             unsafe fn is_valid(_: &Self::CType) -> bool {
                 true
             }
         }
-
-        unsafe impl<$($params)*> AbiCompatible for $ty<$($args)*>
-where
-    Self: $crate::rust_spec::RustSpec<Layout = $crate::rust_spec::Specified>,
-{}
-        unsafe impl<$($params)*> CType for $ty<$($args)*> {}
-        unsafe impl<$($params)*> CFnArg for $ty<$($args)*> {}
-        unsafe impl<$($params)*> CFnReturn for $ty<$($args)*> {}
+        unsafe impl<$($lifetimes)* $($params)*> CType for $ty<$($args)*> {}
+        unsafe impl<$($lifetimes)* $($params)*> CFnArg for $ty<$($args)*> {}
+        unsafe impl<$($lifetimes)* $($params)*> CFnReturn for $ty<$($args)*> {}
     };
 }
 
@@ -604,6 +640,7 @@ pub mod abi {
     use sealed::sealed;
 
     use super::*;
+    use crate::lang::Language;
 
     /// Raw parts shared by ordinary and soft wide reference carriers.
     ///
@@ -1227,6 +1264,8 @@ pub mod abi {
 pub(crate) mod tests {
     use rust_spec::Unspecified;
 
+    use crate::lang;
+
     #[cfg(all(feature = "derive", feature = "alloc"))]
     #[test]
     fn box_tail_does_not_generate_wide_headers() {
@@ -1245,7 +1284,7 @@ pub(crate) mod tests {
             tail: alloc::boxed::Box::new((42,)),
         };
         let mut encode_store = Default::default();
-        let encoded = crate::convert::EncodeMove::soft_encode(source, &mut encode_store);
+        let encoded = crate::convert::EncodeMove::<lang::C>::soft_encode(source, &mut encode_store);
         let mut decode_store = Default::default();
         let decoded = unsafe {
             <Packet as crate::convert::DecodeMove>::soft_decode(encoded, &mut decode_store)
@@ -1375,20 +1414,20 @@ pub(crate) mod tests {
             }
         );
         let null = super::abi::WideRef::<<Custom as crate::ReprC>::CType>::null();
-        assert!(unsafe { crate::decode::<WideRef<'_, Custom>>(null) }.is_none());
-        let absent = crate::encode(None::<WideRef<'_, Custom>>);
+        assert!(unsafe { crate::decode::<WideRef<'_, Custom>, lang::C>(null) }.is_none());
+        let absent = unsafe { crate::encode::<_, lang::C>(None::<WideRef<'_, Custom>>) };
         assert!(absent.0.0.as_ptr().is_null());
         assert_eq!(
-            unsafe { crate::decode::<Option<WideRef<'_, Custom>>>(absent) }
+            unsafe { crate::decode::<Option<WideRef<'_, Custom>>, lang::C>(absent) }
                 .map(|value| value.is_none()),
             Some(true)
         );
-        let encoded = crate::encode(shared);
-        let decoded = unsafe { crate::decode::<WideRef<'_, Custom>>(encoded) }.unwrap();
+        let encoded = unsafe { crate::encode::<_, lang::C>(shared) };
+        let decoded = unsafe { crate::decode::<WideRef<'_, Custom>, lang::C>(encoded) }.unwrap();
         assert_eq!(&unsafe { decoded.into_ref() }.0, &values);
 
         let null = super::abi::WideRefMut::<<Custom as crate::ReprC>::CType>::null();
-        assert!(unsafe { crate::decode::<WideRefMut<'_, Custom>>(null) }.is_none());
+        assert!(unsafe { crate::decode::<WideRefMut<'_, Custom>, lang::C>(null) }.is_none());
 
         let exclusive = WideRefMut::<Custom>::from_mut(unsafe {
             &mut *(&mut values[..] as *mut [u8] as *mut Custom)
@@ -1400,8 +1439,10 @@ pub(crate) mod tests {
                 marker: 7
             }
         );
-        let exclusive =
-            unsafe { crate::decode::<WideRefMut<'_, Custom>>(crate::encode(exclusive)) }.unwrap();
+        let exclusive = unsafe {
+            crate::decode::<WideRefMut<'_, Custom>, lang::C>(crate::encode::<_, lang::C>(exclusive))
+        }
+        .unwrap();
         unsafe { exclusive.into_mut() }.0[0] = 4;
         assert_eq!(values, [4, 2, 3]);
 
@@ -1445,11 +1486,11 @@ pub(crate) mod tests {
         assert_eq!(&*unsafe { owned.into_box() }, "wide");
 
         let null = abi::WideBox::<[u8]>::null();
-        assert!(unsafe { crate::decode::<WideBox<[u8]>>(null) }.is_none());
+        assert!(unsafe { crate::decode::<WideBox<[u8]>, lang::C>(null) }.is_none());
         let source = alloc::vec![1_u8, 2].into_boxed_slice();
         let address = source.as_ptr();
-        let encoded = crate::encode(WideBox::from_box(source));
-        let decoded = unsafe { crate::decode::<WideBox<[u8]>>(encoded) }.unwrap();
+        let encoded = unsafe { crate::encode::<_, lang::C>(WideBox::from_box(source)) };
+        let decoded = unsafe { crate::decode::<WideBox<[u8]>, lang::C>(encoded) }.unwrap();
         let recovered = unsafe { decoded.into_box() };
         assert_eq!(recovered.as_ptr(), address);
 
@@ -1507,7 +1548,7 @@ pub(crate) mod tests {
             )
         };
         let decoded = unsafe {
-            crate::soft_decode::<abi::SoftWideRef<<Pointee as crate::ReprC>::CType>>(
+            crate::soft_decode::<abi::SoftWideRef<<Pointee as crate::ReprC>::CType>, lang::C>(
                 raw,
                 &mut Default::default(),
             )
@@ -1537,7 +1578,7 @@ pub(crate) mod tests {
             }
         );
         let decoded = unsafe {
-            crate::soft_decode::<abi::SoftWideRef<<Pointee as crate::ReprC>::CType>>(
+            crate::soft_decode::<abi::SoftWideRef<<Pointee as crate::ReprC>::CType>, lang::C>(
                 null,
                 &mut Default::default(),
             )
@@ -1624,8 +1665,9 @@ pub(crate) mod tests {
         assert_eq!(shared.metadata(), 3);
         assert_eq!(unsafe { shared.into_ref() }, Some(&values[..]));
         let mut values = [4_u8, 5];
-        let exclusive: abi::WideRefMut<'_, [u8]> = crate::encode(&mut values[..]);
-        unsafe { crate::decode::<&mut [u8]>(exclusive) }.unwrap()[1] = 6;
+        let exclusive: abi::WideRefMut<'_, [u8]> =
+            unsafe { crate::encode::<_, lang::C>(&mut values[..]) };
+        unsafe { crate::decode::<&mut [u8], lang::C>(exclusive) }.unwrap()[1] = 6;
         assert_eq!(values, [4, 6]);
         assert!(unsafe { abi::WideRef::<[u8]>::null().into_ref() }.is_none());
     }

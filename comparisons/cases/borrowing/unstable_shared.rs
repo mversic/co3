@@ -35,30 +35,30 @@ co3::ffi! {
 #[cfg(feature = "abi_stable")]
 abi_stable_signature!(read_point: (&Point) -> u32);
 
+#[cfg(feature = "co3")]
 fn main() {
-    #[cfg(any(feature = "co3", feature = "diplomat", feature = "interoptopus"))]
     use CallerPoint as Point;
 
     for (x, y) in [(7, 1024), (13, 65537)] {
         let point = Point { x, y };
-        #[cfg(any(feature = "co3", feature = "diplomat", feature = "interoptopus"))]
+
         let result = {
             unsafe extern "C" {
-                #[cfg_attr(feature = "co3", link_name = "unstable_shared__read_point")]
-                #[cfg_attr(feature = "diplomat", link_name = "diplomat_external_read_point")]
-                #[cfg_attr(feature = "interoptopus", link_name = "read_point")]
+                #[link_name = "unstable_shared__read_point"]
                 fn exported_read(point: &Point) -> u32;
             }
             unsafe { exported_read(&point) }
         };
-        #[cfg(any(feature = "abi_stable", feature = "stabby"))]
-        let result = {
-            let exported_read: extern "C" fn(&Point) -> u32 = read_point;
-            exported_read(&point)
-        };
-        #[cfg(feature = "safer_ffi")]
-        let result = read_point(&point);
-        #[cfg(feature = "uniffi")]
+
+        assert_eq!(result, y - u32::from(x));
+    }
+}
+
+#[cfg(feature = "uniffi")]
+fn main() {
+    for (x, y) in [(7, 1024), (13, 65537)] {
+        let point = Point { x, y };
+
         let result = {
             let input = <Point as uniffi::Lower<UniFfiTag>>::lower(point);
             let mut status = uniffi::RustCallStatus::default();
@@ -66,8 +66,80 @@ fn main() {
             assert_eq!(status.code, uniffi::RustCallStatusCode::Success);
             output
         };
-        #[cfg(feature = "boltffi")]
+
+        assert_eq!(result, y - u32::from(x));
+    }
+}
+
+#[cfg(feature = "diplomat")]
+fn main() {
+    use CallerPoint as Point;
+
+    for (x, y) in [(7, 1024), (13, 65537)] {
+        let point = Point { x, y };
+
+        let result = {
+            unsafe extern "C" {
+                #[link_name = "diplomat_external_read_point"]
+                fn exported_read(point: &Point) -> u32;
+            }
+            unsafe { exported_read(&point) }
+        };
+
+        assert_eq!(result, y - u32::from(x));
+    }
+}
+
+#[cfg(feature = "interoptopus")]
+fn main() {
+    use CallerPoint as Point;
+
+    for (x, y) in [(7, 1024), (13, 65537)] {
+        let point = Point { x, y };
+
+        let result = {
+            unsafe extern "C" {
+                #[link_name = "read_point"]
+                fn exported_read(point: &Point) -> u32;
+            }
+            unsafe { exported_read(&point) }
+        };
+
+        assert_eq!(result, y - u32::from(x));
+    }
+}
+
+#[cfg(feature = "safer_ffi")]
+fn main() {
+    for (x, y) in [(7, 1024), (13, 65537)] {
+        let point = Point { x, y };
+
+        let result = read_point(&point);
+
+        assert_eq!(result, y - u32::from(x));
+    }
+}
+
+#[cfg(feature = "boltffi")]
+fn main() {
+    for (x, y) in [(7, 1024), (13, 65537)] {
+        let point = Point { x, y };
+
         let result = unsafe { boltffi_function_15unstable_shared10read_point(&point) };
+        assert_eq!(result, y - u32::from(x));
+    }
+}
+
+#[cfg(any(feature = "abi_stable", feature = "stabby"))]
+fn main() {
+    for (x, y) in [(7, 1024), (13, 65537)] {
+        let point = Point { x, y };
+
+        let result = {
+            let exported_read: extern "C" fn(&Point) -> u32 = read_point;
+            exported_read(&point)
+        };
+
         assert_eq!(result, y - u32::from(x));
     }
 }

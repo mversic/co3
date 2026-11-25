@@ -20,10 +20,41 @@ pub fn advance(input: FrameworkOption<bool>) -> FrameworkOption<bool> {
 #[cfg(feature = "abi_stable")]
 abi_stable_signature!(advance: (FrameworkOption<bool>) -> FrameworkOption<bool>);
 
+#[cfg(any(
+    feature = "co3",
+    feature = "uniffi",
+    feature = "diplomat",
+    feature = "interoptopus",
+    feature = "safer_ffi",
+    feature = "boltffi"
+))]
 fn main() {
-    #[cfg(feature = "abi_stable")]
+    let export: extern "C" fn(FrameworkOption<bool>) -> FrameworkOption<bool> = advance;
+    for (input, expected) in [
+        (None, Some(false)),
+        (Some(false), Some(true)),
+        (Some(true), None),
+    ] {
+        assert_eq!(Option::from(export(input.into())), expected);
+    }
+}
+
+#[cfg(feature = "abi_stable")]
+fn main() {
     assert_eq!(core::mem::size_of::<FrameworkOption<bool>>(), 2);
-    #[cfg(feature = "stabby")]
+
+    let export: extern "C" fn(FrameworkOption<bool>) -> FrameworkOption<bool> = advance;
+    for (input, expected) in [
+        (None, Some(false)),
+        (Some(false), Some(true)),
+        (Some(true), None),
+    ] {
+        assert_eq!(Option::from(export(input.into())), expected);
+    }
+}
+
+#[cfg(feature = "stabby")]
+fn main() {
     assert_eq!(core::mem::size_of::<FrameworkOption<bool>>(), 1);
     let export: extern "C" fn(FrameworkOption<bool>) -> FrameworkOption<bool> = advance;
     for (input, expected) in [

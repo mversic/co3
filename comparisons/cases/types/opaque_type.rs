@@ -47,31 +47,27 @@ co3::ffi! {
 #[cfg(feature = "abi_stable")]
 abi_stable_signature!(counter_value: (&Counter) -> u32);
 
+#[cfg(feature = "co3")]
 fn main() {
-    #[cfg(feature = "diplomat")]
-    use diplomat_case::Counter;
     for (values, expected) in [(vec![], 0), (vec![12, 30], 42)] {
         let counter = Counter { values };
-        #[cfg(any(
-            feature = "co3",
-            feature = "diplomat",
-            feature = "interoptopus",
-            feature = "safer_ffi"
-        ))]
+
         {
             unsafe extern "C" {
-                #[cfg_attr(feature = "co3", link_name = "opaque_type__counter_value")]
-                #[cfg_attr(feature = "diplomat", link_name = "diplomat_external_counter_value")]
-                #[cfg_attr(
-                    any(feature = "interoptopus", feature = "safer_ffi"),
-                    link_name = "counter_value"
-                )]
+                #[link_name = "opaque_type__counter_value"]
                 fn exported_value(handle: *const core::ffi::c_void) -> u32;
             }
             let handle = core::ptr::from_ref(&counter).cast();
             assert_eq!(unsafe { exported_value(handle) }, expected);
         }
-        #[cfg(feature = "uniffi")]
+    }
+}
+
+#[cfg(feature = "uniffi")]
+fn main() {
+    for (values, expected) in [(vec![], 0), (vec![12, 30], 42)] {
+        let counter = Counter { values };
+
         {
             use std::sync::Arc;
             let handle = <Arc<Counter> as uniffi::Lower<UniFfiTag>>::lower(Arc::new(counter));
@@ -80,12 +76,59 @@ fn main() {
             assert_eq!(status.code, uniffi::RustCallStatusCode::Success);
             assert_eq!(value, expected);
         }
-        #[cfg(feature = "boltffi")]
+    }
+}
+
+#[cfg(feature = "diplomat")]
+fn main() {
+    use diplomat_case::Counter;
+    for (values, expected) in [(vec![], 0), (vec![12, 30], 42)] {
+        let counter = Counter { values };
+
+        {
+            unsafe extern "C" {
+                #[link_name = "diplomat_external_counter_value"]
+                fn exported_value(handle: *const core::ffi::c_void) -> u32;
+            }
+            let handle = core::ptr::from_ref(&counter).cast();
+            assert_eq!(unsafe { exported_value(handle) }, expected);
+        }
+    }
+}
+
+#[cfg(any(feature = "interoptopus", feature = "safer_ffi"))]
+fn main() {
+    for (values, expected) in [(vec![], 0), (vec![12, 30], 42)] {
+        let counter = Counter { values };
+
+        {
+            unsafe extern "C" {
+                #[link_name = "counter_value"]
+                fn exported_value(handle: *const core::ffi::c_void) -> u32;
+            }
+            let handle = core::ptr::from_ref(&counter).cast();
+            assert_eq!(unsafe { exported_value(handle) }, expected);
+        }
+    }
+}
+
+#[cfg(feature = "boltffi")]
+fn main() {
+    for (values, expected) in [(vec![], 0), (vec![12, 30], 42)] {
+        let counter = Counter { values };
+
         {
             let handle = __BoltffiCounterHandle::new(counter) as u64;
             let value = unsafe { boltffi_function_11opaque_type13counter_value(handle) };
             unsafe { boltffi_release_class_11opaque_type7Counter(handle) };
             assert_eq!(value, expected);
         }
+    }
+}
+
+#[cfg(any(feature = "abi_stable", feature = "stabby"))]
+fn main() {
+    for (values, expected) in [(vec![], 0), (vec![12, 30], 42)] {
+        let counter = Counter { values };
     }
 }

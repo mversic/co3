@@ -1,4 +1,4 @@
-use co3::{ReprC, Tag, ffi, ops::CFn1, rust_spec::RustSpec};
+use co3::{ReprC, Tag, ffi, lang, ops::CFn1, rust_spec::RustSpec};
 
 struct Host;
 
@@ -203,9 +203,12 @@ fn main() {
 
     assert_eq!(unsafe { dynamic::<First>(First(3)) }.0, 4);
     assert_eq!(unsafe { dynamic::<Second>(Second(3)) }.0, 5);
-    let lowered = co3::encode(Third(3));
+    let lowered = unsafe { co3::encode::<_, lang::C>(Third(3)) };
     let result = unsafe { dynamic::<Third>(lowered) };
-    assert_eq!(unsafe { co3::decode::<Third>(result) }.unwrap().0, 7);
+    assert_eq!(
+        unsafe { co3::decode::<Third, lang::C>(result) }.unwrap().0,
+        7
+    );
     assert_eq!(unsafe { static_value::<u8>(3) }, 4);
     assert_eq!(unsafe { static_value::<u16>(3) }, 5);
 

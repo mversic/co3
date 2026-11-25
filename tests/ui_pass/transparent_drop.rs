@@ -1,5 +1,5 @@
 use co3::{
-    ReprC,
+    ReprC, lang,
     rust_spec::{
         RustSpec,
         drop::{AutoDrop, NoDrop},
@@ -34,7 +34,7 @@ static_assertions::assert_type_ne_all!(
 
 fn main() {
     let value = Transparent(Box::new(42u8));
-    let encoded = co3::encode(value);
-    let decoded = unsafe { co3::decode::<Transparent<Box<u8>>>(encoded) }.unwrap();
+    let encoded = unsafe { co3::encode::<_, lang::C>(value) };
+    let decoded = unsafe { co3::decode::<Transparent<Box<u8>>, lang::C>(encoded) }.unwrap();
     assert_eq!(*decoded.0, 42);
 }

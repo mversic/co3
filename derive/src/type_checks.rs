@@ -15,7 +15,7 @@ use crate::{
 #[derive(Default)]
 pub(crate) struct TypeChecks {
     checks: Vec<TokenStream>,
-    seen: HashSet<String>,
+    seen: HashSet<(TypePath, Vec<Attribute>)>,
     cfg: Vec<Attribute>,
 }
 
@@ -82,7 +82,10 @@ impl TypeChecks {
         self.cfg.truncate(len);
     }
 
-    fn add(&mut self, actual: TokenStream, expected: &[syn::Type], message: &str, use_alloc: bool) {
+    fn add(&mut self, actual: TypePath, expected: &[syn::Type], message: &str, use_alloc: bool) {
+        if !self.seen.insert((actual.clone(), self.cfg.clone())) {
+            return;
+        }
         let cfg = &self.cfg;
         let alloc = use_alloc.then(|| {
             quote!(
@@ -100,9 +103,7 @@ impl TypeChecks {
                 let _ = check::<#actual>;
             }
         };
-        if self.seen.insert(check.to_string()) {
-            self.checks.push(check);
-        }
+        self.checks.push(check);
     }
 
     fn finish(self) -> TokenStream {
@@ -191,7 +192,7 @@ impl<'ast> Visit<'ast> for TypeChecks {
                 _ => format!("`{name}` must resolve to `{}`", known.canonical_name),
             };
             self.add(
-                quote!(#actual),
+                actual,
                 &expected,
                 &message,
                 matches!(

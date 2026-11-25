@@ -7,7 +7,9 @@
 //! struct Local(u8);
 //!
 //! #[cfg(feature = "export")]
-//! fn make_local() -> Box<Local> { Box::new(Local(0)) }
+//! fn make_local() -> Box<Local> {
+//!     Box::new(Local(0))
+//! }
 //!
 //! co3::ffi! {
 //!     #![cfg_attr(feature = "export", unsafe(export("C")))]
@@ -33,6 +35,7 @@ use syn::{
 
 use crate::{
     cfg_attr::{emit_macro_invocations, expand as expand_cfg_attr},
+    codec::Boundary,
     dispatch::synthesize_dispatch_tag_ids,
     generate::{expand_export_decls, expand_extern_decls, gen_raw_companions},
     layout::derive_repr_c,
@@ -52,6 +55,7 @@ mod abi_retype;
 mod argument;
 mod callback;
 mod cfg_attr;
+mod codec;
 mod dispatch;
 mod ffi_fn;
 mod generate;
@@ -89,6 +93,7 @@ pub(crate) enum ForeignItem {
 
 #[derive(Clone)]
 struct ForeignItemType {
+    dispatch_span: Option<proc_macro2::Span>,
     ty: syn::ForeignItemType,
     id: Option<Box<syn::Type>>,
     id_value: Option<Box<Expr>>,
@@ -465,6 +470,19 @@ pub fn tag_derive(item: syn::DeriveInput) -> Result<TokenStream> {
 
 /// Declare FFI exports or imports via native API.
 ///
+/// # Safety
+///
+/// The `#![unsafe(export("ABI"))]` or `#![unsafe(extern("ABI"))]` declaration
+/// promises that the foreign boundary satisfies the declared signatures,
+/// including ownership, lifetime, and aliasing requirements. It also promises
+/// the mapped native source guarantees of `#![lang = "..."]` (C by default)
+/// for values decoded from the foreign side: arguments in exports and return
+/// values in imports, as well as values read from imported statics.
+/// Selecting a language can elide validity checks; supplying values that violate
+/// its guarantees can cause undefined behavior. A matching ABI alone does not
+/// establish these guarantees, and constructing raw carriers does not establish
+/// the validity of the corresponding native source values.
+///
 /// # Example
 ///
 /// ```rust
@@ -489,6 +507,9 @@ pub fn tag_derive(item: syn::DeriveInput) -> Result<TokenStream> {
 /// ```
 ///
 /// See [the crate level documentation](https://docs.rs/co3/latest/co3/) for more.
+///
+/// Exports accept C and Rust. Imports accept all supported languages.
+/// Rust selects unchecked conversions and requires preservation of every Rust invariant.
 #[manyhow]
 #[proc_macro]
 pub fn ffi(input: TokenStream) -> Result<TokenStream> {
@@ -499,11 +520,12 @@ pub fn ffi(input: TokenStream) -> Result<TokenStream> {
             kind,
             abi,
             symbol_prefix,
+            language,
             features,
             failure_mode,
             symbol_fragments,
             attrs,
-            mut items,
+            items,
         } = ParsedInput::parse(input)?;
 
         if let Some(name) = &abi.name
@@ -515,7 +537,6 @@ pub fn ffi(input: TokenStream) -> Result<TokenStream> {
             ));
         }
 
-        callback::lower_raw_fn_types_in_items(&mut items, failure_mode, &abi)?;
         let (normalized, aliases) =
             normalize::normalize_items(items, NormalizationMode::Ffi(kind))?;
         let normalized = normalize::pack_normalized_items(normalized)?;
@@ -526,18 +547,17 @@ pub fn ffi(input: TokenStream) -> Result<TokenStream> {
 
         let type_checks = type_checks::TypeChecks::for_ffi(&items, &aliases);
         let aliases = expand_type_aliases(aliases);
+        let boundary = Boundary {
+            contract: &language,
+            failure_mode,
+        };
         let declarations = match kind {
             DeclKind::Export => {
-                expand_export_decls(abi, features, failure_mode, items, &symbol_fragments)
+                expand_export_decls(boundary, abi, features, items, &symbol_fragments)
             }
-            DeclKind::Extern => expand_extern_decls(
-                abi,
-                features,
-                failure_mode,
-                &attrs,
-                items,
-                &symbol_fragments,
-            ),
+            DeclKind::Extern => {
+                expand_extern_decls(abi, boundary, features, &attrs, items, &symbol_fragments)
+            }
         };
         return Ok(quote!(#type_checks #aliases #declarations));
     }
@@ -599,12 +619,6 @@ pub fn raw(input: TokenStream) -> Result<TokenStream> {
         match item {
             ParsedItem::Fn(_) => {}
             ParsedItem::Impl(_) => {}
-            ParsedItem::Alias(alias) => {
-                return Err(syn::Error::new_spanned(
-                    &alias.item.ident,
-                    "type aliases are not allowed in `raw!`; use a Rust alias or declare a raw alias in `ffi!`",
-                ));
-            }
             ParsedItem::Raw(raw_decl) => {
                 return Err(syn::Error::new_spanned(
                     &raw_decl.sig.ident,
@@ -630,7 +644,13 @@ pub fn raw(input: TokenStream) -> Result<TokenStream> {
     validate_raw_companions(&raw_decls)?;
     debug_assert!(aliases.is_empty());
     let type_checks = type_checks::TypeChecks::for_raw(&raw_decls);
-    let companions = gen_raw_companions(failure_mode, raw_decls);
+    let companions = gen_raw_companions(
+        Boundary {
+            contract: &codec::Conversion::c(),
+            failure_mode,
+        },
+        raw_decls,
+    );
     Ok(quote!(#type_checks #(#companions)*))
 }
 

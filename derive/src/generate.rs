@@ -8,6 +8,7 @@ use crate::{
     Co3Fn, Co3Impl, DispatchGroups, ForeignItem, ForeignItemType,
     argument::{Argument, Unpack},
     co3_path,
+    codec::{Boundary, Carrier, Conversion},
     dispatch::{
         StaticLifetimeNormalizer, erase_dispatch_signature, gen_dispatch_erased_layout_checks,
         gen_dispatch_export, gen_dispatch_fn_export, gen_retype, gen_tag_erase_stmts,
@@ -499,8 +500,8 @@ fn gen_export_associated_item_checks(dispatch: &Co3Impl) -> TokenStream {
 }
 
 fn gen_export_impl(
+    boundary: Boundary<'_>,
     abi: &syn::Abi,
-    failure_mode: FailureMode,
     impl_: Co3Impl,
     type_id: Option<&syn::Type>,
     declared_self: bool,
@@ -523,18 +524,11 @@ fn gen_export_impl(
             TokenStream::new()
         } else if !descriptor.dispatch_args.is_empty() || dyn_self {
             let self_id = dyn_self.then_some(type_id).flatten();
-            let export = gen_dispatch_export(
-                abi,
-                failure_mode,
-                descriptor,
-                self_id,
-                dyn_self,
-                declared_types,
-            );
+            let export =
+                gen_dispatch_export(boundary, abi, descriptor, self_id, dyn_self, declared_types);
             quote!(#associated_item_checks #export)
         } else {
-            let export =
-                ffi_fn::gen_impl_definition(abi, failure_mode, descriptor.item, declared_self);
+            let export = ffi_fn::gen_impl_definition(boundary, abi, descriptor.item, declared_self);
             quote!(#associated_item_checks #export)
         }
     });
@@ -611,7 +605,7 @@ struct DispatchSetDelegate<'a> {
     abi: &'a syn::Abi,
     block_attrs: &'a [syn::Attribute],
     fn_attrs: &'a [syn::Attribute],
-    failure_mode: FailureMode,
+    boundary: Boundary<'a>,
     source_sig: &'a syn::Signature,
     wrapper_sig: &'a syn::Signature,
     raw_sig: &'a syn::Signature,
@@ -622,12 +616,14 @@ struct DispatchSetDelegate<'a> {
 }
 
 fn raw_dispatch_wrapper_sig(
+    boundary: Boundary<'_>,
     sig: &syn::Signature,
     dispatch_generics: &syn::Generics,
-    failure_mode: FailureMode,
     fn_by_val: bool,
     abi: &syn::Abi,
 ) -> syn::Signature {
+    let contract = boundary.contract;
+    let failure_mode = boundary.failure_mode;
     let co3 = co3_path();
     let mut bounded = prepare_dispatch_forwarding_sig(sig);
     for ident in dispatch_type_idents(dispatch_generics) {
@@ -640,10 +636,11 @@ fn raw_dispatch_wrapper_sig(
         where_clause
             .predicates
             .push(syn::parse_quote!(#ident: #co3::tag::Tagged));
-        where_clause.predicates.push(syn::parse_quote!(
-            <#ident as #co3::tag::TagFamily>::Kind:
-                #co3::convert::Encode<CType = #id_repr, Store: #co3::convert::EmptyStore>
-        ));
+        let store = contract.empty_store();
+        let encode = contract.bound(Carrier::Value, None, quote!(CType = #id_repr, #store));
+        where_clause
+            .predicates
+            .push(syn::parse_quote!(<#ident as #co3::tag::TagFamily>::Kind: #encode));
     }
     let mut source = sig.clone();
     source.inputs = source
@@ -691,6 +688,7 @@ fn raw_dispatch_wrapper_sig(
 }
 
 fn raw_dispatch_call(
+    contract: &Conversion,
     source_sig: &syn::Signature,
     wrapper_sig: &syn::Signature,
     extern_sig: &syn::Signature,
@@ -707,7 +705,8 @@ fn raw_dispatch_call(
             return None;
         }
         let ident = ffi_fn::item_fn_input_ident(&arg.pat);
-        Some(quote!(let #ident = co3::encode(#ident);))
+        let encode = contract.encode(Carrier::Value, quote!(_), quote!(#ident), None, None);
+        Some(quote!(let #ident = #encode;))
     });
     let erased = gen_tag_erase_stmts(
         self_ty.unwrap_or(&dummy_self),
@@ -893,6 +892,7 @@ fn gen_dispatch_set(
                 let dummy_self_ty = syn::parse_quote!(());
                 let wrapper_body = if delegate.raw {
                     raw_dispatch_call(
+                        delegate.boundary.contract,
                         delegate.source_sig,
                         delegate.wrapper_sig,
                         delegate.raw_sig,
@@ -902,7 +902,7 @@ fn gen_dispatch_set(
                     )
                 } else {
                     gen_wrapper_body_with_callee::<true>(
-                        delegate.failure_mode,
+                        delegate.boundary,
                         delegate.fn_attrs.iter().any(ffi_fn::is_by_val_attr),
                         Some(delegate.self_ty.unwrap_or(&dummy_self_ty)),
                         Some(delegate.dispatch_generics),
@@ -1005,6 +1005,8 @@ fn concretize_selected_impl(
 }
 
 fn prepare_dispatch_wrapper_sig(
+    contract: &Conversion,
+    fn_by_val: bool,
     sig: &syn::Signature,
     dispatch_generics: &syn::Generics,
     static_dispatch: Option<&DispatchGroups>,
@@ -1037,10 +1039,11 @@ fn prepare_dispatch_wrapper_sig(
         where_clause.predicates.push(syn::parse_quote!(
             #ident: #co3::tag::Tagged
         ));
-        where_clause.predicates.push(syn::parse_quote!(
-            <#ident as #co3::tag::TagFamily>::Kind:
-                #co3::convert::Encode<CType = #id_repr, Store: #co3::convert::EmptyStore>
-        ));
+        let store = contract.empty_store();
+        let encode = contract.bound(Carrier::Value, None, quote!(CType = #id_repr, #store));
+        where_clause
+            .predicates
+            .push(syn::parse_quote!(<#ident as #co3::tag::TagFamily>::Kind: #encode));
     }
 
     let detector = ParamUseDetector::new(dispatch_tys.iter().chain(erased_tys.iter()));
@@ -1107,30 +1110,27 @@ fn prepare_dispatch_wrapper_sig(
         if crate::dispatch::tag_id(ty).is_none()
             && (detector.type_mentions_param(ty) || parameterized_unpack)
         {
-            if !input.is_borrowed() {
-                let bound = if input.soft {
-                    syn::parse_quote!(#ty: #co3::convert::Encode)
-                } else {
-                    syn::parse_quote!(#ty: #co3::convert::Encode<Store: #co3::convert::EmptyStore>)
-                };
-                where_clause.predicates.push(bound);
-            } else {
-                let bound = if input.soft {
-                    syn::parse_quote!(#ty: #co3::borrow::BorrowedEncode)
-                } else {
-                    syn::parse_quote!(#ty: #co3::borrow::BorrowedEncode<Store: #co3::convert::EmptyStore>)
-                };
-                where_clause.predicates.push(bound);
-            }
+            let store = (!input.soft).then(|| contract.empty_store());
+            let path = contract.bound(
+                Carrier::for_borrow(input.is_borrowed()),
+                None,
+                quote!(#store),
+            );
+            where_clause.predicates.push(syn::parse_quote!(#ty: #path));
         }
     }
 
     if let syn::ReturnType::Type(_, output_ty) = &sig.output
         && detector.type_mentions_param(output_ty)
     {
-        where_clause.predicates.push(syn::parse_quote!(
-            for<'a> #output_ty: #co3::convert::Decode<'a, Store: #co3::convert::EmptyStore>
-        ));
+        let decoder = contract.bound(
+            Carrier::for_borrow(ffi_fn::borrows_return(sig, fn_by_val)),
+            Some(&syn::parse_quote!('a)),
+            contract.empty_store(),
+        );
+        where_clause
+            .predicates
+            .push(syn::parse_quote!(for<'a> #output_ty: #decoder));
     }
 
     wrapper_sig
@@ -1184,7 +1184,7 @@ struct DispatchImportParts {
 
 struct DispatchImportContext<'a> {
     abi: &'a syn::Abi,
-    failure_mode: FailureMode,
+    boundary: Boundary<'a>,
     block_attrs: &'a [syn::Attribute],
     fn_attrs: &'a [syn::Attribute],
     sig: &'a syn::Signature,
@@ -1288,6 +1288,9 @@ fn prepare_dispatch_import(
     module_name: &syn::Ident,
     mode: DispatchImportMode<'_>,
 ) -> DispatchImportParts {
+    let boundary = context.boundary;
+    let contract = boundary.contract;
+    let failure_mode = boundary.failure_mode;
     let mut wrapper_source_sig = context.sig.clone();
     ffi_fn::explicitize_signature_lifetimes(&mut wrapper_source_sig);
     let mut args = context.args.clone();
@@ -1299,14 +1302,16 @@ fn prepare_dispatch_import(
     let co3 = co3_path();
     let delegate_sig = if context.raw {
         raw_dispatch_wrapper_sig(
+            boundary,
             &wrapper_source_sig,
             &dispatch_generics,
-            context.failure_mode,
             context.fn_attrs.iter().any(ffi_fn::is_by_val_attr),
             context.abi,
         )
     } else {
         prepare_dispatch_wrapper_sig(
+            contract,
+            context.fn_attrs.iter().any(ffi_fn::is_by_val_attr),
             &wrapper_source_sig,
             &dispatch_generics,
             matches!(mode, DispatchImportMode::Static(_)).then_some(context.args),
@@ -1370,7 +1375,6 @@ fn prepare_dispatch_import(
 
     let DispatchImportContext {
         abi,
-        failure_mode,
         block_attrs,
         fn_attrs,
         sig,
@@ -1399,7 +1403,7 @@ fn prepare_dispatch_import(
                 abi,
                 block_attrs,
                 fn_attrs,
-                failure_mode,
+                boundary,
                 source_sig: &wrapper_source_sig,
                 wrapper_sig: &delegate_sig,
                 raw_sig: &raw_sig,
@@ -1437,7 +1441,7 @@ fn prepare_dispatch_import(
             let dummy_self_ty = syn::parse_quote!(());
             let wrapper_body = (!raw).then(|| {
                 gen_wrapper_body::<true>(
-                    failure_mode,
+                    boundary,
                     fn_attrs.iter().any(ffi_fn::is_by_val_attr),
                     Some(self_ty.unwrap_or(&dummy_self_ty)),
                     Some(&dispatch_generics),
@@ -1457,6 +1461,7 @@ fn prepare_dispatch_import(
             let abi_assertions = gen_abi_assertions(&decl);
             let wrapper_body = if raw {
                 raw_dispatch_call(
+                    contract,
                     &wrapper_source_sig,
                     &wrapper_sig,
                     &decl,
@@ -1495,9 +1500,9 @@ pub(crate) enum OwnershipMode {
 }
 
 pub(crate) fn expand_export_decls(
+    boundary: Boundary<'_>,
     abi: syn::Abi,
     _features: MacroFeatures,
-    failure_mode: FailureMode,
     decls: Vec<ForeignItem>,
     symbol_fragments: &std::collections::BTreeMap<String, syn::LitStr>,
 ) -> TokenStream {
@@ -1538,6 +1543,7 @@ pub(crate) fn expand_export_decls(
             covariant_lifetimes,
             self_impls,
             drop,
+            ..
         }) => {
             let type_cfg_attrs = cfg_attrs(&ty.attrs).map(|attr| quote!(#attr)).collect::<Vec<_>>();
             let mut export_generics = ty.generics.clone();
@@ -1549,22 +1555,10 @@ pub(crate) fn expand_export_decls(
                 .make_where_clause()
                 .predicates
                 .push(syn::parse_quote!(Self: co3::rust_spec::RustSpec<Opacity = co3::rust_spec::Opaque>));
-            let (impl_generics, ty_generics, where_clause) = export_generics.split_for_impl();
-            let mut decode_generics = ty.generics.clone();
-            decode_generics.params.insert(0, syn::parse_quote!('_dšč));
-            let (decode_impl_generics, _, _) = decode_generics.split_for_impl();
 
             let ident = &ty.ident;
             let dispatch = self_impls.into_iter().map(|impl_| {
-                gen_export_impl(
-                    &abi,
-                    failure_mode,
-                    impl_,
-                    id.as_deref(),
-                    true,
-                    symbol_fragments,
-                    &declared_types,
-                )
+                gen_export_impl(boundary, &abi, impl_, id.as_deref(), true, symbol_fragments, &declared_types)
             });
 
             let drop_impl = drop.as_ref().map(|drop| {
@@ -1579,15 +1573,7 @@ pub(crate) fn expand_export_decls(
                 .as_ref()
                 .map(|drop_impl| gen_drop_impl_check(&ty, drop_impl));
             let drop = drop.map(|item| {
-                gen_export_impl(
-                    &abi,
-                    failure_mode,
-                    item,
-                    id.as_deref(),
-                    true,
-                    symbol_fragments,
-                    &declared_types,
-                )
+                gen_export_impl(boundary, &abi, item, id.as_deref(), true, symbol_fragments, &declared_types)
             });
 
             let opaque = derive_opaque_item(
@@ -1601,6 +1587,7 @@ pub(crate) fn expand_export_decls(
             let size_check = gen_non_zst_sized_check(ident, &ty.generics);
             let covariance_checks = gen_export_covariance_checks(ident, &ty.generics, &covariant_lifetimes);
 
+            let value_codecs = crate::codec::stateless(ident,&export_generics,&export_generics,quote!(self),quote!(Some(source)),quote!(source));
             quote! {
                 #(#type_cfg_attrs)*
                 const _: () = {
@@ -1612,38 +1599,7 @@ pub(crate) fn expand_export_decls(
                     #covariance_checks
                     #drop_check
 
-                    unsafe impl #impl_generics co3::convert::EncodeMove for #ident #ty_generics #where_clause {
-                        type Store = ();
-
-                        #[inline(always)]
-                        fn soft_encode<'itm>(self, (): &mut ()) -> Self::CType
-                        where
-                            Self: 'itm
-                        {
-                            use co3::convert::EncodeMoveUnchecked as _;
-                            unsafe { self.soft_encode_unchecked(&mut ()) }
-                        }
-                    }
-                    unsafe impl #impl_generics co3::convert::EncodeMoveUnchecked for #ident #ty_generics #where_clause {
-                        type SoftStore = ();
-
-                        unsafe fn soft_encode_unchecked<'itm>(self, (): &'itm mut ()) -> Self::CType where Self: 'itm {
-                            self
-                        }
-                    }
-                    unsafe impl #decode_impl_generics co3::convert::DecodeMove<'_dšč> for #ident #ty_generics #where_clause {
-                        type Store = ();
-
-                        #[inline(always)]
-                        unsafe fn soft_decode<'_išč: '_dšč>(source: Self::CType, (): &mut ()) -> Option<Self> {
-                            Some(source)
-                        }
-                    }
-
-                    impl #impl_generics co3::convert::Encode for #ident #ty_generics #where_clause {}
-                    impl #impl_generics co3::convert::EncodeUnchecked for #ident #ty_generics #where_clause {}
-                    impl #impl_generics co3::convert::Decode<'_> for #ident #ty_generics #where_clause {}
-
+                    #value_codecs
                     #(#dispatch)*
                 };
             }
@@ -1656,9 +1612,9 @@ pub(crate) fn expand_export_decls(
                 .into_iter()
                 .map(|(binding, callee)| {
                     let definition = if binding.dispatch_args.is_empty() {
-                        ffi_fn::gen_fn_definition(&abi, failure_mode, binding.item, callee)
+                        ffi_fn::gen_fn_definition(boundary, &abi, binding.item, callee)
                     } else {
-                        gen_dispatch_fn_export(&abi, failure_mode, binding, callee)
+                        gen_dispatch_fn_export(boundary, &abi, binding, callee)
                     };
                     quote!(const _: () = { #definition };)
                 });
@@ -1674,7 +1630,7 @@ pub(crate) fn expand_export_decls(
                     // Runtime dispatch may still select opaque types. They must
                     // share one pointer ABI; a mixed receiver has no such ABI.
                     let selected = binding.dispatch_args.groups().flat_map(|(params, targets)| {
-                        let index = params.iter().position(|p| binding.self_ty.as_ref() == &syn::parse_quote!(#p));
+                        let index = params.iter().position(|param| matches!(binding.self_ty.as_ref(), syn::Type::Path(ty) if ty.qself.is_none() && ty.path.is_ident(param)));
                         targets.iter().filter_map(move |target| index.and_then(|i| target.args.get(i)))
                     });
                     let kinds = selected.filter_map(|arg| match arg {
@@ -1687,17 +1643,11 @@ pub(crate) fn expand_export_decls(
                         ).to_compile_error();
                     }
                 }
-                gen_export_impl(
-                    &abi, failure_mode, binding,
-                    declared.and_then(|item| item.id.as_deref()),
-                    declared.is_some(), symbol_fragments, &declared_types,
-                )
+                gen_export_impl(boundary, &abi, binding, declared.and_then(|item| item.id.as_deref()), declared.is_some(), symbol_fragments, &declared_types)
             });
             quote!(#(#definitions)*)
         }
-        ForeignItem::Impl(impl_) => gen_export_impl(
-            &abi, failure_mode, impl_, None, false, symbol_fragments, &declared_types,
-        ),
+        ForeignItem::Impl(impl_) => gen_export_impl(boundary, &abi, impl_, None, false, symbol_fragments, &declared_types),
     };
 
         quote! { const _: () = { use #co3 as co3; #export }; }
@@ -1727,7 +1677,7 @@ fn gen_export_owned_type_alias(ty: &syn::ForeignItemType) -> TokenStream {
 }
 
 pub(crate) fn gen_raw_companions(
-    failure_mode: FailureMode,
+    boundary: Boundary<'_>,
     raw_decls: Vec<crate::parse::RawFnDecl>,
 ) -> Vec<TokenStream> {
     raw_decls
@@ -1740,7 +1690,7 @@ pub(crate) fn gen_raw_companions(
                     .as_ref()
                     .is_some_and(|owner| crate::utils::has_runtime_dispatch(&owner.generics));
             let companion = if dispatched {
-                crate::dispatch::gen_raw_dispatch_companion(failure_mode, &raw_decl)
+                crate::dispatch::gen_raw_dispatch_companion(boundary, &raw_decl)
             } else {
                 let item = syn::ItemFn {
                     attrs: raw_decl.attrs.clone(),
@@ -1750,7 +1700,7 @@ pub(crate) fn gen_raw_companions(
                     block: Box::new(syn::parse_quote!({})),
                 };
                 match crate::callback::expand_companion(
-                    failure_mode,
+                    boundary,
                     &item,
                     raw_decl.callee.clone(),
                     raw_decl.owner.as_ref().map(|owner| &owner.generics),
@@ -1960,21 +1910,22 @@ fn attach_impl_abi_assertions(
 
 pub(crate) fn expand_extern_decls(
     abi: syn::Abi,
+    boundary: Boundary<'_>,
     features: MacroFeatures,
-    failure_mode: FailureMode,
     attrs: &[syn::Attribute],
     decls: Vec<ForeignItem>,
     symbol_fragments: &std::collections::BTreeMap<String, syn::LitStr>,
 ) -> TokenStream {
     fn expand_impl_import(
+        boundary: Boundary<'_>,
         abi: &syn::Abi,
-        failure_mode: FailureMode,
         import_mode: crate::ImportMode,
         attrs: &[syn::Attribute],
         mut impl_: ItemImpl,
         declared_self: bool,
         symbol_fragments: &std::collections::BTreeMap<String, syn::LitStr>,
     ) -> (TokenStream, ItemImpl) {
+        let failure_mode = boundary.failure_mode;
         // Preserve the ABI and safety on the wrapper method. Its signature is
         // ABI-lowered before generation, while Self paths remain in the impl
         // context where they are valid.
@@ -1997,12 +1948,8 @@ pub(crate) fn expand_extern_decls(
                 method.sig.safety = syn::Safety::Unsafe(Default::default());
             }
         }
-        let mut import = wrap_impl_definition::<false>(
-            failure_mode,
-            import_mode,
-            &wrapper_source,
-            declared_self,
-        );
+        let mut import =
+            wrap_impl_definition::<false>(boundary, import_mode, &wrapper_source, declared_self);
         if import_mode == crate::ImportMode::Raw {
             let self_ty = impl_.self_ty.clone();
             for item in &mut impl_.items {
@@ -2041,8 +1988,8 @@ pub(crate) fn expand_extern_decls(
 
     #[expect(clippy::too_many_arguments)]
     fn synthesize_dispatched_impl_imports(
+        boundary: Boundary<'_>,
         abi: &syn::Abi,
-        failure_mode: FailureMode,
         import_mode: crate::ImportMode,
         attrs: &[syn::Attribute],
         source_impl: &ItemImpl,
@@ -2051,13 +1998,14 @@ pub(crate) fn expand_extern_decls(
         declared_self: bool,
         symbol_fragments: &std::collections::BTreeMap<String, syn::LitStr>,
     ) -> Vec<(TokenStream, ItemImpl)> {
+        let failure_mode = boundary.failure_mode;
         let mut wrapper_source = source_impl.clone();
         if declared_self {
             materialize_dyn_self_receiver(&mut wrapper_source);
         }
         let wrapper_impl = (import_mode == crate::ImportMode::Regular).then(|| {
             wrap_impl_definition::<true>(
-                failure_mode,
+                boundary,
                 crate::ImportMode::Regular,
                 &wrapper_source,
                 declared_self,
@@ -2086,7 +2034,7 @@ pub(crate) fn expand_extern_decls(
                     let parts = prepare_dispatch_import(
                         DispatchImportContext {
                             abi,
-                            failure_mode,
+                            boundary,
                             block_attrs: attrs,
                             fn_attrs: &method.attrs,
                             sig: &method.sig,
@@ -2166,8 +2114,8 @@ pub(crate) fn expand_extern_decls(
     }
 
     fn synthesize_impl_dispatch_import(
+        boundary: Boundary<'_>,
         abi: &syn::Abi,
-        failure_mode: FailureMode,
         attrs: &[syn::Attribute],
         self_id: Option<&syn::Type>,
         dispatch: Co3Impl,
@@ -2218,8 +2166,8 @@ pub(crate) fn expand_extern_decls(
             }
         };
         let imports = synthesize_dispatched_impl_imports(
+            boundary,
             abi,
-            failure_mode,
             import_mode,
             attrs,
             &impl_,
@@ -2232,8 +2180,8 @@ pub(crate) fn expand_extern_decls(
     }
 
     fn expand_dispatch_fn_import(
+        boundary: Boundary<'_>,
         abi: &syn::Abi,
-        failure_mode: FailureMode,
         attrs: &[syn::Attribute],
         mut dispatch: Co3Fn,
         symbol_fragments: &std::collections::BTreeMap<String, syn::LitStr>,
@@ -2252,7 +2200,7 @@ pub(crate) fn expand_extern_decls(
         let module_name = sig.ident.clone();
         let context = DispatchImportContext {
             abi,
-            failure_mode,
+            boundary,
             block_attrs: attrs,
             fn_attrs,
             sig,
@@ -2288,8 +2236,8 @@ pub(crate) fn expand_extern_decls(
 
     #[expect(clippy::too_many_arguments)]
     fn expand_dispatch_method_import(
+        boundary: Boundary<'_>,
         abi: &syn::Abi,
-        failure_mode: FailureMode,
         attrs: &[syn::Attribute],
         mut dispatch: Co3Impl,
         impl_dispatch_args: &DispatchGroups,
@@ -2351,7 +2299,7 @@ pub(crate) fn expand_extern_decls(
         let module_name = dispatch_module_name(self_ty, &method.sig.ident);
         let context = DispatchImportContext {
             abi,
-            failure_mode,
+            boundary,
             block_attrs: attrs,
             fn_attrs: &method.attrs,
             sig: &method.sig,
@@ -2431,8 +2379,8 @@ pub(crate) fn expand_extern_decls(
 
     #[expect(clippy::too_many_arguments)]
     fn expand_import_impl(
+        boundary: Boundary<'_>,
         abi: &syn::Abi,
-        failure_mode: FailureMode,
         attrs: &[syn::Attribute],
         impl_: Co3Impl,
         type_id: Option<&syn::Type>,
@@ -2461,8 +2409,8 @@ pub(crate) fn expand_extern_decls(
                 (TokenStream::new(), imports)
             } else if dispatched_impl {
                 synthesize_impl_dispatch_import(
+                    boundary,
                     abi,
-                    failure_mode,
                     attrs,
                     self_id,
                     plain,
@@ -2473,8 +2421,8 @@ pub(crate) fn expand_extern_decls(
                 (
                     TokenStream::new(),
                     vec![expand_impl_import(
+                        boundary,
                         abi,
-                        failure_mode,
                         plain.import_mode,
                         attrs,
                         plain.item,
@@ -2487,8 +2435,8 @@ pub(crate) fn expand_extern_decls(
             let mut modules = Vec::new();
             for method in methods {
                 let (module, wrappers) = expand_dispatch_method_import(
+                    boundary,
                     abi,
-                    failure_mode,
                     attrs,
                     method,
                     &impl_dispatch_args,
@@ -2560,6 +2508,7 @@ pub(crate) fn expand_extern_decls(
             covariant_lifetimes,
             self_impls,
             drop,
+            ..
         }) => {
             let owned_ident = gen_owned_extern_type_name(&ty.ident);
             let declared_generics = ty.generics.clone();
@@ -2582,8 +2531,8 @@ pub(crate) fn expand_extern_decls(
 
             let dispatch = self_impls.into_iter().map(|impl_| {
                 expand_import_impl(
+                    boundary,
                     &abi,
-                    failure_mode,
                     attrs,
                     impl_,
                     id.as_deref(),
@@ -2598,8 +2547,8 @@ pub(crate) fn expand_extern_decls(
                     && trait_object_single_trait_bound(&item.self_ty).is_none()
                 {
                     expand_plain_drop_import(
+                        boundary,
                         &abi,
-                        failure_mode,
                         attrs,
                         item.item,
                         &owned_ident,
@@ -2608,8 +2557,8 @@ pub(crate) fn expand_extern_decls(
                     )
                 } else {
                     expand_dispatch_drop_import(
+                        boundary,
                         &abi,
-                        failure_mode,
                         attrs,
                         item,
                         id.as_deref(),
@@ -2631,15 +2580,15 @@ pub(crate) fn expand_extern_decls(
         ForeignItem::Fn(item) => {
             if !item.dispatch_args.is_empty() || has_runtime_dispatch(&item.sig.generics) {
                 expand_dispatch_fn_import(
+                    boundary,
                     &abi,
-                    failure_mode,
                     attrs,
                     item,
                     symbol_fragments,
                     &declared_types,
                 )
             } else {
-                wrap_fn_definition(&abi, failure_mode, attrs, item.import_mode, item.item)
+                wrap_fn_definition(boundary, &abi, attrs, item.import_mode, item.item)
             }
         }
         ForeignItem::Impl(impl_) if crate::utils::is_blanket_drop_impl(&impl_.item) => {
@@ -2659,8 +2608,8 @@ pub(crate) fn expand_extern_decls(
                             && trait_object_single_trait_bound(&binding.self_ty).is_none()
                         {
                             expand_plain_drop_import(
+                                boundary,
                                 &abi,
-                                failure_mode,
                                 attrs,
                                 binding.item,
                                 &owned_ident,
@@ -2669,8 +2618,8 @@ pub(crate) fn expand_extern_decls(
                             )
                         } else {
                             expand_dispatch_drop_import(
+                                boundary,
                                 &abi,
-                                failure_mode,
                                 attrs,
                                 binding,
                                 declared.id.as_deref(),
@@ -2681,8 +2630,8 @@ pub(crate) fn expand_extern_decls(
                         }
                     } else {
                         expand_import_impl(
+                            boundary,
                             &abi,
-                            failure_mode,
                             attrs,
                             binding,
                             None,
@@ -2695,8 +2644,8 @@ pub(crate) fn expand_extern_decls(
             quote!(#(#imports)*)
         }
         ForeignItem::Impl(impl_) => expand_import_impl(
+            boundary,
             &abi,
-            failure_mode,
             attrs,
             impl_,
             None,
@@ -2704,7 +2653,9 @@ pub(crate) fn expand_extern_decls(
             symbol_fragments,
             &declared_types,
         ),
-        ForeignItem::Static(item) => crate::statics::gen_extern_static(&abi, attrs, item),
+        ForeignItem::Static(item) => {
+            crate::statics::gen_extern_static(&abi, attrs, item, boundary.contract)
+        }
     });
 
     quote! { #(#imports)* }
@@ -2924,8 +2875,8 @@ fn gen_dispatch_helper(generics: &syn::Generics, args: &DispatchGroups) -> Optio
 
 #[expect(clippy::too_many_arguments)]
 fn expand_dispatch_drop_import(
+    boundary: Boundary<'_>,
     abi: &syn::Abi,
-    failure_mode: FailureMode,
     attrs: &[syn::Attribute],
     item: Co3Impl,
     declared_id_ty: Option<&syn::Type>,
@@ -2933,6 +2884,7 @@ fn expand_dispatch_drop_import(
     declared_generics: &syn::Generics,
     symbol_fragments: &std::collections::BTreeMap<String, syn::LitStr>,
 ) -> TokenStream {
+    let failure_mode = boundary.failure_mode;
     let Co3Impl {
         item: source_impl,
         dispatch_args,
@@ -3032,7 +2984,7 @@ fn expand_dispatch_drop_import(
         })
         .collect::<Vec<_>>();
     let body = gen_owned_drop_wrapper_body::<true>(
-        failure_mode,
+        boundary,
         &lowered_method,
         &declared_self_ty,
         generics,
@@ -3065,14 +3017,15 @@ fn expand_dispatch_drop_import(
 }
 
 fn expand_plain_drop_import(
+    boundary: Boundary<'_>,
     abi: &syn::Abi,
-    failure_mode: FailureMode,
     attrs: &[syn::Attribute],
     mut impl_: ItemImpl,
     owned_ident: &syn::Ident,
     declared_generics: &syn::Generics,
     symbol_fragments: &std::collections::BTreeMap<String, syn::LitStr>,
 ) -> TokenStream {
+    let failure_mode = boundary.failure_mode;
     let extern_decls = synthesize_impl_extern_decls(
         abi,
         failure_mode,
@@ -3107,7 +3060,7 @@ fn expand_plain_drop_import(
     let mut lowered_method = method.clone();
     lowered_method.sig.output = syn::ReturnType::Default;
     let body = gen_owned_drop_wrapper_body::<false>(
-        failure_mode,
+        boundary,
         &lowered_method,
         &declared_self_ty,
         generics,
@@ -3364,19 +3317,15 @@ fn gen_extern_type_impls(
     let tag_family_impl = id.map(|id| gen_tag_family_impl(ident, generics, id));
     let tag_impl = id_value.map(|value| gen_tag_impl(ident, generics, value));
 
+    let validator = crate::codec::validator(ident, generics, quote!(true));
     quote! {
             #tag_family_impl
             #tag_impl
 
             unsafe impl #impl_generics co3::CType for #ident #ty_generics #where_clause {}
 
-            unsafe impl #impl_generics co3::convert::AbiCompatibleValidate for #ident #ty_generics #where_clause {
-                #[inline(always)]
-                unsafe fn is_valid(_: &Self::CType) -> bool {
-                    true
-                }
-            }
             unsafe impl #impl_generics co3::marker::AbiCompatible for #ident #ty_generics #where_clause {}
+            #validator
 
             impl #impl_generics co3::ReprC for #ident #ty_generics #where_clause {
                 type CType = Self;
@@ -3404,9 +3353,6 @@ fn gen_owned_extern_type_impls(
 ) -> TokenStream {
     let co3 = co3_path();
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
-    let mut decode_generics = generics.clone();
-    decode_generics.params.insert(0, syn::parse_quote!('d));
-    let (decode_impl_generics, _, _) = decode_generics.split_for_impl();
 
     let owned_ident = gen_owned_extern_type_name(ident);
     let speculative = speculative_marker(generics.params.is_empty());
@@ -3552,6 +3498,16 @@ fn gen_owned_extern_type_impls(
         .unwrap_or_default();
     let tag_impl = id_value.map(|value| gen_tag_impl(&owned_ident, generics, value));
 
+    let value_codecs = crate::codec::stateless(
+        &owned_ident,
+        generics,
+        generics,
+        quote!(core::mem::ManuallyDrop::new(self).0.as_ptr()),
+        quote!(core::ptr::NonNull::new(source).map(Self)),
+        quote!(Self(unsafe { core::ptr::NonNull::new_unchecked(source) })),
+    );
+    // The Rust owner stores NonNull. A null pointer represents Option::None.
+    let validator = crate::codec::validator(&owned_ident, generics, quote!(!_source.is_null()));
     quote! {
         unsafe impl #impl_generics #co3::rust_spec::RustSpec for #owned_ident #ty_generics #where_clause {
             type Layout = #co3::rust_spec::Specified;
@@ -3582,14 +3538,8 @@ fn gen_owned_extern_type_impls(
         #ord_impl
 
 
-        unsafe impl #impl_generics #co3::convert::AbiCompatibleValidate for #owned_ident #ty_generics #where_clause {
-            #[inline(always)]
-            unsafe fn is_valid(target: &Self::CType) -> bool {
-                // The Rust owner stores NonNull; null is reserved for Option::None.
-                !target.is_null()
-            }
-        }
         unsafe impl #impl_generics #co3::marker::AbiCompatible for #owned_ident #ty_generics #where_clause {}
+        #validator
 
         impl #impl_generics #co3::ReprC for #owned_ident #ty_generics #where_clause {
             type CType = *mut #ident #ty_generics;
@@ -3599,43 +3549,7 @@ fn gen_owned_extern_type_impls(
             fn is_niche(value: &Self::CType) -> bool { value.is_null() }
         }
 
-        unsafe impl #impl_generics #co3::convert::EncodeMove for #owned_ident #ty_generics #where_clause {
-            type Store = ();
-
-            #[inline(always)]
-            fn soft_encode<'itm>(self, (): &mut ()) -> Self::CType
-            where
-                Self: 'itm,
-            {
-                use #co3::convert::EncodeMoveUnchecked as _;
-                unsafe { self.soft_encode_unchecked(&mut ()) }
-            }
-        }
-        unsafe impl #impl_generics #co3::convert::EncodeMoveUnchecked for #owned_ident #ty_generics #where_clause {
-            type SoftStore = ();
-
-            unsafe fn soft_encode_unchecked<'itm>(self, (): &'itm mut ()) -> Self::CType where Self: 'itm {
-                core::mem::ManuallyDrop::new(self).0.as_ptr()
-            }
-        }
-        unsafe impl #decode_impl_generics #co3::convert::DecodeMove<'d> for #owned_ident #ty_generics #where_clause {
-            type Store = ();
-
-            #[inline(always)]
-            unsafe fn soft_decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
-                core::ptr::NonNull::new(source).map(Self)
-            }
-
-            #[inline(always)]
-            unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, (): &mut ()) -> Self {
-                Self(unsafe { core::ptr::NonNull::new_unchecked(source) })
-            }
-        }
-
-        impl #impl_generics #co3::convert::Encode for #owned_ident #ty_generics #where_clause {}
-        impl #impl_generics #co3::convert::EncodeUnchecked for #owned_ident #ty_generics #where_clause {}
-        impl #impl_generics #co3::convert::Decode<'_> for #owned_ident #ty_generics #where_clause {}
-
+        #value_codecs
         impl #impl_generics core::ops::Deref for #owned_ident #ty_generics #where_clause {
             type Target = #ident #ty_generics;
 
@@ -3693,18 +3607,14 @@ fn derive_opaque_item(
 
     let tag_family_impl = id.map(|id| gen_tag_family_impl(ident, generics, id));
 
+    let validator = crate::codec::validator(ident, &opaque_generics, quote!(true));
     quote! {
         #tag_family_impl
 
         unsafe impl #impl_generics co3::CType for #ident #ty_generics #where_clause {}
 
-        unsafe impl #impl_generics co3::convert::AbiCompatibleValidate for #ident #ty_generics #where_clause {
-            #[inline(always)]
-            unsafe fn is_valid(_: &Self::CType) -> bool {
-                true
-            }
-        }
         unsafe impl #impl_generics co3::marker::AbiCompatible for #ident #ty_generics #where_clause {}
+        #validator
 
         impl #impl_generics co3::ReprC for #ident #ty_generics #where_clause {
             type CType = Self;

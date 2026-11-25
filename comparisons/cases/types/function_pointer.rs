@@ -32,13 +32,41 @@ extern "C" fn increment(input: u32) -> u32 {
     input + 1
 }
 
+#[cfg(feature = "co3")]
 fn main() {
-    #[cfg(any(feature = "diplomat", feature = "interoptopus", feature = "safer_ffi", feature = "co3"))]
     {
         unsafe extern "C" {
-            #[cfg_attr(feature = "diplomat", link_name = "diplomat_external_apply")]
-            #[cfg_attr(feature = "co3", link_name = "function_pointer__apply")]
-            #[cfg_attr(any(feature = "interoptopus", feature = "safer_ffi"), link_name = "apply")]
+            #[link_name = "function_pointer__apply"]
+            fn exported_apply(callback: Callback, input: u32) -> u32;
+        }
+        assert_eq!(unsafe { exported_apply(increment, 41) }, 42);
+    }
+}
+
+#[cfg(any(
+    feature = "uniffi",
+    feature = "boltffi",
+    feature = "abi_stable",
+    feature = "stabby"
+))]
+fn main() {}
+
+#[cfg(feature = "diplomat")]
+fn main() {
+    {
+        unsafe extern "C" {
+            #[link_name = "diplomat_external_apply"]
+            fn exported_apply(callback: Callback, input: u32) -> u32;
+        }
+        assert_eq!(unsafe { exported_apply(increment, 41) }, 42);
+    }
+}
+
+#[cfg(any(feature = "interoptopus", feature = "safer_ffi"))]
+fn main() {
+    {
+        unsafe extern "C" {
+            #[link_name = "apply"]
             fn exported_apply(callback: Callback, input: u32) -> u32;
         }
         assert_eq!(unsafe { exported_apply(increment, 41) }, 42);

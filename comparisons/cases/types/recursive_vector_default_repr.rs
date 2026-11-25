@@ -52,13 +52,28 @@ use boltffi_function_29recursive_vector_default_repr4echo as exported_echo;
 #[path = "../support/owned_echo.rs"]
 mod caller;
 
+#[cfg(any(feature = "co3", feature = "uniffi", feature = "boltffi"))]
 fn main() {
-    #[cfg(any(feature = "co3", feature = "uniffi", feature = "boltffi"))]
     {
-        let result = caller::echo(Node { weight: 7, children: vec![Node { weight: 19, children: vec![] }] });
+        let result = caller::echo(Node {
+            weight: 7,
+            children: vec![Node {
+                weight: 19,
+                children: vec![],
+            }],
+        });
         assert_eq!(result.weight, 7);
         assert_eq!(result.children.len(), 1);
         assert_eq!(result.children[0].weight, 19);
         assert!(result.children[0].children.is_empty());
     }
 }
+
+#[cfg(any(
+    feature = "diplomat",
+    feature = "interoptopus",
+    feature = "safer_ffi",
+    feature = "abi_stable",
+    feature = "stabby"
+))]
+fn main() {}

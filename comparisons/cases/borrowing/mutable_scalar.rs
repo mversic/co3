@@ -24,21 +24,50 @@ co3::ffi! {
     fn increment(input: &mut u32);
 }
 
+#[cfg(feature = "co3")]
 fn main() {
-    #[cfg(any(feature = "co3", feature = "diplomat", feature = "safer_ffi", feature = "interoptopus"))]
     {
         unsafe extern "C" {
-            #[cfg_attr(feature = "co3", link_name = "mutable_scalar__increment")]
-            #[cfg_attr(feature = "diplomat", link_name = "diplomat_external_increment")]
-            #[cfg_attr(any(feature = "safer_ffi", feature = "interoptopus"), link_name = "increment")]
+            #[link_name = "mutable_scalar__increment"]
             fn exported_increment(value: &mut u32);
         }
         let mut value = 7;
         unsafe { exported_increment(&mut value) };
         assert_eq!(value, 8);
     }
+}
 
-    #[cfg(feature = "boltffi")]
+#[cfg(any(feature = "uniffi", feature = "abi_stable", feature = "stabby"))]
+fn main() {}
+
+#[cfg(feature = "diplomat")]
+fn main() {
+    {
+        unsafe extern "C" {
+            #[link_name = "diplomat_external_increment"]
+            fn exported_increment(value: &mut u32);
+        }
+        let mut value = 7;
+        unsafe { exported_increment(&mut value) };
+        assert_eq!(value, 8);
+    }
+}
+
+#[cfg(any(feature = "interoptopus", feature = "safer_ffi"))]
+fn main() {
+    {
+        unsafe extern "C" {
+            #[link_name = "increment"]
+            fn exported_increment(value: &mut u32);
+        }
+        let mut value = 7;
+        unsafe { exported_increment(&mut value) };
+        assert_eq!(value, 8);
+    }
+}
+
+#[cfg(feature = "boltffi")]
+fn main() {
     {
         // This entry point takes the integer by value and returns only the status.
         let status = unsafe { boltffi_function_14mutable_scalar9increment(7) };

@@ -5,7 +5,7 @@ use core::{
 };
 
 use co3::{
-    CFnArg, CFnReturn, CType, ReprC,
+    CFnArg, CFnReturn, CType, ReprC, lang,
     marker::{AbiCompatible, Native},
     rust_spec::RustSpec,
     wide::Wide,
@@ -162,16 +162,24 @@ fn nonzero_carrier_preserves_integer_abi_and_niche() {
     assert_impl_all!(co3::marker::NonZero<u8>: CType, CFnArg, CFnReturn);
 
     let value = NonZeroU8::new(7).unwrap();
-    assert_eq!(co3::encode(value), co3::marker::NonZero(7));
     assert_eq!(
-        unsafe { co3::decode::<NonZeroU8>(co3::marker::NonZero(7)) },
+        unsafe { co3::encode::<_, lang::C>(value) },
+        co3::marker::NonZero(7)
+    );
+    assert_eq!(
+        unsafe { co3::decode::<NonZeroU8, lang::C>(co3::marker::NonZero(7)) },
         Some(value)
     );
     assert_eq!(
-        unsafe { co3::decode::<NonZeroU8>(core::mem::zeroed()) },
+        unsafe { co3::decode::<NonZeroU8, lang::C>(core::mem::zeroed()) },
         None
     );
-    assert_eq!(co3::encode(None::<NonZeroU8>).payload().0, 0);
+    assert_eq!(
+        unsafe { co3::encode::<_, lang::C>(None::<NonZeroU8>) }
+            .payload()
+            .0,
+        0
+    );
 }
 
 #[test]
@@ -191,22 +199,22 @@ fn result_niche_carriers_distinguish_arms() {
     assert_impl_all!(AbiResultOk<<Box<u32> as co3::ReprC>::CType, ()>: CType, CFnArg, CFnReturn);
     assert_impl_all!(AbiResultErr<(), <&u32 as co3::ReprC>::CType>: CType, CFnArg, CFnReturn);
 
-    let ok = co3::encode(Result::<Box<u32>, ()>::Ok(Box::new(7)));
+    let ok = unsafe { co3::encode::<_, lang::C>(Result::<Box<u32>, ()>::Ok(Box::new(7))) };
     assert!(!ok.payload().as_ptr().is_null());
-    let ok = unsafe { co3::decode::<Result<Box<u32>, ()>>(ok) }
+    let ok = unsafe { co3::decode::<Result<Box<u32>, ()>, lang::C>(ok) }
         .unwrap()
         .unwrap();
     assert_eq!(*ok, 7);
 
-    let err = co3::encode(Result::<(), Box<u32>>::Err(Box::new(9)));
-    let err = unsafe { co3::decode::<Result<(), Box<u32>>>(err) }
+    let err = unsafe { co3::encode::<_, lang::C>(Result::<(), Box<u32>>::Err(Box::new(9))) };
+    let err = unsafe { co3::decode::<Result<(), Box<u32>>, lang::C>(err) }
         .unwrap()
         .unwrap_err();
     assert_eq!(*err, 9);
 
-    let absent_err = co3::encode(Result::<Box<u32>, ()>::Err(()));
+    let absent_err = unsafe { co3::encode::<_, lang::C>(Result::<Box<u32>, ()>::Err(())) };
     assert!(absent_err.payload().as_ptr().is_null());
-    let absent_ok = co3::encode(Result::<(), Box<u32>>::Ok(()));
+    let absent_ok = unsafe { co3::encode::<_, lang::C>(Result::<(), Box<u32>>::Ok(())) };
     assert!(absent_ok.payload().as_ptr().is_null());
 }
 
@@ -224,19 +232,20 @@ fn optional_preserves_carrier_abi() {
     );
     assert_impl_all!(co3::option::abi::OptionSome<<Box<u32> as co3::ReprC>::CType>: CType, CFnArg, CFnReturn);
 
-    let encoded = co3::encode(Some(Box::new(7_u32)));
+    let encoded = unsafe { co3::encode::<_, lang::C>(Some(Box::new(7_u32))) };
     assert!(!encoded.payload().as_ptr().is_null());
-    let decoded = unsafe { co3::decode::<Option<Box<u32>>>(encoded) }
+    let decoded = unsafe { co3::decode::<Option<Box<u32>>, lang::C>(encoded) }
         .unwrap()
         .unwrap();
     assert_eq!(*decoded, 7);
 
     let value = (11_u32,);
     let mut encode_store = Default::default();
-    let encoded = co3::soft_encode(Some(&value), &mut encode_store);
+    let encoded = unsafe { co3::soft_encode::<_, lang::C>(Some(&value), &mut encode_store) };
     let mut decode_store = Default::default();
-    let decoded = unsafe { co3::soft_decode::<Option<&(u32,)>>(encoded, &mut decode_store) }
-        .unwrap()
-        .unwrap();
+    let decoded =
+        unsafe { co3::soft_decode::<Option<&(u32,)>, lang::C>(encoded, &mut decode_store) }
+            .unwrap()
+            .unwrap();
     assert_eq!(decoded.0, 11);
 }

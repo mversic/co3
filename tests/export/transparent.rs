@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use co3::{ReprC, ffi, rust_spec::RustSpec};
+use co3::{ReprC, ffi, lang, rust_spec::RustSpec};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, RustSpec, ReprC)]
 #[repr_c(identity)]
@@ -124,7 +124,7 @@ fn stable_mutable_encoder_uses_the_original_pointer() {
         co3::convert::SoftEncodeMut<'static, Store = ()>, co3::convert::SoftEncodeMutUnchecked<'static, SoftStore = ()>);
     let mut value = TransparentStruct::new(GenericTransparentStruct::new(42));
     let original = core::ptr::from_mut(&mut value);
-    let encoded = co3::soft_encode(&mut value, &mut Default::default());
+    let encoded = unsafe { co3::soft_encode::<_, lang::C>(&mut value, &mut Default::default()) };
     assert_eq!(encoded.as_ptr(), original);
 }
 

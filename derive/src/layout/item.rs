@@ -3,16 +3,14 @@ use quote::{format_ident, quote};
 use syn::{Ident, parse_quote};
 
 use crate::{
+    codec::Conversion,
     layout::{
         ReprCAttrs, VariantReprCAttrs,
         attr::ReprKind,
-        borrow::{
-            either_variant_name, gen_either_name, gen_identity_borrow_impls, gen_item_borrow_impls,
-        },
+        borrow::gen_identity_borrow_impls,
         ctype::{
-            c_fn_last_field_bounds, classify_tail, gen_ctype_name, gen_fieldless_enum_ctype,
-            gen_identity_repr_c_impls, gen_item_ctype, gen_variant_struct_name,
-            projected_field_bounds,
+            classify_tail, gen_ctype_name, gen_fieldless_enum_ctype, gen_identity_repr_c_impls,
+            gen_item_ctype, gen_variant_struct_name,
         },
         enum_tag_type, enum_variant_tag_exprs,
         fields::{FieldType, field_types},
@@ -21,7 +19,7 @@ use crate::{
         is_exhaustive_enum, is_phantom_data, is_transparent_enum_repr,
         niche::{gen_enum_niche_ir, gen_struct_niche_ir},
         primitive_tag_type,
-        reference::{encoder_names, encoder_output, group_aggregate_ref_impls},
+        reference::{RefEncoder, encoder_output},
     },
     utils::speculative_marker,
 };
@@ -180,12 +178,6 @@ fn gen_item_niche_impls(
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum EncodeMode {
-    Owned,
-    Ref,
-}
-
 fn gen_item_codec_impls(
     repr: Option<&ReprKind>,
     input: &syn::DeriveInput,
@@ -195,69 +187,64 @@ fn gen_item_codec_impls(
     is_move: bool,
     recursion: &RecursiveFields,
 ) -> TokenStream {
-    let generate = |mode, input: &syn::DeriveInput| match &input.data {
-        syn::Data::Struct(data) => gen_struct_codec_impls(
-            mode,
-            is_move,
-            &input.ident,
-            &input.generics,
-            &data.fields,
-            attrs.is_valid.as_ref(),
-            recursion,
-        ),
-        syn::Data::Enum(data) => gen_enum_codec_impls(
-            mode,
-            repr,
-            input,
-            &data.variants,
-            variant_attrs,
-            is_move,
-            recursion,
-        ),
-        syn::Data::Union(_) => unreachable!(),
-    };
-    let owned = generate(EncodeMode::Owned, input);
-    if recursion.header_prefix.is_some() {
-        // This is the fixed header of a recursive wide allocation. The wide
-        // conversion uses its field mapping and transfers the whole allocation.
-        return owned;
+    use super::aggregate::{Aggregate, Operation::*};
+    let aggregate = Aggregate::new(input, repr, attrs, variant_attrs, recursion);
+    let repr_impl = aggregate.repr();
+    let mut impls = TokenStream::new();
+    // The synthetic wide header has extra value bounds. Ordinary aggregates
+    // use the same field analysis for values, borrowed carriers and references.
+    let wide_reference = attrs
+        .is_wide_data
+        .then(|| Aggregate::new(reference_input, repr, attrs, variant_attrs, recursion));
+    let reference = wide_reference.as_ref().unwrap_or(&aggregate);
+    let borrowed = !attrs.is_wide_data
+        && recursion.header_prefix.is_none()
+        && !matches!(&reference_input.data,syn::Data::Struct(s) if s.fields.iter().any(|f|classify_tail(&f.ty,&reference_input.generics).is_known_unsized()));
+    for contract in Conversion::derived(quote!(#input)) {
+        for op in [Encode, Decode] {
+            impls.extend(aggregate.emit(op, &contract, is_move));
+        }
+        if borrowed {
+            for op in [BorrowedEncode, BorrowedDecode] {
+                impls.extend(reference.emit(op, &contract, is_move));
+            }
+        }
     }
-    let borrowed = (!attrs.is_wide_data).then(|| {
-        gen_item_borrow_impls(
-            reference_input,
-            generate(EncodeMode::Owned, reference_input),
-        )
-    });
-    let input = reference_input;
-    let delegate_ref = matches!(repr, Some(ReprKind::Transparent))
+    let values = super::borrow::non_custom_drop_scope(impls);
+    if recursion.header_prefix.is_some() {
+        return quote!(#repr_impl #values);
+    }
+    let delegate = matches!(repr, Some(ReprKind::Transparent))
         && attrs.is_valid.is_none()
-        && variant_attrs.iter().all(|attrs| attrs.is_valid.is_none());
-    let references = if delegate_ref {
-        match &input.data {
-            syn::Data::Struct(data) if data.fields.len() == 1 => {
-                super::reference::gen_transparent_ref_impls(
-                    input,
-                    data.fields.iter().next().unwrap(),
-                    None,
-                )
+        && variant_attrs.iter().all(|a| a.is_valid.is_none());
+    let field = if delegate {
+        match &reference_input.data {
+            syn::Data::Struct(s) if s.fields.len() == 1 => {
+                Some((s.fields.iter().next().unwrap(), None))
             }
-            syn::Data::Enum(data)
-                if data.variants.len() == 1 && data.variants[0].fields.len() == 1 =>
-            {
-                super::reference::gen_transparent_ref_impls(
-                    input,
-                    data.variants[0].fields.iter().next().unwrap(),
-                    Some(&data.variants[0].ident),
-                )
+            syn::Data::Enum(e) if e.variants.len() == 1 && e.variants[0].fields.len() == 1 => {
+                Some((
+                    e.variants[0].fields.iter().next().unwrap(),
+                    Some(&e.variants[0].ident),
+                ))
             }
-            _ => group_aggregate_ref_impls(generate(EncodeMode::Ref, reference_input), true),
+            _ => None,
         }
     } else {
-        group_aggregate_ref_impls(generate(EncodeMode::Ref, reference_input), true)
+        None
     };
-    let stable_mut = (!delegate_ref).then(|| super::reference::gen_stable_direct_mut_impls(input));
-    let values = super::recursive::name_stores(input, &recursion.stores, quote!(#owned #borrowed));
-    quote! { #values #references #stable_mut }
+    let references = if let Some((field, variant)) = field {
+        super::reference::gen_transparent_ref_impls(reference_input, field, variant)
+    } else {
+        let helpers = super::reference::gen_shared_field_encoders();
+        let shared = Conversion::derived(quote!(#reference_input))
+            .into_iter()
+            .map(|c| reference.reference(&c));
+        let mutable =
+            (!delegate).then(|| super::reference::gen_stable_direct_mut_impls(reference_input));
+        quote!(const _: () = { #helpers #(#shared)* #mutable };)
+    };
+    quote!(#repr_impl #values #references)
 }
 
 fn gen_item_repr_c_impls(
@@ -267,8 +254,10 @@ fn gen_item_repr_c_impls(
     variant_attrs: &[VariantReprCAttrs],
     recursion: &RecursiveFields,
 ) -> TokenStream {
+    let [contract, _] = Conversion::derived(quote!(#input));
     match &input.data {
         syn::Data::Struct(data) => gen_repr_c_struct_impls(
+            &contract,
             &input.ident,
             &input.generics,
             &data.fields,
@@ -289,6 +278,7 @@ fn gen_item_repr_c_impls(
             }
 
             gen_repr_c_struct_impls(
+                &contract,
                 &input.ident,
                 &generics,
                 &variant.fields,
@@ -298,6 +288,7 @@ fn gen_item_repr_c_impls(
             )
         }
         syn::Data::Enum(data) => gen_repr_c_data_enum_impls(
+            &contract,
             repr,
             &input.ident,
             &input.generics,
@@ -309,502 +300,8 @@ fn gen_item_repr_c_impls(
     }
 }
 
-fn gen_struct_codec_impls(
-    mode: EncodeMode,
-    is_move: bool,
-    name: &Ident,
-    generics: &syn::Generics,
-    fields: &syn::Fields,
-    is_valid: Option<&syn::ExprClosure>,
-    recursion: &RecursiveFields,
-) -> TokenStream {
-    let field_types = fields.iter().map(|field| &field.ty).collect::<Vec<_>>();
-
-    let encode_store = encode_store_type(fields, mode);
-    let direct_store = direct_store_type(fields, mode);
-    let decode_store = decode_store_type(fields);
-
-    let codec_impls = {
-        let fields_destructure = gen_fields_destructure(fields);
-
-        let ctype_name = gen_ctype_name(name);
-
-        let (encode_body, direct_encode_body, decode_body, decode_unchecked_body) =
-            gen_record_conversion(mode, None, quote!(Self), fields, is_valid, false);
-
-        let field_vars = field_vars(fields);
-        let encode_validation = gen_encode_is_valid_assert(fields, is_valid);
-        let move_fields = (mode == EncodeMode::Owned)
-            .then(|| quote! { #(let #field_vars = unsafe { core::ptr::read(#field_vars) };)* });
-        let encode_destructure = if mode != EncodeMode::Owned {
-            quote! { let Self #fields_destructure = self; }
-        } else {
-            quote! {
-                let __co3_owned = core::mem::ManuallyDrop::new(self);
-                let Self #fields_destructure = &*__co3_owned;
-                #move_fields
-            }
-        };
-
-        CodecImpls {
-            encode_store,
-            direct_store,
-            decode_store,
-            requires_nonrobust: is_valid.is_some(),
-            repr_c_bounds: Vec::new(),
-            encode_impl: quote! {
-                #encode_destructure
-                #encode_validation
-                #ctype_name #encode_body
-            },
-            direct_encode_impl: quote! {
-                #encode_destructure
-                #ctype_name #direct_encode_body
-            },
-            decode_impl: quote! {
-                let #ctype_name #fields_destructure = source;
-                #decode_body
-            },
-            decode_unchecked_impl: quote! {
-                let #ctype_name #fields_destructure = source;
-                #decode_unchecked_body
-            },
-        }
-    };
-
-    gen_codec_impls(
-        mode,
-        is_move,
-        name,
-        generics,
-        &field_types,
-        recursion,
-        codec_impls,
-    )
-}
-
-fn gen_enum_codec_impls(
-    mode: EncodeMode,
-    repr: Option<&ReprKind>,
-    input: &syn::DeriveInput,
-    variants: &syn::punctuated::Punctuated<syn::Variant, syn::Token![,]>,
-    variant_attrs: &[VariantReprCAttrs],
-    is_move: bool,
-    recursion: &RecursiveFields,
-) -> TokenStream {
-    let name = &input.ident;
-    let generics = &input.generics;
-    let ctype_name = gen_ctype_name(name);
-
-    if is_transparent_enum_repr(repr, variants) {
-        return gen_transparent_enum_codec_impls(
-            mode,
-            is_move,
-            name,
-            generics,
-            variants,
-            variant_attrs,
-            recursion,
-        );
-    }
-    let tag_type = enum_tag_type(repr, variants.len());
-    let tag_values = enum_variant_tag_exprs(variants, &tag_type);
-
-    let payload_name = format_ident!("{name}Payload");
-
-    let fields = variants
-        .iter()
-        .flat_map(|variant| variant.fields.iter().map(|field| &field.ty))
-        .collect::<Vec<_>>();
-
-    let union_copy_bounds = gen_enum_union_copy_bounds(name, generics, variants);
-
-    let (encode_store, direct_store, decode_store) = {
-        let either_name = gen_either_name(variants.len());
-
-        let field_encode_stores = variants.iter().map(|v| encode_store_type(&v.fields, mode));
-        let field_direct_stores = variants.iter().map(|v| direct_store_type(&v.fields, mode));
-        let field_decode_stores = variants.iter().map(|v| decode_store_type(&v.fields));
-
-        (
-            quote! { core::option::Option<co3::either::#either_name<#(#field_encode_stores),*>> },
-            quote! { core::option::Option<co3::either::#either_name<#(#field_direct_stores),*>> },
-            quote! { core::option::Option<co3::either::#either_name<#(#field_decode_stores),*>> },
-        )
-    };
-
-    let variants: Vec<_> = variants
-        .iter()
-        .enumerate()
-        .map(|(idx, variant)| {
-            let either_ty = gen_either_name(variants.len());
-
-            let variant_name = &variant.ident;
-            let variant_struct_name = gen_variant_struct_name(name, variant_name);
-
-            let store_variant = either_variant_name(idx);
-            let variant_struct = quote! { #variant_struct_name };
-            let tag_value = &tag_values[idx];
-
-            let destructure_fields = gen_fields_destructure(&variant.fields);
-            let move_vars = field_vars(&variant.fields);
-            let move_fields = (mode == EncodeMode::Owned).then(|| quote! { #(let #move_vars = unsafe { core::ptr::read(#move_vars) };)* });
-            let custom_is_valid = variant_attrs[idx].is_valid.as_ref();
-            let encode_validation = gen_encode_is_valid_assert(&variant.fields, custom_is_valid);
-            let variant_tag = match repr {
-                None | Some(ReprKind::Primitive(_)) => {
-                    // The integer discriminant is already valid; preserve its ReprC projection
-                    // without requiring checked-encoding bounds on payload fields.
-                    Some(quote!(unsafe { co3::soft_encode_unchecked(#tag_value as #tag_type, &mut ()) }))
-                }
-                Some(ReprKind::Transparent | ReprKind::C(Some(_))) => None,
-                Some(ReprKind::C(None)) => unreachable!(),
-            };
-
-            let (encode_body, direct_encode_body, decode_body, decode_unchecked_body) = gen_record_conversion(
-                mode,
-                variant_tag,
-                quote!(Self::#variant_name),
-                &variant.fields,
-                custom_is_valid,
-                !matches!(repr, Some(ReprKind::C(Some(_)))),
-            );
-
-            let decode_destructure = match repr {
-                Some(ReprKind::Transparent) => quote! {
-                    let #ctype_name::#variant_name #destructure_fields = source else {
-                        return None;
-                    };
-                },
-                Some(ReprKind::C(Some(_))) => {
-                    let field_vars = field_vars(&variant.fields);
-
-                    match &variant.fields {
-                        syn::Fields::Named(_) | syn::Fields::Unit => quote! {
-                            let #variant_struct { #(#field_vars),* } = source;
-                        },
-                        syn::Fields::Unnamed(_) => quote! {
-                            let #variant_struct(#(#field_vars),*) = source;
-                        },
-                    }
-                },
-                None | Some(ReprKind::Primitive(_)) => {
-                    let field_vars = field_vars(&variant.fields);
-                    let unwrap_fields = field_vars.iter().map(|field| quote! {
-                        let #field = unsafe { #field.assume_init() };
-                    }).collect::<Vec<_>>();
-
-                    match &variant.fields {
-                        syn::Fields::Named(_) => quote! {
-                            let #variant_struct { tag: _, #(#field_vars),* } = source;
-                            #(#unwrap_fields)*
-                        },
-                        syn::Fields::Unnamed(_) => quote! {
-                            let #variant_struct(_, #(#field_vars),*) = source;
-                            #(#unwrap_fields)*
-                        },
-                        syn::Fields::Unit => quote! {
-                            let #variant_struct { tag: _ } = source;
-                        },
-                    }
-                },
-                Some(ReprKind::C(None)) => unreachable!(),
-            };
-
-            let encode_variant = match repr {
-                Some(ReprKind::C(Some(_))) => {
-                    quote! {
-                        #ctype_name {
-                            tag: #tag_value as #tag_type,
-                            payload: core::mem::MaybeUninit::new(#payload_name { #variant_name: #variant_struct_name #encode_body }),
-                        }
-                    }
-                }
-                None | Some(ReprKind::Primitive(_)) => quote! {
-                    #ctype_name {
-                        #variant_name: #variant_struct_name #encode_body
-                    }
-                },
-                _ => unreachable!(),
-            };
-            let direct_encode_variant = match repr {
-                Some(ReprKind::C(Some(_))) => quote! {
-                    #ctype_name {
-                        tag: #tag_value as #tag_type,
-                        payload: core::mem::MaybeUninit::new(#payload_name { #variant_name: #variant_struct_name #direct_encode_body }),
-                    }
-                },
-                None | Some(ReprKind::Primitive(_)) => quote! {
-                    #ctype_name {
-                        #variant_name: #variant_struct_name #direct_encode_body
-                    }
-                },
-                _ => unreachable!(),
-            };
-
-            let decode_source = match repr {
-                Some(ReprKind::C(Some(_))) => quote! { unsafe { source.payload.assume_init().#variant_name } },
-                None | Some(ReprKind::Primitive(_)) => quote! { unsafe { source.#variant_name } },
-                _ => unreachable!(),
-            };
-            let encode_store_init = match repr {
-                None | Some(ReprKind::C(Some(_)) | ReprKind::Primitive(_)) => quote! {
-                    let co3::either::#either_ty::#store_variant(store) =
-                        store.insert(co3::either::#either_ty::#store_variant(Default::default()))
-                    else {
-                        unreachable!()
-                    };
-                },
-                _ => unreachable!(),
-            };
-            let decode_store_init = quote! {
-                let co3::either::#either_ty::#store_variant(store) =
-                    store.insert(co3::either::#either_ty::#store_variant(Default::default()))
-                else {
-                    unreachable!()
-                };
-            };
-
-            let decode_variant = quote! {
-                {
-                    let source = #decode_source;
-
-                    #decode_destructure
-                    #decode_store_init
-
-                    #decode_body
-                }
-            };
-            let decode_variant_unchecked = quote! {
-                {
-                    let source = #decode_source;
-
-                    #decode_destructure
-                    #decode_store_init
-
-                    #decode_unchecked_body
-                }
-            };
-
-            (
-                quote! {
-                    Self::#variant_name #destructure_fields => {
-                        #move_fields
-                        #encode_validation
-                        #encode_store_init
-                        #encode_variant
-                    }
-                },
-                quote! {
-                    Self::#variant_name #destructure_fields => {
-                        #move_fields
-                        #encode_store_init
-                        #direct_encode_variant
-                    }
-                },
-                quote! { value if value == #tag_value => #decode_variant },
-                quote! { value if value == #tag_value => #decode_variant_unchecked },
-            )
-        })
-        .collect();
-    let variants_encode = variants
-        .iter()
-        .map(|(encode, _, _, _)| encode.clone())
-        .collect::<Vec<_>>();
-    let variants_direct_encode = variants
-        .iter()
-        .map(|(_, encode, _, _)| encode.clone())
-        .collect::<Vec<_>>();
-    let variants_decode = variants
-        .iter()
-        .map(|(_, _, decode, _)| decode.clone())
-        .collect::<Vec<_>>();
-    let variants_decode_unchecked = variants
-        .iter()
-        .map(|(_, _, _, decode)| decode.clone())
-        .collect::<Vec<_>>();
-
-    let decode_impl = match repr {
-        Some(ReprKind::C(Some(_))) => quote! {
-            match source.tag {
-                #(#variants_decode,)*
-                _ => None,
-            }
-        },
-        None | Some(ReprKind::Primitive(_)) => quote! {
-            {
-                let repr_value = <*const _>::cast::<#tag_type>(core::ptr::from_ref(&source));
-                match unsafe { *repr_value } {
-                    #(#variants_decode,)*
-                    _ => None,
-                }
-            }
-        },
-        _ => unreachable!(),
-    };
-    let decode_unchecked_impl = match repr {
-        Some(ReprKind::C(Some(_))) => quote! {
-            match source.tag {
-                #(#variants_decode_unchecked,)*
-                _ => unsafe { core::hint::unreachable_unchecked() },
-            }
-        },
-        None | Some(ReprKind::Primitive(_)) => quote! {
-            {
-                let repr_value = <*const _>::cast::<#tag_type>(core::ptr::from_ref(&source));
-                match unsafe { *repr_value } {
-                    #(#variants_decode_unchecked,)*
-                    _ => unsafe { core::hint::unreachable_unchecked() },
-                }
-            }
-        },
-        _ => unreachable!(),
-    };
-
-    let encode_head = if mode != EncodeMode::Owned {
-        quote!(match self)
-    } else {
-        quote!(match &*__co3_owned)
-    };
-    let encode_owner = (mode == EncodeMode::Owned)
-        .then(|| quote!(let __co3_owned = core::mem::ManuallyDrop::new(self);));
-    let codec_impls = CodecImpls {
-        encode_store,
-        direct_store,
-        decode_store,
-        requires_nonrobust: variant_attrs.iter().any(|attrs| attrs.is_valid.is_some()),
-        repr_c_bounds: union_copy_bounds,
-        encode_impl: quote! {
-            #encode_owner
-            #encode_head {
-                #(#variants_encode,)*
-            }
-        },
-        direct_encode_impl: quote! {
-            #encode_owner
-            #encode_head {
-                #(#variants_direct_encode,)*
-            }
-        },
-        decode_impl,
-        decode_unchecked_impl,
-    };
-
-    gen_codec_impls(
-        mode,
-        is_move,
-        name,
-        generics,
-        &fields,
-        recursion,
-        codec_impls,
-    )
-}
-
-fn gen_transparent_enum_codec_impls(
-    mode: EncodeMode,
-    is_move: bool,
-    name: &Ident,
-    generics: &syn::Generics,
-    variants: &syn::punctuated::Punctuated<syn::Variant, syn::Token![,]>,
-    variant_attrs: &[VariantReprCAttrs],
-    recursion: &RecursiveFields,
-) -> TokenStream {
-    if variants.len() > 1 {
-        return quote! {};
-    }
-    let Some(variant) = variants.iter().next() else {
-        return quote! {};
-    };
-
-    let ctype_name = gen_ctype_name(name);
-
-    let variant_name = &variant.ident;
-    let field_types = variant
-        .fields
-        .iter()
-        .map(|field| &field.ty)
-        .collect::<Vec<_>>();
-    let destructure_fields = gen_fields_destructure(&variant.fields);
-    let field_vars = field_vars(&variant.fields);
-    let move_fields = (mode == EncodeMode::Owned)
-        .then(|| quote! { #(let #field_vars = unsafe { core::ptr::read(#field_vars) };)* });
-    let custom_is_valid = variant_attrs
-        .first()
-        .and_then(|attrs| attrs.is_valid.as_ref());
-    let encode_validation = gen_encode_is_valid_assert(&variant.fields, custom_is_valid);
-    let encode_store = encode_store_type(&variant.fields, mode);
-    let direct_store = direct_store_type(&variant.fields, mode);
-    let decode_store = decode_store_type(&variant.fields);
-    let (encode_body, direct_encode_body, decode_body, decode_unchecked_body) =
-        gen_record_conversion(
-            mode,
-            None,
-            quote!(Self::#variant_name),
-            &variant.fields,
-            custom_is_valid,
-            false,
-        );
-
-    let mut bounded_generics = generics.clone();
-    if let Some(last) = field_types.last().filter(|ty| !is_phantom_data(ty)) {
-        let bound = FieldType::new(last, generics).bound(quote!(co3::ReprC<CType: Sized>));
-        bounded_generics.make_where_clause().predicates.push(bound);
-    }
-
-    let encode_head = if mode != EncodeMode::Owned {
-        quote!(match self)
-    } else {
-        quote!(match &*__co3_owned)
-    };
-    let encode_owner = (mode == EncodeMode::Owned)
-        .then(|| quote!(let __co3_owned = core::mem::ManuallyDrop::new(self);));
-
-    gen_codec_impls(
-        mode,
-        is_move,
-        name,
-        &bounded_generics,
-        &field_types,
-        recursion,
-        CodecImpls {
-            encode_store,
-            direct_store,
-            decode_store,
-            requires_nonrobust: variant_attrs[0].is_valid.is_some(),
-            repr_c_bounds: Vec::new(),
-            encode_impl: quote! {
-                #encode_owner
-                #encode_head {
-                    Self::#variant_name #destructure_fields => {
-                        #move_fields
-                        #encode_validation
-                        #ctype_name #encode_body
-                    }
-                }
-            },
-            direct_encode_impl: quote! {
-                #encode_owner
-                #encode_head {
-                    Self::#variant_name #destructure_fields => {
-                        #move_fields
-                        #ctype_name #direct_encode_body
-                    }
-                }
-            },
-            decode_impl: quote! {
-                let #ctype_name #destructure_fields = source;
-                #decode_body
-            },
-            decode_unchecked_impl: quote! {
-                let #ctype_name #destructure_fields = source;
-                #decode_unchecked_body
-            },
-        },
-    )
-}
-
 fn gen_repr_c_struct_impls(
+    contract: &Conversion,
     name: &Ident,
     generics: &syn::Generics,
     fields: &syn::Fields,
@@ -838,17 +335,31 @@ fn gen_repr_c_struct_impls(
     });
 
     let destructure_target = gen_fields_destructure(fields);
-    let is_valid_body = gen_record_is_valid(&field_vars, &field_types, is_valid, niche_validation);
+    let is_valid_body = gen_record_is_valid(
+        contract,
+        &field_vars,
+        &field_types,
+        is_valid,
+        niche_validation,
+    );
 
     let is_valid_impl = quote! {
         let #ctype_name #destructure_target = target;
         #is_valid_body
     };
 
-    gen_repr_c_impls(name, generics, &field_types, recursion, is_valid_impl)
+    gen_repr_c_impls(
+        contract,
+        name,
+        generics,
+        &field_types,
+        recursion,
+        is_valid_impl,
+    )
 }
 
 fn gen_repr_c_data_enum_impls(
+    contract: &Conversion,
     repr: Option<&ReprKind>,
     name: &Ident,
     generics: &syn::Generics,
@@ -911,7 +422,8 @@ fn gen_repr_c_data_enum_impls(
         };
 
         let is_valid = variant_attrs[variant_idx].is_valid.as_ref();
-        let is_valid_body = gen_record_is_valid(&field_names, &variant_fields, is_valid, None);
+        let is_valid_body =
+            gen_record_is_valid(contract, &field_names, &variant_fields, is_valid, None);
         let unwrap_fields = if matches!(repr, Some(ReprKind::C(Some(_)))) {
             Vec::new()
         } else {
@@ -939,7 +451,7 @@ fn gen_repr_c_data_enum_impls(
 
         match unsafe { *repr_value } {
             #(#variant_body,)*
-            _ => false,
+            _ => {  false },
         }
     };
 
@@ -947,7 +459,14 @@ fn gen_repr_c_data_enum_impls(
     let predicates = &mut bounded_generics.make_where_clause().predicates;
     predicates.extend(gen_enum_union_copy_bounds(name, generics, variants));
 
-    gen_repr_c_impls(name, &bounded_generics, &fields, recursion, is_valid_impl)
+    gen_repr_c_impls(
+        contract,
+        name,
+        &bounded_generics,
+        &fields,
+        recursion,
+        is_valid_impl,
+    )
 }
 
 fn gen_enum_union_copy_bounds(
@@ -959,12 +478,16 @@ fn gen_enum_union_copy_bounds(
 }
 
 fn gen_repr_c_impls(
+    contract: &Conversion,
     name: &Ident,
     generics: &syn::Generics,
     fields: &[&syn::Type],
     recursion: &RecursiveFields,
     is_valid_body: TokenStream,
 ) -> TokenStream {
+    let g = contract.generics(generics);
+    let (checked_generics, _, _) = g.split_for_impl();
+    let lang = contract.language();
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     let predicates = where_clause.as_ref().map(|w| &w.predicates);
     let own = syn::parse_quote!(#name #ty_generics);
@@ -986,7 +509,7 @@ fn gen_repr_c_impls(
                     checked_transmute_bounds
                         .push(requirement.bound(quote!(co3::marker::AbiCompatible)));
                     validation_bounds
-                        .push(requirement.bound(quote!(co3::convert::AbiCompatibleValidate)));
+                        .push(requirement.bound(quote!(co3::convert::AbiValidate<#lang>)));
                     if !field.concrete {
                         let mutability: syn::WherePredicate = parse_quote!(#own: co3::rust_spec::RustSpec<
                             Mutability: co3::rust_spec::mutability::PointerMutability>);
@@ -1009,7 +532,8 @@ fn gen_repr_c_impls(
         }
         let sized = (index + 1 < fields.len()).then(|| quote!(<CType: Sized>));
         checked_transmute_bounds.push(field.bound(quote!(co3::marker::AbiCompatible #sized)));
-        validation_bounds.push(field.bound(quote!(co3::convert::AbiCompatibleValidate #sized)));
+        let sized = (index + 1 < fields.len()).then(|| quote!(, CType: Sized));
+        validation_bounds.push(field.bound(quote!(co3::convert::AbiValidate<#lang #sized>)));
     }
     let recursive_layout_bound = (!recursive_fields.is_empty()).then(|| {
         let bound = FieldType::new(&own, generics).bound(quote!(
@@ -1039,7 +563,14 @@ fn gen_repr_c_impls(
     });
     quote! {
         #check_recursive_fields
-        unsafe impl #impl_generics co3::convert::AbiCompatibleValidate for #name #ty_generics
+        unsafe impl #impl_generics co3::marker::AbiCompatible for #name #ty_generics
+        where
+            #recursive_layout_bound
+            #(#checked_transmute_bounds,)*
+
+            #predicates
+        {}
+        unsafe impl #checked_generics co3::convert::AbiValidate<#lang> for #name #ty_generics
         where
             #recursive_layout_bound
             #(#validation_bounds,)*
@@ -1051,17 +582,11 @@ fn gen_repr_c_impls(
                 #is_valid_body
             }
         }
-        unsafe impl #impl_generics co3::marker::AbiCompatible for #name #ty_generics
-        where
-            #recursive_layout_bound
-            #(#checked_transmute_bounds,)*
-
-            #predicates
-        {}
     }
 }
 
 fn gen_record_is_valid(
+    contract: &Conversion,
     field_names: &[Ident],
     field_types: &[&syn::Type],
     is_valid: Option<&syn::ExprClosure>,
@@ -1081,13 +606,14 @@ fn gen_record_is_valid(
         }}
     });
 
+    let lang = contract.language();
     let field_validation = field_names
         .iter()
         .zip(field_types)
         .filter(|(_, field_ty)| !is_phantom_data(field_ty))
         .map(|(field_name, field_ty)| {
             quote! {
-                if !unsafe { <#field_ty as co3::convert::AbiCompatibleValidate>::is_valid(#field_name)} {
+                if !unsafe { <#field_ty as co3::convert::AbiValidate<#lang>>::is_valid(#field_name)} {
                     return false;
                 }
             }
@@ -1117,10 +643,6 @@ pub(super) fn derive_fieldless_enum(
     let carrier = quote!(#ctype_name #ty_generics);
     let reference_repr = quote!(co3::ReprC<CType = #carrier>);
     let source_generics = generics.clone();
-
-    let mut decode_generics = generics.clone();
-    decode_generics.params.insert(0, parse_quote!('_dšč));
-    let (decode_impl_generics, _, _) = decode_generics.split_for_impl();
 
     let tag_type = match repr {
         None if variants.len() == 1 => None,
@@ -1173,42 +695,21 @@ pub(super) fn derive_fieldless_enum(
         // Both carriers start with the tag; the wrapper may have extra alignment.
         unsafe { core::ptr::from_ref(&source).cast::<#tag_ctype>().read() }
     };
-    let checked_transmute_method = match repr {
-        None => quote! {},
-        Some(ReprKind::C(None)) => unreachable!(),
-        Some(ReprKind::Transparent) => {
-            quote! { unsafe fn is_valid(_: &Self::CType) -> bool { true } }
-        }
-        Some(ReprKind::C(Some(repr)) | ReprKind::Primitive(repr))
-            if is_exhaustive_enum(variants.len(), repr) =>
-        {
-            quote! { unsafe fn is_valid(_: &Self::CType) -> bool { true } }
-        }
-        Some(ReprKind::C(Some(_)) | ReprKind::Primitive(_)) => {
-            let variant_tags = &variant_tags;
-
+    let checked_transmute_impl = repr.map(|repr| {
+        let valid = if matches!(repr, ReprKind::Transparent) || exhaustive {
+            quote!(true)
+        } else {
             quote! {
-                unsafe fn is_valid(target: &Self::CType) -> bool {
-                    let tag = unsafe { core::ptr::from_ref(target).cast::<#tag_ctype>().read() };
-                    false #(|| tag == #variant_tags)*
-                }
+                let tag = unsafe { core::ptr::from_ref(_source).cast::<#tag_ctype>().read() };
+                false #(|| tag == #variant_tags)*
             }
+        };
+        let validator = crate::codec::validator(name, generics, valid);
+        quote! {
+            unsafe impl #impl_generics co3::marker::AbiCompatible for #name #ty_generics #where_clause {}
+            #validator
         }
-    };
-
-    let checked_transmute_impl = match repr {
-        None => quote! {},
-        Some(ReprKind::C(None)) => unreachable!(),
-        Some(ReprKind::Transparent | ReprKind::C(Some(_)) | ReprKind::Primitive(_)) => {
-            quote! {
-                unsafe impl #impl_generics co3::convert::AbiCompatibleValidate for #name #ty_generics #where_clause {
-                    #[inline(always)]
-                    #checked_transmute_method
-                }
-                unsafe impl #impl_generics co3::marker::AbiCompatible for #name #ty_generics #where_clause {}
-            }
-        }
-    };
+    });
 
     let variants_decode = variants.iter().zip(&variant_tags).map(|(variant, tag)| {
         let variant_name = &variant.ident;
@@ -1289,7 +790,7 @@ pub(super) fn derive_fieldless_enum(
         quote! {
             match #tag_from_ctype {
                 #(#variants_decode,)*
-                _ => None
+                _ => {  None }
             }
         }
     } else {
@@ -1304,7 +805,7 @@ pub(super) fn derive_fieldless_enum(
         .is_some()
         .then(|| gen_enum_niche_ir(repr, name, &source_generics, variants, false, &[]));
 
-    let borrow_impls = gen_item_borrow_impls(input, TokenStream::new());
+    let borrow_impls = super::borrow::fieldless_borrow_impls(input);
     let tag_const_defs = tag_consts.iter().map(|(tag_name, value)| {
         quote! {
             #[allow(non_upper_case_globals, reason = "generated tag names follow the source variants")]
@@ -1335,7 +836,6 @@ pub(super) fn derive_fieldless_enum(
 
     let mut ref_generics = generics.clone();
     ref_generics.params.insert(0, parse_quote!('_ršč));
-    let (ref_impl_generics, _, _) = ref_generics.split_for_impl();
     let stable_mut_impls = super::reference::gen_stable_direct_mut_impls(input);
 
     let drop_speculative = speculative_marker(generics.params.is_empty());
@@ -1352,30 +852,29 @@ pub(super) fn derive_fieldless_enum(
                 #drop_speculative <Self as co3::rust_spec::RustSpec>::Drop: __Co3NonCustomDrop
             ));
     }
-    let (_, _, marker_where_clause) = marker_generics.split_for_impl();
 
     let predicates = input
         .generics
         .where_clause
         .as_ref()
         .map(|clause| &clause.predicates);
-    let shared_ref_impls = [true, false].into_iter().map(|unchecked| {
-        let (trait_name, _, store_name, method, _) = encoder_names(false, unchecked);
-        let output = encoder_output(quote!(&'_ršč Self));
+    let shared_ref_impls = Conversion::derived(quote!(#input)).into_iter().map(|contract| {
+        let unchecked = !contract.checked();
+        let g = contract.generics(&ref_generics);
+        let (ref_impl_generics,_,_) = g.split_for_impl();
+        let enc = RefEncoder::new(false,&contract);
         let unsafe_fn = unchecked.then(|| quote!(unsafe));
-        let abi_bound = if unchecked {
-            quote!(co3::marker::AbiCompatible)
-        } else {
-            quote!(co3::convert::AbiCompatibleValidate)
-        };
+        let RefEncoder {name:trait_name,store:store_name,method,args,..} = &enc;
+        let output = encoder_output(quote!(&'_ršč Self));
+        let abi_bound = contract.compatibility();
         let validation = (!unchecked).then(|| quote! {
-            debug_assert!(unsafe { <&'_ršč Self as co3::convert::AbiCompatibleValidate>::is_valid(&encoded) }, "encoding failed AbiCompatibleValidate::is_valid");
+            debug_assert!(unsafe { <&'_ršč Self as  #abi_bound>::is_valid(&encoded) }, "encoding failed AbiValidate::is_valid");
         });
         let validation_bound = (!unchecked).then(|| quote! {
-            &'_ršč Self: co3::convert::AbiCompatibleValidate,
+            &'_ršč Self:  #abi_bound,
         });
-        quote! {
-            unsafe impl #ref_impl_generics #trait_name<'_ršč> for #name #ty_generics
+        enc.group(quote! {
+            unsafe impl #ref_impl_generics #trait_name #args for #name #ty_generics
             where
                 Self: #reference_repr,
                 &'_ršč Self: co3::ReprC<CType = co3::reference::abi::SoftRef<<Self as co3::ReprC>::CType>>,
@@ -1386,7 +885,7 @@ pub(super) fn derive_fieldless_enum(
                     store.encode(|_| { #ref_encode_body })
                 }
             }
-            unsafe impl #ref_impl_generics #trait_name<'_ršč> for #name #ty_generics
+            unsafe impl #ref_impl_generics #trait_name #args for #name #ty_generics
             where
                 #drop_speculative <Self as co3::ReprC>::CType: Sized,
                 #drop_speculative Self: #abi_bound + '_ršč,
@@ -1401,10 +900,16 @@ pub(super) fn derive_fieldless_enum(
                     encoded
                 }
             }
-        }
+        },true)
     });
-    let shared_ref_impls = group_aggregate_ref_impls(quote!(#(#shared_ref_impls)*), false);
-
+    let values = super::borrow::non_custom_drop_scope(crate::codec::stateless(
+        name,
+        generics,
+        &marker_generics,
+        moved_encode_body,
+        decode_body,
+        decode_unchecked,
+    ));
     quote! {
         #tag_const_impl
         #ctype_def
@@ -1415,49 +920,9 @@ pub(super) fn derive_fieldless_enum(
 
         #repr_c_impl
         #stable_mut_impls
-        #shared_ref_impls
+        #(#shared_ref_impls)*
 
-        unsafe impl #impl_generics co3::convert::EncodeMove for #name #ty_generics #where_clause {
-            type Store = ();
-
-            fn soft_encode<'_išč>(self, (): &mut ()) -> Self::CType
-            where
-                Self: '_išč,
-            {
-                use co3::convert::EncodeMoveUnchecked as _;
-                unsafe { co3::convert::EncodeMoveUnchecked::soft_encode_unchecked(self, &mut ()) }
-            }
-        }
-        unsafe impl #impl_generics co3::convert::EncodeMoveUnchecked for #name #ty_generics #where_clause {
-            type SoftStore = ();
-
-            unsafe fn soft_encode_unchecked<'itm>(self, (): &'itm mut ()) -> Self::CType where Self: 'itm {
-                #moved_encode_body
-            }
-        }
-
-        unsafe impl #decode_impl_generics co3::convert::DecodeMove<'_dšč> for #name #ty_generics #where_clause {
-            type Store = ();
-
-            unsafe fn soft_decode<'_išč: '_dšč>(source: Self::CType, (): &mut ()) -> Option<Self> {
-                #decode_body
-            }
-
-            unsafe fn soft_decode_unchecked<'_išč: '_dšč>(source: Self::CType, (): &mut ()) -> Self {
-                #decode_unchecked
-            }
-        }
-
-        const _: () = {
-            trait __Co3NonCustomDrop {}
-            impl __Co3NonCustomDrop for co3::rust_spec::drop::NoDrop {}
-            impl __Co3NonCustomDrop for co3::rust_spec::drop::AutoDrop {}
-
-            impl #impl_generics co3::convert::Encode for #name #ty_generics #marker_where_clause {}
-            impl #impl_generics co3::convert::EncodeUnchecked for #name #ty_generics #marker_where_clause {}
-            impl #impl_generics co3::convert::Decode<'_> for #name #ty_generics #marker_where_clause {}
-        };
-
+        #values
         #checked_transmute_impl
     }
 }
@@ -1480,501 +945,4 @@ pub fn gen_fields_destructure(fields: &syn::Fields) -> TokenStream {
         syn::Fields::Named(_) | syn::Fields::Unit => quote! {{ #(#field_names),* }},
         syn::Fields::Unnamed(_) => quote!((#(#field_names),*)),
     }
-}
-
-pub fn tuple_field_exprs(len: usize) -> Vec<TokenStream> {
-    (0..len)
-        .map(|i| {
-            let i = syn::Index::from(i);
-            quote! { &mut store.#i }
-        })
-        .collect()
-}
-
-fn gen_encode_is_valid_assert(
-    fields: &syn::Fields,
-    is_valid: Option<&syn::ExprClosure>,
-) -> TokenStream {
-    let Some(is_valid) = is_valid else {
-        return quote! {};
-    };
-    let field_vars = field_vars(fields);
-    let field_types = fields.iter().map(|field| &field.ty).collect::<Vec<_>>();
-    let args = field_vars
-        .iter()
-        .map(|field| quote!(&#field))
-        .collect::<Vec<_>>();
-    let call = super::gen_is_valid_call(is_valid, &field_types, &args);
-    quote! { debug_assert!(#call, "encoding failed custom is_valid"); }
-}
-
-fn gen_record_conversion(
-    mode: EncodeMode,
-    tag: Option<TokenStream>,
-    source_head: TokenStream,
-    fields: &syn::Fields,
-    is_valid: Option<&syn::ExprClosure>,
-    wrap_fields: bool,
-) -> (TokenStream, TokenStream, TokenStream, TokenStream) {
-    let (encode_fn, direct_fn) = match mode {
-        EncodeMode::Ref => (
-            quote!(__Co3EncodeField::encode_field),
-            quote!(__Co3EncodeFieldUnchecked::encode_field_unchecked),
-        ),
-        EncodeMode::Owned => (
-            quote!(co3::convert::EncodeMove::soft_encode),
-            quote!(co3::convert::EncodeMoveUnchecked::soft_encode_unchecked),
-        ),
-    };
-    let store_vars = tuple_field_exprs(fields.len());
-    let field_vars = field_vars(fields);
-    let field_types = fields.iter().map(|field| &field.ty).collect::<Vec<_>>();
-    let encoded = field_vars
-        .iter()
-        .zip(&store_vars)
-        .zip(&field_types)
-        .map(|((field, store), ty)| {
-            let value = if mode == EncodeMode::Ref && is_phantom_data(ty) {
-                quote!({ let _ = #field; core::marker::PhantomData })
-            } else {
-                quote!(#encode_fn(#field, #store))
-            };
-            if wrap_fields {
-                quote!(core::mem::MaybeUninit::new(#value))
-            } else {
-                value
-            }
-        })
-        .collect::<Vec<_>>();
-    let direct_encoded = field_vars
-        .iter()
-        .zip(&store_vars)
-        .zip(&field_types)
-        .map(|((field, store), ty)| {
-            let value = if mode == EncodeMode::Ref && is_phantom_data(ty) {
-                quote!({ let _ = #field; core::marker::PhantomData })
-            } else {
-                quote!(unsafe { #direct_fn(#field, #store) })
-            };
-            if wrap_fields {
-                quote!(core::mem::MaybeUninit::new(#value))
-            } else {
-                value
-            }
-        })
-        .collect::<Vec<_>>();
-
-    let tag_field = tag.as_ref().map(|tag| quote! { tag: #tag, });
-    let tag_element = tag.as_ref().map(|tag| quote! { #tag, });
-
-    let custom_validation = is_valid.map(|is_valid| {
-        let args = field_vars
-            .iter()
-            .map(|field| quote!(&#field))
-            .collect::<Vec<_>>();
-        let call = super::gen_is_valid_call(is_valid, &field_types, &args);
-        quote! {
-            if !#call {
-                return None;
-            }
-        }
-    });
-
-    match fields {
-        syn::Fields::Named(_) | syn::Fields::Unit => (
-            quote! {
-                {
-                    #tag_field
-                    #(#field_vars: #encoded),*
-                }
-            },
-            quote! {
-                {
-                    #tag_field
-                    #(#field_vars: #direct_encoded),*
-                }
-            },
-            quote! { #(
-                let #field_vars = unsafe {
-                    co3::convert::DecodeMove::soft_decode(#field_vars, #store_vars)?
-                }; )*
-
-                #custom_validation
-                Some(#source_head {
-                    #(#field_vars),*
-                })
-            },
-            quote! { #(
-                let #field_vars = unsafe {
-                    co3::convert::DecodeMove::soft_decode_unchecked(#field_vars, #store_vars)
-                }; )*
-
-                #source_head {
-                    #(#field_vars),*
-                }
-            },
-        ),
-        syn::Fields::Unnamed(_) => (
-            quote! {
-                (
-                    #tag_element
-                    #(#encoded),*
-                )
-            },
-            quote! {
-                (
-                    #tag_element
-                    #(#direct_encoded),*
-                )
-            },
-            quote! { #(
-                let #field_vars = unsafe {
-                    co3::convert::DecodeMove::soft_decode(#field_vars, #store_vars)?
-                }; )*
-
-                #custom_validation
-                Some(#source_head(
-                    #(#field_vars),*
-                ))
-            },
-            quote! { #(
-                let #field_vars = unsafe {
-                    co3::convert::DecodeMove::soft_decode_unchecked(#field_vars, #store_vars)
-                }; )*
-
-                #source_head(
-                    #(#field_vars),*
-                )
-            },
-        ),
-    }
-}
-
-struct CodecImpls {
-    encode_store: TokenStream,
-    direct_store: TokenStream,
-    decode_store: TokenStream,
-    requires_nonrobust: bool,
-    repr_c_bounds: Vec<syn::WherePredicate>,
-    encode_impl: TokenStream,
-    direct_encode_impl: TokenStream,
-    decode_impl: TokenStream,
-    decode_unchecked_impl: TokenStream,
-}
-
-fn gen_codec_impls(
-    mode: EncodeMode,
-    is_move: bool,
-    name: &Ident,
-    generics: &syn::Generics,
-    fields: &[&syn::Type],
-    recursion: &RecursiveFields,
-    codec_impls: CodecImpls,
-) -> TokenStream {
-    let CodecImpls {
-        encode_store,
-        direct_store,
-        decode_store,
-        requires_nonrobust,
-        repr_c_bounds,
-        encode_impl,
-        direct_encode_impl,
-        decode_impl,
-        decode_unchecked_impl,
-    } = codec_impls;
-
-    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
-    let predicates = where_clause.as_ref().map(|w| &w.predicates);
-    let validity_bound = requires_nonrobust.then(|| {
-        quote! {
-            #name #ty_generics: co3::rust_spec::RustSpec<Trap = co3::rust_spec::layout::NonRobust>,
-        }
-    });
-    let leading_predicates = where_clause.as_ref().map(|w| {
-        let predicates = w.predicates.iter();
-        quote!(#(#predicates,)*)
-    });
-    let drop_speculative = speculative_marker(generics.params.is_empty());
-    let direct_drop_bound = (!is_move).then(|| {
-        quote!(
-            #drop_speculative Self: co3::rust_spec::RustSpec,
-            #drop_speculative <Self as co3::rust_spec::RustSpec>::Drop: __Co3NonCustomDrop,
-        )
-    });
-    let ctype_name = gen_ctype_name(name);
-    let carrier = quote!(#ctype_name #ty_generics);
-    let reference_repr = quote!(co3::ReprC<CType = #carrier>);
-
-    let extern_c_bounds = projected_field_bounds(generics, fields, &recursion.carriers);
-    let carrier_equalities = &recursion.equalities;
-    let ordinary_fields = &recursion.stores.marker_fields;
-    let codec_fields = &recursion.stores.codec_fields;
-    let encode_move_bounds =
-        gen_field_encode_bounds(generics, codec_fields, quote! { co3::convert::EncodeMove });
-    let direct_encode_bounds = gen_field_encode_bounds(
-        generics,
-        codec_fields,
-        quote! { co3::convert::EncodeMoveUnchecked },
-    );
-    let decode_move_bounds =
-        gen_field_decode_bounds(generics, codec_fields, quote! { co3::convert::DecodeMove });
-
-    let encode_bounds =
-        gen_field_encode_bounds(generics, ordinary_fields, quote! { co3::convert::Encode });
-    let direct_bounds = gen_field_encode_bounds(
-        generics,
-        ordinary_fields,
-        quote! { co3::convert::EncodeUnchecked },
-    );
-    let decode_bounds =
-        gen_field_decode_bounds(generics, ordinary_fields, quote! { co3::convert::Decode });
-
-    let (sized_bound, omit_sized_impls) = c_fn_last_field_bounds(fields, generics);
-    let mut decode_generics = generics.clone();
-    decode_generics.params.insert(0, parse_quote!('_dšč));
-    let (decode_impl_generics, _, _) = decode_generics.split_for_impl();
-
-    if mode == EncodeMode::Ref {
-        if omit_sized_impls {
-            return quote! {};
-        }
-        let mut ref_generics = generics.clone();
-        ref_generics.params.insert(0, parse_quote!('_ršč));
-        let (ref_impl_generics, _, _) = ref_generics.split_for_impl();
-        let speculative = speculative_marker(generics.params.is_empty());
-        let implementations = [true, false].into_iter().map(|unchecked| {
-            let (trait_name, _, store_name, method, _) = encoder_names(false, unchecked);
-            let output = encoder_output(quote!(&'_ršč Self));
-            let unsafe_fn = unchecked.then(|| quote!(unsafe));
-            let abi_bound = if unchecked {
-                quote!(co3::marker::AbiCompatible)
-            } else {
-                quote!(co3::convert::AbiCompatibleValidate)
-            };
-            let validation_bound = (!unchecked).then(|| quote! {
-                &'_ršč Self: co3::convert::AbiCompatibleValidate,
-            });
-            let validation = (!unchecked).then(|| quote! {
-                debug_assert!(unsafe { <&'_ršč Self as co3::convert::AbiCompatibleValidate>::is_valid(&encoded) }, "encoding failed AbiCompatibleValidate::is_valid");
-            });
-            let (field_store, encode_body) = if unchecked {
-                (&direct_store, &direct_encode_impl)
-            } else {
-                (&encode_store, &encode_impl)
-            };
-            let field_trait = if unchecked { quote!(__Co3EncodeFieldUnchecked) } else { quote!(__Co3EncodeField) };
-            let field_bounds = field_types(fields, generics)
-                .filter(|field| !field.phantom)
-                .map(|field| field.bound(quote!(#field_trait<'_ršč>)));
-            quote! {
-                unsafe impl #ref_impl_generics #trait_name<'_ršč> for #name #ty_generics
-                where
-                    #sized_bound
-                    #(#repr_c_bounds,)*
-            #(#carrier_equalities,)*
-                    #(#field_bounds,)*
-                    #leading_predicates
-                    #speculative Self: #reference_repr + '_ršč,
-                    &'_ršč Self: co3::ReprC<CType = co3::reference::abi::SoftRef<<Self as co3::ReprC>::CType>>,
-
-                {
-                    type #store_name = co3::sync::RefSizedEncodeStore<Self, #field_store>;
-                    #unsafe_fn fn #method<'itm>(&'_ršč self, store: &'itm mut Self::#store_name) -> #output where '_ršč: 'itm {
-                        store.encode(|store| { #encode_body })
-                    }
-                }
-                unsafe impl #ref_impl_generics #trait_name<'_ršč> for #name #ty_generics
-                where
-                    #sized_bound
-                    #leading_predicates
-                    #(#repr_c_bounds,)*
-                    #speculative <Self as co3::ReprC>::CType: Sized,
-                    #speculative Self: #abi_bound
-                        + Sized + '_ršč,
-                    &'_ršč Self: co3::ReprC<CType = co3::reference::abi::Ref<'_ršč, <Self as co3::ReprC>::CType>>,
-                    #validation_bound
-                {
-                    type #store_name = ();
-                    #unsafe_fn fn #method<'itm>(&'_ršč self, _: &'itm mut ()) -> #output where '_ršč: 'itm {
-                        let encoded = unsafe { co3::reference::abi::Ref::from_raw(core::ptr::from_ref(self).cast()) };
-                        #validation
-                        encoded
-                    }
-                }
-            }
-        });
-        return quote!(#(#implementations)*);
-    }
-
-    let dispatch = codec_fields.len() != ordinary_fields.len();
-    let marker_encode =
-        dispatch.then(|| quote!(Self: co3::convert::EncodeMove + co3::convert::EncodeUnchecked,));
-    let marker_unchecked = dispatch.then(|| quote!(Self: co3::convert::EncodeMoveUnchecked,));
-    let marker_decode = dispatch.then(|| quote!(Self: co3::convert::DecodeMove<'_dšč>,));
-    let sized_impls = (!omit_sized_impls).then(|| quote! {
-        unsafe impl #impl_generics co3::convert::EncodeMove for #name #ty_generics
-        where
-            #sized_bound
-
-            #(#repr_c_bounds,)*
-            #(#carrier_equalities,)*
-            #(#encode_move_bounds,)*
-
-            #predicates
-        {
-            type Store = #encode_store;
-
-            fn soft_encode<'_išč>(self, store: &'_išč mut Self::Store) -> Self::CType where Self: '_išč {
-                #encode_impl
-            }
-
-        }
-        unsafe impl #impl_generics co3::convert::EncodeMoveUnchecked for #name #ty_generics
-        where
-            #sized_bound
-
-            #(#repr_c_bounds,)*
-            #(#carrier_equalities,)*
-            #(#direct_encode_bounds,)*
-
-            #predicates
-        {
-            type SoftStore = #direct_store;
-
-            unsafe fn soft_encode_unchecked<'itm>(self, store: &'itm mut <Self as co3::convert::EncodeMoveUnchecked>::SoftStore) -> Self::CType where Self: 'itm {
-                #direct_encode_impl
-            }
-        }
-        unsafe impl #decode_impl_generics co3::convert::DecodeMove<'_dšč> for #name #ty_generics
-        where
-            #sized_bound
-
-            #(#repr_c_bounds,)*
-            #(#carrier_equalities,)*
-            #(#decode_move_bounds,)*
-
-            #predicates
-        {
-            type Store = #decode_store;
-
-            unsafe fn soft_decode<'_išč: '_dšč>(source: Self::CType, store: &'_išč mut Self::Store) -> Option<Self> {
-                #decode_impl
-            }
-
-            unsafe fn soft_decode_unchecked<'_išč: '_dšč>(source: Self::CType, store: &'_išč mut Self::Store) -> Self {
-                #decode_unchecked_impl
-            }
-        }
-
-        impl #impl_generics co3::convert::Encode for #name #ty_generics where
-            #direct_drop_bound
-            #sized_bound
-
-            #(#repr_c_bounds,)*
-            #(#carrier_equalities,)*
-            #marker_encode
-            #(#encode_bounds,)*
-
-            #predicates
-        {}
-        impl #impl_generics co3::convert::EncodeUnchecked for #name #ty_generics where
-            #direct_drop_bound
-            #sized_bound
-
-            #(#repr_c_bounds,)*
-            #(#carrier_equalities,)*
-            #marker_unchecked
-            #(#direct_bounds,)*
-
-            #predicates
-        {}
-        impl #decode_impl_generics co3::convert::Decode<'_dšč> for #name #ty_generics where
-            #direct_drop_bound
-            #sized_bound
-
-            #(#repr_c_bounds,)*
-            #(#carrier_equalities,)*
-            #marker_decode
-            #(#decode_bounds,)*
-
-            #predicates
-        {}
-    });
-
-    let repr_c_impl = quote! {
-        impl #impl_generics co3::ReprC for #name #ty_generics
-        where
-            #validity_bound
-            #(#repr_c_bounds,)*
-            #(#extern_c_bounds,)*
-            #predicates
-        {
-            type CType = #carrier;
-        }
-    };
-    quote! {
-        #repr_c_impl
-
-        const _: () = {
-            trait __Co3NonCustomDrop {}
-            impl __Co3NonCustomDrop for co3::rust_spec::drop::NoDrop {}
-            impl __Co3NonCustomDrop for co3::rust_spec::drop::AutoDrop {}
-
-            #sized_impls
-        };
-    }
-}
-
-fn gen_field_encode_bounds<'a>(
-    generics: &'a syn::Generics,
-    fields: &'a [&syn::Type],
-    bound: TokenStream,
-) -> impl Iterator<Item = syn::WherePredicate> + use<'a> {
-    field_types(fields, generics)
-        .filter(|field| !field.phantom)
-        .map(move |field| field.bound(&bound))
-}
-
-fn gen_field_decode_bounds<'a>(
-    generics: &'a syn::Generics,
-    fields: &'a [&syn::Type],
-    bound: TokenStream,
-) -> impl Iterator<Item = syn::WherePredicate> + use<'a> {
-    gen_field_encode_bounds(generics, fields, quote!(#bound<'_dšč>))
-}
-
-fn encode_store_type(fields: &syn::Fields, mode: EncodeMode) -> TokenStream {
-    let fields = fields.iter().map(|syn::Field { ty, .. }| {
-        if mode == EncodeMode::Ref && is_phantom_data(ty) {
-            quote!(())
-        } else if mode == EncodeMode::Ref {
-            quote! { <#ty as __Co3EncodeField<'_ršč>>::Store }
-        } else {
-            quote! { <#ty as co3::convert::EncodeMove>::Store }
-        }
-    });
-
-    quote!((#(#fields,)*))
-}
-
-fn direct_store_type(fields: &syn::Fields, mode: EncodeMode) -> TokenStream {
-    let fields = fields.iter().map(|syn::Field { ty, .. }| {
-        if mode == EncodeMode::Ref && is_phantom_data(ty) {
-            quote!(())
-        } else if mode == EncodeMode::Ref {
-            quote! { <#ty as __Co3EncodeFieldUnchecked<'_ršč>>::SoftStore }
-        } else {
-            quote! { <#ty as co3::convert::EncodeMoveUnchecked>::SoftStore }
-        }
-    });
-
-    quote!((#(#fields,)*))
-}
-
-fn decode_store_type(fields: &syn::Fields) -> TokenStream {
-    let fields = fields.iter().map(|syn::Field { ty, .. }| {
-        quote! { <#ty as co3::convert::DecodeMove<'_dšč>>::Store }
-    });
-
-    quote!((#(#fields,)*))
 }

@@ -1,11 +1,12 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use proc_macro2::{Delimiter, Group, Ident, TokenStream, TokenTree};
-use quote::{format_ident, quote, quote_spanned};
+use quote::{format_ident, quote};
 use syn::{
     Attribute, Error, FnArg, GenericArgument, GenericParam, ItemFn, ItemImpl, LitStr, PatType,
     Result, Type, TypePath,
-    parse::{Parse, ParseStream, Parser},
+    ext::IdentExt,
+    parse::{Parse, ParseStream, Parser, discouraged::Speculative},
     parse_quote, parse_quote_spanned,
     punctuated::Punctuated,
     spanned::Spanned,
@@ -14,7 +15,8 @@ use syn::{
 };
 
 use crate::{
-    Co3Static, DeclKind, DispatchGroups, ForeignItem,
+    Co3Static, DeclKind, DispatchGroups,
+    codec::Conversion,
     utils::{ParamUseDetector, push_error},
     validate::unsupported_attr,
 };
@@ -22,97 +24,107 @@ use crate::{
 const FN_BODIES_NOT_ALLOWED_MSG: &str = "fn bodies are not allowed in declarations";
 const ITEM_NOT_SUPPORTED_MSG: &str = "item not supported";
 const EXPECTED_FEATURE_NAME_MSG: &str = "Expected feature name in `#![feature(...)]`";
-const RAW_IMPL_ITEM_ATTR: &str = "raw";
-pub(crate) const RAW_FN_TYPE_MACRO: &str = "__co3_raw_fn_type";
 
-// Syn cannot parse `raw fn` as a Type. Keep the original syntax inside a type
-// macro so the surrounding type can be parsed normally, even when nested.
-fn mark_raw_fn_types(tokens: TokenStream) -> TokenStream {
-    let (marked, changed) = mark_raw_fn_types_inner(tokens.clone());
-    if changed { marked } else { tokens }
+/// Syn parses the surrounding Rust type. Each embedded `raw fn` has its own
+/// parsed signature, indexed by a fresh identifier reserved for this input.
+struct RawTypes {
+    signatures: Vec<(Ident, syn::Signature, bool)>,
+    source_names: BTreeSet<String>,
+    next_id: usize,
 }
 
-fn mark_raw_fn_types_inner(tokens: TokenStream) -> (TokenStream, bool) {
-    let tokens = tokens.into_iter().collect::<Vec<_>>();
-    let mut output = TokenStream::new();
-    let mut index = 0;
-    let mut changed = false;
-    while index < tokens.len() {
-        if matches!(&tokens[index], TokenTree::Ident(_))
-            && matches!(tokens.get(index + 1), Some(TokenTree::Punct(punct)) if punct.as_char() == '!')
-            && matches!(tokens.get(index + 2), Some(TokenTree::Group(_)))
-        {
-            // Macro arguments belong to the invoked macro, including tokens
-            // that resemble `raw fn` types.
-            output.extend(tokens[index..index + 3].iter().cloned());
-            index += 3;
-            continue;
-        }
-        let is_fn = |at| {
-            matches!(tokens.get(at), Some(TokenTree::Ident(ident)) if ident == "fn")
-                && matches!(tokens.get(at + 1), Some(TokenTree::Group(group)) if group.delimiter() == Delimiter::Parenthesis)
-        };
-        let is_raw_fn = matches!(&tokens[index], TokenTree::Ident(ident) if ident == "raw")
-            && (is_fn(index + 1)
-                || (matches!(tokens.get(index + 1), Some(TokenTree::Ident(ident)) if ident == "extern")
-                    && matches!(tokens.get(index + 2), Some(TokenTree::Literal(_)))
-                    && is_fn(index + 3)));
-        if is_raw_fn {
-            let start = index;
-            index += 1;
-            let mut angle_depth = 0usize;
-            while index < tokens.len() {
-                match &tokens[index] {
-                    TokenTree::Punct(punct) if punct.as_char() == '<' => angle_depth += 1,
-                    TokenTree::Punct(punct) if punct.as_char() == '>' => {
-                        let arrow = index > start
-                            && matches!(&tokens[index - 1], TokenTree::Punct(prev) if prev.as_char() == '-');
-                        if !arrow {
-                            if angle_depth == 0 {
-                                break;
-                            }
-                            angle_depth -= 1;
-                        }
-                    }
-                    TokenTree::Punct(punct)
-                        if angle_depth == 0 && matches!(punct.as_char(), ',' | ';') =>
-                    {
-                        break;
-                    }
-                    _ => {}
-                }
+impl RawTypes {
+    fn extract(&mut self, tokens: TokenStream) -> Result<TokenStream> {
+        let tokens = tokens.into_iter().collect::<Vec<_>>();
+        let mut output = TokenStream::new();
+        let mut index = 0;
+        while index < tokens.len() {
+            if matches!(&tokens[index], TokenTree::Ident(_))
+                && matches!(tokens.get(index + 1), Some(TokenTree::Punct(punct)) if punct.as_char() == '!')
+                && matches!(tokens.get(index + 2), Some(TokenTree::Group(_)))
+            {
+                // Macro arguments belong to the invoked macro, including tokens
+                // that resemble `raw fn` types.
+                output.extend(tokens[index..index + 3].iter().cloned());
+                index += 3;
+                continue;
+            }
+            let is_fn = |at| {
+                matches!(tokens.get(at), Some(TokenTree::Ident(ident)) if ident == "fn")
+                    && matches!(tokens.get(at + 1), Some(TokenTree::Group(group)) if group.delimiter() == Delimiter::Parenthesis)
+            };
+            let is_raw_fn = matches!(&tokens[index], TokenTree::Ident(ident) if ident == "raw")
+                && (is_fn(index + 1)
+                    || (matches!(tokens.get(index + 1), Some(TokenTree::Ident(ident)) if ident == "extern")
+                        && matches!(tokens.get(index + 2), Some(TokenTree::Literal(_)))
+                        && is_fn(index + 3)));
+            if is_raw_fn {
+                let start = index;
                 index += 1;
-            }
-            let inner = mark_raw_fn_types(tokens[start + 1..index].iter().cloned().collect());
-            // The leading `raw` is deliberately left unmarked by processing only
-            // its following tokens; nested signatures are still marked below.
-            let marker = format_ident!("{RAW_FN_TYPE_MACRO}");
-            output.extend(quote!(#marker!(raw #inner)));
-            changed = true;
-            continue;
-        }
-        match &tokens[index] {
-            TokenTree::Group(group) => {
-                let (stream, group_changed) = mark_raw_fn_types_inner(group.stream());
-                if group_changed {
-                    let mut rebuilt = Group::new(group.delimiter(), stream);
-                    rebuilt.set_span(group.span());
-                    output.extend([TokenTree::Group(rebuilt)]);
-                    changed = true;
-                } else {
-                    output.extend([TokenTree::Group(group.clone())]);
+                let mut angle_depth = 0usize;
+                while index < tokens.len() {
+                    match &tokens[index] {
+                        TokenTree::Punct(punct) if punct.as_char() == '<' => angle_depth += 1,
+                        TokenTree::Punct(punct) if punct.as_char() == '>' => {
+                            let arrow = index > start
+                                && matches!(&tokens[index - 1], TokenTree::Punct(prev) if prev.as_char() == '-');
+                            if !arrow {
+                                if angle_depth == 0 {
+                                    break;
+                                }
+                                angle_depth -= 1;
+                            }
+                        }
+                        TokenTree::Ident(ident) if angle_depth == 0 && ident == "where" => break,
+                        TokenTree::Punct(punct)
+                            if angle_depth == 0 && matches!(punct.as_char(), ',' | ';') =>
+                        {
+                            break;
+                        }
+                        _ => {}
+                    }
+                    index += 1;
                 }
+                let raw = &tokens[start];
+                let inner = self.extract(tokens[start + 1..index].iter().cloned().collect())?;
+                let (signature, moved) =
+                    parse_raw_function_type(std::iter::once(raw.clone()).chain(inner).collect())?;
+                let ident = loop {
+                    let name = format!("__Co3RawType{}", self.next_id);
+                    self.next_id += 1;
+                    if !self.source_names.contains(&name) {
+                        break Ident::new(&name, raw.span());
+                    }
+                };
+                self.signatures.push((ident.clone(), signature, moved));
+                output.extend([TokenTree::Ident(ident)]);
+                continue;
             }
-            token => output.extend([token.clone()]),
+            match &tokens[index] {
+                TokenTree::Group(group) => {
+                    let before = self.signatures.len();
+                    let inner = self.extract(group.stream())?;
+                    if before == self.signatures.len() {
+                        output.extend([TokenTree::Group(group.clone())]);
+                    } else {
+                        let mut rebuilt = Group::new(group.delimiter(), inner);
+                        rebuilt.set_span(group.span());
+                        output.extend([TokenTree::Group(rebuilt)]);
+                    }
+                }
+                token => output.extend([token.clone()]),
+            }
+            index += 1;
         }
-        index += 1;
+        Ok(output)
     }
-    (output, changed)
 }
+
 pub(crate) struct ParsedInput {
     pub(crate) kind: DeclKind,
     pub(crate) abi: syn::Abi,
     pub(crate) symbol_prefix: LitStr,
+    pub(crate) language: Conversion,
     pub(crate) symbol_fragments: BTreeMap<String, LitStr>,
     pub(crate) features: MacroFeatures,
     pub(crate) failure_mode: FailureMode,
@@ -143,12 +155,17 @@ struct FfiBody {
 }
 
 pub(crate) enum ParsedItem {
-    Type(syn::ForeignItemType),
+    Type(crate::ForeignItemType),
     Raw(Box<RawFnDecl>),
     Alias(ParsedAlias),
     Static(Co3Static),
-    Impl(ItemImpl),
-    Fn(ItemFn),
+    Impl(ParsedImpl),
+    Fn(crate::Co3Fn),
+}
+
+pub(crate) struct ParsedImpl {
+    pub(crate) item: crate::Co3Impl,
+    pub(crate) raw_methods: BTreeMap<usize, proc_macro2::Span>,
 }
 
 pub(crate) struct ParsedAlias {
@@ -156,36 +173,10 @@ pub(crate) struct ParsedAlias {
     pub(crate) raw_root: bool,
 }
 
-struct RawFnTypeArg {
-    attrs: Vec<Attribute>,
-    by_val: bool,
-    ty: Type,
-}
-
-impl Parse for RawFnTypeArg {
-    fn parse(input: ParseStream) -> syn::Result<Self> {
-        let attrs = input.call(Attribute::parse_outer)?;
-        let by_val = input.peek(syn::Token![move]);
-        if by_val {
-            input.parse::<syn::Token![move]>()?;
-        }
-        let ty = input.parse::<Type>()?;
-        Ok(Self { attrs, by_val, ty })
-    }
-}
-
-struct RawFnTypeArgs(Punctuated<RawFnTypeArg, syn::Token![,]>);
-
-impl Parse for RawFnTypeArgs {
-    fn parse(input: ParseStream) -> syn::Result<Self> {
-        Ok(Self(Punctuated::parse_terminated(input)?))
-    }
-}
-
 pub(crate) struct RawFnDecl {
     pub(crate) attrs: Vec<Attribute>,
     pub(crate) vis: syn::Visibility,
-    pub(crate) callee: TokenStream,
+    pub(crate) callee: syn::ExprPath,
     pub(crate) sig: syn::Signature,
     pub(crate) owner: Option<RawFnOwner>,
     pub(crate) dispatch_args: crate::DispatchGroups,
@@ -223,8 +214,8 @@ impl VisitMut for ConstGenericArgNormalizer {
     }
 }
 
-impl syn::parse::Parse for ParsedItem {
-    fn parse(input: ParseStream) -> Result<Self> {
+impl ParsedItem {
+    fn parse(input: ParseStream, raw_block: bool) -> Result<Self> {
         let ahead = input.fork();
         let _ = ahead.call(syn::Attribute::parse_outer)?;
         if ahead.peek(syn::Token![impl]) {
@@ -236,14 +227,21 @@ impl syn::parse::Parse for ParsedItem {
             return Err(ahead.error(ITEM_NOT_SUPPORTED_MSG));
         }
         if ahead.peek(syn::Token![type]) {
-            let ty = if contains_dispatch_predicate(input)? {
-                parse_type_item(input)?
-            } else if is_type_alias(input)? {
-                return Ok(Self::Alias(parse_type_alias(input)?));
-            } else {
-                input.parse::<syn::ForeignItemType>()?
-            };
-            return Ok(Self::Type(ty));
+            if is_type_alias(input)? {
+                if raw_block {
+                    ahead.parse::<syn::Token![type]>()?;
+                    let name: Ident = ahead.parse()?;
+                    return Err(Error::new_spanned(
+                        name,
+                        "type aliases are not allowed in `raw!`; use a Rust alias or declare a raw alias in `ffi!`",
+                    ));
+                }
+                return Ok(Self::Alias(ParsedAlias {
+                    item: input.parse()?,
+                    raw_root: false,
+                }));
+            }
+            return Ok(Self::Type(parse_type_item(input)?));
         }
         if ahead.peek(syn::Token![static]) {
             return Ok(Self::Static(parse_static_item(input)?));
@@ -256,33 +254,6 @@ impl syn::parse::Parse for ParsedItem {
         }
 
         Err(input.error(ITEM_NOT_SUPPORTED_MSG))
-    }
-}
-
-impl ParsedItem {
-    pub(crate) fn normalize(self) -> Result<ForeignItem> {
-        match self {
-            Self::Type(mut ty) => {
-                let (id, id_value, covariant_lifetimes) =
-                    parse_opaque_type_attrs(&mut ty.attrs, &ty.generics)?;
-                Ok(ForeignItem::Type(crate::ForeignItemType {
-                    ty,
-                    id: id.map(Box::new),
-                    id_value: id_value.map(Box::new),
-                    covariant_lifetimes,
-                    drop: None,
-                    self_impls: Vec::new(),
-                }))
-            }
-            Self::Alias(_) => unreachable!("type aliases are emitted separately"),
-            Self::Static(item) => Ok(ForeignItem::Static(item)),
-            Self::Impl(item) => normalize_impl(item).map(ForeignItem::Impl),
-            Self::Fn(item) => normalize_fn(item).map(ForeignItem::Fn),
-            Self::Raw(item) => Err(syn::Error::new_spanned(
-                item.sig.ident,
-                "raw function declarations must be collected before normalization",
-            )),
-        }
     }
 }
 
@@ -308,83 +279,50 @@ fn is_type_alias(input: ParseStream) -> syn::Result<bool> {
     Ok(false)
 }
 
-fn parse_type_alias(input: ParseStream) -> syn::Result<ParsedAlias> {
-    let mut tokens = TokenStream::new();
-    loop {
-        let token = input.parse::<TokenTree>()?;
-        let end = matches!(&token, TokenTree::Punct(punct) if punct.as_char() == ';');
-        tokens.extend([token]);
-        if end {
-            break;
-        }
-    }
-    let item: syn::ItemType = syn::parse2(mark_raw_fn_types(tokens))?;
-    let raw_root =
-        matches!(item.ty.as_ref(), Type::Macro(mac) if mac.mac.path.is_ident(RAW_FN_TYPE_MACRO));
-    Ok(ParsedAlias { item, raw_root })
-}
-
 pub(crate) fn parse_raw_function_type(tokens: TokenStream) -> Result<(syn::Signature, bool)> {
-    let source = tokens.clone();
-    let mut raw_sig = tokens.into_iter();
-    let Some(TokenTree::Ident(raw)) = raw_sig.next() else {
-        return Err(syn::Error::new_spanned(source, "expected `raw fn`"));
-    };
-    if raw != "raw" {
-        return Err(syn::Error::new_spanned(raw, "expected `raw fn`"));
-    }
-    let mut signature_tokens = TokenStream::new();
-    let mut saw_fn = false;
-    while let Some(token) = raw_sig.next() {
-        let is_fn = !saw_fn && matches!(&token, TokenTree::Ident(ident) if ident == "fn");
-        signature_tokens.extend(core::iter::once(token));
-        if is_fn {
-            signature_tokens.extend(quote!(__co3_callback_type));
-            let Some(TokenTree::Group(args)) = raw_sig.next() else {
-                return Err(syn::Error::new_spanned(
-                    &signature_tokens,
-                    "expected argument types in raw function pointer",
-                ));
-            };
-            if args.delimiter() != Delimiter::Parenthesis {
-                return Err(syn::Error::new(
-                    args.span(),
-                    "expected raw function argument list",
-                ));
-            }
-            let RawFnTypeArgs(args_list) = syn::parse2(args.stream())?;
-            let converted = args_list.into_iter().enumerate().map(|(index, arg)| {
-                let name = format_ident!("__co3_arg_{index}");
-                let attrs = arg.attrs;
-                let by_val = arg.by_val.then(|| quote!(move));
-                let ty = arg.ty;
-                quote!(#(#attrs)* #name: #by_val #ty)
-            });
-            let mut converted_group = Group::new(Delimiter::Parenthesis, quote!(#(#converted),*));
-            converted_group.set_span(args.span());
-            signature_tokens.extend(core::iter::once(TokenTree::Group(converted_group)));
-            saw_fn = true;
-            continue;
+    (|input: ParseStream| {
+        let raw: Ident = input.parse()?;
+        if raw != "raw" {
+            return Err(Error::new(raw.span(), "expected `raw fn`"));
         }
-    }
-    if !saw_fn {
-        return Err(syn::Error::new_spanned(
-            signature_tokens,
-            "expected `fn` after `raw`",
-        ));
-    }
-    signature_tokens.extend(quote!(;));
-    let mut fn_attrs = Vec::new();
-    let parser = |input: ParseStream| {
-        let signature = parse_signature(input, &mut fn_attrs)?;
-        input.parse::<syn::Token![;]>()?;
-        Ok(signature)
-    };
-    let signature = parser.parse2(signature_tokens)?;
-    Ok((
-        signature,
-        fn_attrs.iter().any(crate::ffi_fn::is_by_val_attr),
-    ))
+        let abi = input.parse()?;
+        let fn_token = input.parse()?;
+        let content;
+        let paren_token = syn::parenthesized!(content in input);
+        let mut inputs = Punctuated::new();
+        while !content.is_empty() {
+            let mut attrs = content.call(Attribute::parse_outer)?;
+            parse_move_by_val(&content, &mut attrs)?;
+            let name = format_ident!("__co3_arg_{}", inputs.len());
+            inputs.push_value(FnArg::Typed(PatType {
+                attrs,
+                pat: Box::new(parse_quote!(#name)),
+                colon_token: Default::default(),
+                ty: content.parse()?,
+            }));
+            if content.is_empty() {
+                break;
+            }
+            inputs.push_punct(content.parse()?);
+        }
+        let mut attrs = Vec::new();
+        let output = parse_output(input, &mut attrs)?;
+        let sig = syn::Signature {
+            constness: None,
+            asyncness: None,
+            safety: Default::default(),
+            abi,
+            fn_token,
+            ident: format_ident!("__co3_callback_type"),
+            generics: Default::default(),
+            paren_token,
+            inputs,
+            variadic: None,
+            output,
+        };
+        Ok((sig, !attrs.is_empty()))
+    })
+    .parse2(tokens)
 }
 
 fn parse_raw_fn_item(input: ParseStream) -> Result<RawFnDecl> {
@@ -392,105 +330,19 @@ fn parse_raw_fn_item(input: ParseStream) -> Result<RawFnDecl> {
     let vis = input.parse::<syn::Visibility>()?;
     let keyword = input.parse::<syn::Ident>()?;
     debug_assert_eq!(keyword, "raw");
-    let sig = parse_signature(input, &mut attrs)?;
-    if input.peek(syn::token::Brace) {
-        return Err(input.error(FN_BODIES_NOT_ALLOWED_MSG));
-    }
-    input.parse::<syn::Token![;]>()?;
+    let (sig, predicates) = parse_signature(input, &mut attrs)?;
+    let dispatch_args = dispatch_groups(&mut attrs, &sig.generics, predicates, None)?;
+    end_fn(input)?;
 
     let ident = &sig.ident;
     Ok(RawFnDecl {
         attrs,
         vis,
-        callee: quote!(#ident),
+        callee: syn::parse_quote!(#ident),
         sig,
         owner: None,
-        dispatch_args: Default::default(),
-    })
-}
-
-fn normalize_impl(mut item: ItemImpl) -> Result<crate::Co3Impl> {
-    crate::normalize_dyn_self_tag_ids(&mut item);
-
-    let mut errors = None;
-    let mut dispatch_args = match parse_dispatch_attr(&item.attrs, &item.generics) {
-        Ok(groups) => groups,
-        Err(err) => {
-            push_error(&mut errors, err);
-            Default::default()
-        }
-    };
-    if let Err(err) = validate_dispatch_cycles(&dispatch_args, Some(&item.self_ty)) {
-        push_error(&mut errors, err);
-    }
-    dispatch_args.concretize_self(&item.self_ty);
-    if !dispatch_args.is_empty() {
-        item.attrs.retain(|attr| !attr.path().is_ident("erased"));
-    }
-    let method_dispatch_args = match parse_dyn_methods(&mut item) {
-        Ok(groups) => groups,
-        Err(err) => {
-            push_error(&mut errors, err);
-            Default::default()
-        }
-    };
-    if let Some(errors) = errors {
-        return Err(errors);
-    }
-
-    Ok(crate::Co3Impl {
-        item,
-        import_mode: crate::ImportMode::Regular,
-        dispatch_args,
-        method_dispatch_args,
-    })
-}
-
-fn normalize_fn(mut item: ItemFn) -> Result<crate::Co3Fn> {
-    let dispatch_args = parse_dispatch_attr(&item.attrs, &item.sig.generics)?;
-    validate_dispatch_cycles(&dispatch_args, None)?;
-    if !dispatch_args.is_empty() {
-        item.attrs.retain(|attr| !attr.path().is_ident("erased"));
-    }
-
-    Ok(crate::Co3Fn {
-        item,
-        import_mode: crate::ImportMode::Regular,
         dispatch_args,
     })
-}
-
-fn parse_dyn_methods(impl_: &mut ItemImpl) -> Result<HashMap<syn::Ident, DispatchGroups>> {
-    let mut dispatch_args = HashMap::new();
-    let mut errors = None;
-
-    for item in &mut impl_.items {
-        let syn::ImplItem::Fn(syn::ImplItemFn { attrs, sig, .. }) = item else {
-            continue;
-        };
-        if !attrs.iter().any(|attr| attr.path().is_ident("erased")) {
-            continue;
-        }
-
-        let mut groups = match parse_dispatch_attr(attrs, &sig.generics) {
-            Ok(groups) => groups,
-            Err(err) => {
-                push_error(&mut errors, err);
-                continue;
-            }
-        };
-        if let Err(err) = validate_dispatch_cycles(&groups, Some(&impl_.self_ty)) {
-            push_error(&mut errors, err);
-        }
-        groups.concretize_self(&impl_.self_ty);
-        attrs.retain(|attr| !attr.path().is_ident("erased"));
-
-        if dispatch_args.insert(sig.ident.clone(), groups).is_some() {
-            return Err(syn::Error::new_spanned(&sig.ident, "duplicate method"));
-        }
-    }
-
-    errors.map_or(Ok(dispatch_args), Err)
 }
 
 fn parse_static_item(input: ParseStream) -> Result<Co3Static> {
@@ -520,29 +372,11 @@ fn parse_static_item(input: ParseStream) -> Result<Co3Static> {
     })
 }
 
-fn contains_dispatch_predicate(input: ParseStream) -> Result<bool> {
-    let ahead = input.fork();
-    let mut in_where_clause = false;
-
-    while !ahead.is_empty() && !ahead.peek(syn::Token![;]) {
-        let token = ahead.parse::<TokenTree>()?;
-        match token {
-            TokenTree::Ident(ident) if ident == "where" => in_where_clause = true,
-            TokenTree::Punct(punct) if in_where_clause && punct.as_char() == '@' => {
-                return Ok(true);
-            }
-            _ => {}
-        }
-    }
-
-    Ok(false)
-}
-
-fn parse_items(input: ParseStream) -> Result<Vec<ParsedItem>> {
+fn parse_items(input: ParseStream, raw_block: bool) -> Result<Vec<ParsedItem>> {
     let mut items = Vec::new();
 
     while !input.is_empty() {
-        items.push(input.parse()?);
+        items.push(ParsedItem::parse(input, raw_block)?);
     }
 
     Ok(items)
@@ -550,7 +384,15 @@ fn parse_items(input: ParseStream) -> Result<Vec<ParsedItem>> {
 
 impl ParsedInput {
     pub(crate) fn parse(tokens: TokenStream) -> Result<Self> {
-        let FfiBody { mut attrs, items } = parse_ffi_body(mark_raw_fn_types(tokens))?;
+        let mut raw = RawTypes {
+            signatures: Vec::new(),
+            source_names: crate::utils::source_idents(tokens.clone()),
+            next_id: 0,
+        };
+        let FfiBody {
+            mut attrs,
+            mut items,
+        } = parse_ffi_body(raw.extract(tokens)?, false)?;
         let (kind, abi) = take_decl_attr(&mut attrs)?;
         let symbol_prefix =
             parse_symbol_prefix_attr(&mut attrs)?.unwrap_or_else(default_symbol_prefix);
@@ -558,11 +400,14 @@ impl ParsedInput {
         let symbol_fragments = parse_symbol_fragments_attr(&mut attrs)?;
         let failure_mode = parse_failure_attr(&mut attrs)?;
         let features = parse_feature_attrs(&mut attrs)?;
+        let language = parse_language_attr(&mut attrs, kind)?;
+        crate::callback::lower_raw_types(raw.signatures, &mut items, failure_mode, &abi)?;
 
         Ok(Self {
             kind,
             abi,
             symbol_prefix,
+            language,
             symbol_fragments,
             features,
             failure_mode,
@@ -574,7 +419,7 @@ impl ParsedInput {
 
 impl ParsedRawInput {
     pub(crate) fn parse(tokens: TokenStream) -> Result<Self> {
-        let FfiBody { mut attrs, items } = parse_ffi_body(tokens)?;
+        let FfiBody { mut attrs, items } = parse_ffi_body(tokens, true)?;
         let failure_mode = parse_failure_attr(&mut attrs)?;
         if let Some(attr) = attrs.first() {
             return Err(syn::Error::new_spanned(
@@ -657,27 +502,10 @@ fn default_symbol_prefix() -> LitStr {
     )
 }
 
-fn parse_ffi_body(tokens: TokenStream) -> Result<FfiBody> {
+fn parse_ffi_body(tokens: TokenStream, raw_block: bool) -> Result<FfiBody> {
     let parser = |input: syn::parse::ParseStream| -> Result<FfiBody> {
-        let mut attr_tokens = TokenStream::new();
-
-        while input.peek(syn::Token![#]) {
-            let ahead = input.fork();
-            ahead.parse::<syn::Token![#]>()?;
-            if !ahead.peek(syn::Token![!]) {
-                break;
-            }
-
-            input.parse::<syn::Token![#]>()?;
-            input.parse::<syn::Token![!]>()?;
-            let content;
-            syn::bracketed!(content in input);
-            let tokens = normalize_extern_attr_tokens(content.parse::<TokenStream>()?);
-            attr_tokens.extend(quote!(#![#tokens]));
-        }
-
-        let attrs = Attribute::parse_inner.parse2(attr_tokens)?;
-        let items = parse_items(input)?;
+        let attrs = input.call(Attribute::parse_inner)?;
+        let items = parse_items(input, raw_block)?;
 
         Ok(FfiBody { attrs, items })
     };
@@ -716,30 +544,96 @@ fn take_decl_attr(attrs: &mut Vec<Attribute>) -> Result<(DeclKind, syn::Abi)> {
 fn parse_decl_attr(attr: &Attribute) -> Result<(DeclKind, syn::Abi)> {
     let err_msg = "expected `#![unsafe(export(\"...\"))]` or `#![unsafe(extern(\"...\"))]`";
 
-    let syn::Meta::List(list) = &attr.meta else {
-        return Err(syn::Error::new_spanned(attr, err_msg));
-    };
+    attr.parse_args_with(|input: ParseStream| {
+        let direction = input.call(Ident::parse_any)?;
+        let kind = match direction.unraw().to_string().as_str() {
+            "export" => DeclKind::Export,
+            "extern" => DeclKind::Extern,
+            _ => return Err(input.error(err_msg)),
+        };
+        let value;
+        syn::parenthesized!(value in input);
+        let abi = syn::Abi {
+            extern_token: Default::default(),
+            name: Some(value.parse()?),
+        };
+        if !value.is_empty() {
+            return Err(value.error(err_msg));
+        }
+        Ok((kind, abi))
+    })
+    .map_err(|_| Error::new_spanned(attr, err_msg))
+}
 
-    let nested = syn::parse2::<syn::Meta>(list.tokens.clone())
-        .map_err(|_| syn::Error::new_spanned(attr, err_msg))?;
-    let syn::Meta::List(nested) = nested else {
-        return Err(syn::Error::new_spanned(attr, err_msg));
-    };
-
-    let path = &nested.path;
-    let kind = if path.is_ident("export") {
-        DeclKind::Export
-    } else if path.is_ident("r#extern") {
-        DeclKind::Extern
-    } else {
-        return Err(syn::Error::new_spanned(attr, err_msg));
-    };
-
-    let abi_lit = syn::parse2::<LitStr>(nested.tokens.clone())
-        .map_err(|_| syn::Error::new_spanned(attr, err_msg))?;
-    let abi = syn::parse2(quote!(extern #abi_lit))?;
-
-    Ok((kind, abi))
+fn parse_language_attr(attrs: &mut Vec<Attribute>, kind: DeclKind) -> Result<Conversion> {
+    let mut language = None;
+    let mut kept = Vec::new();
+    for attr in attrs.drain(..) {
+        if !attr.path().is_ident("lang") {
+            kept.push(attr);
+            continue;
+        }
+        if language.is_some() {
+            return Err(syn::Error::new_spanned(
+                attr,
+                "Duplicate `#![lang = \"...\"]`",
+            ));
+        }
+        let value = match &attr.meta {
+            syn::Meta::NameValue(nv) => match &nv.value {
+                syn::Expr::Lit(syn::ExprLit {
+                    lit: syn::Lit::Str(value),
+                    ..
+                }) => value,
+                _ => {
+                    return Err(syn::Error::new_spanned(
+                        attr,
+                        "Expected `#![lang = \"...\"]`",
+                    ));
+                }
+            },
+            _ => {
+                return Err(syn::Error::new_spanned(
+                    attr,
+                    "Expected `#![lang = \"...\"]`",
+                ));
+            }
+        };
+        let name = match value.value().as_str() {
+            "C" => "C",
+            "C++" => "Cpp",
+            "Rust" => "Rust",
+            "Swift" => "Swift",
+            "Objective-C" => "ObjectiveC",
+            "Java" => "Java",
+            "C#" => "CSharp",
+            "Python" => "Python",
+            _ => {
+                return Err(syn::Error::new_spanned(
+                    value,
+                    "Unsupported language; expected C, C++, Rust, Swift, Objective-C, Java, C#, or Python",
+                ));
+            }
+        };
+        if kind == DeclKind::Export && !matches!(name, "Rust" | "C") {
+            return Err(Error::new_spanned(
+                value,
+                "Exports support only `#![lang = \"C\"]` or `#![lang = \"Rust\"]`",
+            ));
+        }
+        if name == "Rust" {
+            language = Some(Conversion::Unchecked);
+            continue;
+        }
+        let ident = syn::Ident::new(name, value.span());
+        let co3 = crate::utils::co3_path();
+        language = Some(Conversion::Checked(syn::parse_quote!(#co3::lang::#ident)));
+    }
+    *attrs = kept;
+    Ok(language.unwrap_or_else(|| {
+        let co3 = crate::utils::co3_path();
+        Conversion::Checked(syn::parse_quote!(#co3::lang::C))
+    }))
 }
 
 fn parse_symbol_prefix_attr(attrs: &mut Vec<Attribute>) -> Result<Option<LitStr>> {
@@ -909,29 +803,74 @@ fn parse_failure_attr(attrs: &mut Vec<Attribute>) -> Result<FailureMode> {
     Ok(failure_mode.unwrap_or_default())
 }
 
-pub(crate) fn parse_dispatch_attr(
-    attrs: &[syn::Attribute],
+struct DispatchPredicate {
+    params: syn::PreciseCapture,
+    targets: Vec<syn::AngleBracketedGenericArguments>,
+}
+
+impl Parse for DispatchPredicate {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let params = input.parse()?;
+        input.parse::<syn::Token![@]>()?;
+        let parse_target = |input: ParseStream| {
+            input
+                .parse()
+                .map_err(|_| input.error("expected a tagged-dispatch type list such as `<Type>`"))
+        };
+        let targets = if input.peek(syn::token::Paren) {
+            let group;
+            syn::parenthesized!(group in input);
+            group
+                .parse_terminated(parse_target, syn::Token![|])?
+                .into_iter()
+                .collect()
+        } else {
+            let target = parse_target(input)?;
+            if input.peek(syn::Token![|]) {
+                return Err(input.error(
+                    "enclose tagged-dispatch alternatives in parentheses, as in `(<T> | <U>)`",
+                ));
+            }
+            vec![target]
+        };
+        Ok(Self { params, targets })
+    }
+}
+
+fn dispatch_groups(
+    attrs: &mut Vec<Attribute>,
     generics: &syn::Generics,
+    mut predicates: Vec<DispatchPredicate>,
+    self_ty: Option<&Type>,
 ) -> Result<DispatchGroups> {
-    let mut dispatch_attrs = attrs.iter().filter(|attr| attr.path().is_ident("erased"));
-    let Some(attr) = dispatch_attrs.next() else {
-        return Ok(Default::default());
-    };
-    if let Some(duplicate) = dispatch_attrs.next() {
-        let err_msg = "duplicate tagged-dispatch predicate";
-        return Err(syn::Error::new_spanned(duplicate, err_msg));
+    // Explicit attributes, when present, contain the caller's original syntax.
+    if let Some(i) = attrs.iter().position(|a| a.path().is_ident("erased")) {
+        let attr = attrs.remove(i);
+        if !predicates.is_empty() || attrs.iter().any(|a| a.path().is_ident("erased")) {
+            return Err(Error::new_spanned(
+                attr,
+                "duplicate tagged-dispatch predicate",
+            ));
+        }
+        predicates = attr
+            .parse_args_with(Punctuated::<DispatchPredicate, syn::Token![,]>::parse_terminated)?
+            .into_iter()
+            .collect();
     }
 
-    let syn::Meta::List(list) = &attr.meta else {
-        let err = "tagged dispatch must provide concrete generic arguments";
-        return Err(syn::Error::new_spanned(attr, err));
-    };
-
-    let groups = (|input: ParseStream| parse_dispatch_groups(generics, input))
-        .parse2(list.tokens.clone())?;
-
+    let mut assigned = HashSet::new();
+    let mut groups = BTreeMap::new();
+    for predicate in predicates {
+        let group = parse_dispatch_group(generics, &mut assigned, &predicate.params)?;
+        groups.insert(group, predicate.targets);
+    }
     validate_dispatch_targets(generics, &groups)?;
-    Ok(DispatchGroups { groups })
+    let mut dispatch = DispatchGroups { groups };
+    validate_dispatch_cycles(&dispatch, self_ty)?;
+    if let Some(self_ty) = self_ty {
+        dispatch.concretize_self(self_ty);
+    }
+    Ok(dispatch)
 }
 
 fn validate_dispatch_targets(
@@ -1073,59 +1012,8 @@ impl<'ast> Visit<'ast> for UsesSelf {
     }
 }
 
-fn parse_dispatch_groups(
-    generics: &syn::Generics,
-    input: ParseStream,
-) -> Result<BTreeMap<Vec<syn::Ident>, Vec<syn::AngleBracketedGenericArguments>>> {
-    let mut assigned = HashSet::new();
-    let mut groups = BTreeMap::new();
-
-    let declared_types = generics
-        .params
-        .iter()
-        .filter_map(|param| match param {
-            GenericParam::Type(param) => Some(param.ident.clone()),
-            GenericParam::Const(_) | GenericParam::Lifetime(_) => None,
-        })
-        .collect::<HashSet<_>>();
-
-    let declared_consts = generics
-        .params
-        .iter()
-        .filter_map(|param| match param {
-            GenericParam::Const(param) => Some(param.ident.clone()),
-            GenericParam::Type(_) | GenericParam::Lifetime(_) => None,
-        })
-        .collect::<HashSet<_>>();
-
-    while !input.is_empty() {
-        let dispatch_params = input.parse::<syn::PreciseCapture>()?;
-
-        input.parse::<syn::Token![@]>()?;
-        let targets;
-        syn::parenthesized!(targets in input);
-        let generic_args = Punctuated::<_, syn::Token![|]>::parse_terminated(&targets)?;
-
-        let group = parse_dispatch_group(
-            &declared_types,
-            &declared_consts,
-            &mut assigned,
-            &dispatch_params,
-        )?;
-        groups.insert(group, generic_args.into_iter().collect());
-
-        if input.is_empty() {
-            break;
-        }
-        input.parse::<syn::Token![,]>()?;
-    }
-
-    Ok(groups)
-}
-
 fn parse_dispatch_group(
-    declared_types: &HashSet<syn::Ident>,
-    declared_consts: &HashSet<syn::Ident>,
+    generics: &syn::Generics,
     assigned: &mut HashSet<syn::Ident>,
     params: &syn::PreciseCapture,
 ) -> Result<Vec<syn::Ident>> {
@@ -1154,7 +1042,9 @@ fn parse_dispatch_group(
             continue;
         };
 
-        if !declared_types.contains(&ident) && !declared_consts.contains(&ident) {
+        if !generics.type_params().any(|p| p.ident == ident)
+            && !generics.const_params().any(|p| p.ident == ident)
+        {
             let err = "dispatch parameter is not declared on this item";
             push_error(&mut errors, syn::Error::new_spanned(ident, err));
             continue;
@@ -1252,34 +1142,6 @@ pub(crate) fn parse_opaque_type_attrs(
     Ok((tag_ty, tag_value, covariant_lifetimes))
 }
 
-fn normalize_extern_attr_tokens(tokens: TokenStream) -> TokenStream {
-    tokens
-        .into_iter()
-        .map(|token| match token {
-            TokenTree::Ident(ident) if ident == "extern" => {
-                let mut ident = Ident::new_raw("extern", ident.span());
-
-                ident.set_span(ident.span());
-                TokenTree::Ident(ident)
-            }
-            TokenTree::Group(group) => {
-                let mut normalized = Group::new(
-                    match group.delimiter() {
-                        Delimiter::Parenthesis => Delimiter::Parenthesis,
-                        Delimiter::Brace => Delimiter::Brace,
-                        Delimiter::Bracket => Delimiter::Bracket,
-                        Delimiter::None => Delimiter::None,
-                    },
-                    normalize_extern_attr_tokens(group.stream()),
-                );
-                normalized.set_span(group.span());
-                TokenTree::Group(normalized)
-            }
-            token => token,
-        })
-        .collect()
-}
-
 fn is_fn_head(input: syn::parse::ParseStream) -> syn::Result<bool> {
     let ahead = input.fork();
 
@@ -1290,209 +1152,91 @@ fn is_fn_head(input: syn::parse::ParseStream) -> syn::Result<bool> {
     Ok(ahead.peek(syn::Token![fn]))
 }
 
-fn preprocess_dispatch_where_clause(
-    header: TokenStream,
-) -> syn::Result<(TokenStream, Vec<Attribute>)> {
-    fn split_top_level(tokens: TokenStream, separator: char) -> Vec<TokenStream> {
-        let mut parts = Vec::new();
-        let mut angle_depth = 0usize;
-        for token in tokens {
-            if parts.is_empty() {
-                parts.push(TokenStream::new());
-            }
-            match &token {
-                proc_macro2::TokenTree::Punct(punct) if punct.as_char() == '<' => angle_depth += 1,
-                proc_macro2::TokenTree::Punct(punct) if punct.as_char() == '>' => {
-                    angle_depth = angle_depth.saturating_sub(1)
-                }
-                proc_macro2::TokenTree::Punct(punct)
-                    if punct.as_char() == separator && angle_depth == 0 =>
-                {
-                    parts.push(TokenStream::new());
-                    continue;
-                }
-                _ => {}
-            }
-            parts.last_mut().unwrap().extend(core::iter::once(token));
-        }
-        parts
+fn parse_where_clause(
+    input: ParseStream,
+    generics: &mut syn::Generics,
+) -> Result<Vec<DispatchPredicate>> {
+    if !input.peek(syn::Token![where]) {
+        return Ok(Vec::new());
     }
-
-    fn is_where(token: &proc_macro2::TokenTree) -> bool {
-        matches!(token, proc_macro2::TokenTree::Ident(ident) if ident == "where")
-    }
-
-    fn normalize_targets(tokens: TokenStream) -> syn::Result<Vec<TokenStream>> {
-        let tokens = tokens.into_iter().collect::<Vec<_>>();
-        let target_tokens = if let [proc_macro2::TokenTree::Group(group)] = tokens.as_slice()
-            && group.delimiter() == proc_macro2::Delimiter::Parenthesis
-        {
-            split_top_level(group.stream(), '|')
+    let where_token = input.parse()?;
+    let mut predicates = Punctuated::new();
+    let mut dispatch = Vec::new();
+    while !input.is_empty() && !input.peek(syn::Token![;]) && !input.peek(syn::token::Brace) {
+        if input.peek(syn::Token![use]) {
+            dispatch.push(input.parse()?);
         } else {
-            vec![tokens.into_iter().collect()]
-        };
+            let predicate: syn::WherePredicate = input.parse()?;
+            if !dispatch.is_empty() {
+                return Err(Error::new_spanned(
+                    predicate,
+                    "tagged-dispatch predicates must be last in a `where` clause",
+                ));
+            }
+            predicates.push_value(predicate);
+        }
+        if !input.peek(syn::Token![,]) {
+            break;
+        }
+        let comma = input.parse::<syn::Token![,]>()?;
+        if dispatch.is_empty() {
+            predicates.push_punct(comma);
+        }
+    }
+    if !predicates.is_empty() {
+        generics.where_clause = Some(syn::WhereClause {
+            where_token,
+            predicates,
+        });
+    }
+    Ok(dispatch)
+}
 
-        for target in &target_tokens {
-            syn::parse2::<syn::AngleBracketedGenericArguments>(target.clone()).map_err(|_| {
-                let err = "expected a tagged-dispatch type list such as `<Type>`";
-                syn::Error::new_spanned(target, err)
+fn parse_generics(input: ParseStream) -> Result<syn::Generics> {
+    if !input.peek(syn::Token![<]) {
+        return Ok(Default::default());
+    }
+    let lt_token = Some(input.parse()?);
+    let mut params = Punctuated::new();
+    while !input.peek(syn::Token![>]) {
+        let param = if input.peek(syn::Token![dyn]) {
+            let keyword: syn::Token![dyn] = input.parse()?;
+            if !input.peek(syn::token::Paren) {
+                return Err(Error::new(
+                    keyword.span,
+                    "tagged-dispatch type parameters must use `dyn(TagTy) T`",
+                ));
+            }
+            let repr;
+            let parens = syn::parenthesized!(repr in input);
+            // Keep the user's tag type tokens on their parameter.
+            let mut attr: Attribute = parse_quote_spanned!(keyword.span=> #[erased()]);
+            let syn::Meta::List(list) = &mut attr.meta else {
+                unreachable!()
+            };
+            list.tokens = repr.parse()?;
+            syn::parse2::<Type>(list.tokens.clone()).map_err(|_| {
+                Error::new(parens.span.join(), "expected id repr in `dyn(TagTy) T`")
             })?;
-        }
-
-        Ok(target_tokens)
-    }
-
-    let tokens = header.into_iter().collect::<Vec<_>>();
-    let Some(where_idx) = tokens.iter().position(is_where) else {
-        return Ok((tokens.into_iter().collect(), Vec::new()));
-    };
-
-    let prefix = tokens[..where_idx].iter().cloned().collect::<TokenStream>();
-    let predicates = tokens[where_idx + 1..]
-        .iter()
-        .cloned()
-        .collect::<TokenStream>();
-
-    let mut dispatch_span = None;
-    let mut kept = Vec::new();
-
-    let mut dispatch_predicates = Vec::new();
-    for predicate in split_top_level(predicates, ',') {
-        if predicate.is_empty() {
-            continue;
-        }
-
-        let predicate_tokens = predicate.clone().into_iter().collect::<Vec<_>>();
-        let Some(at_idx) = predicate_tokens.iter().position(
-            |token| matches!(token, proc_macro2::TokenTree::Punct(punct) if punct.as_char() == '@'),
-        ) else {
-            if !dispatch_predicates.is_empty() {
-                let err = "tagged-dispatch predicates must be last in a `where` clause";
-                return Err(syn::Error::new_spanned(predicate, err));
-            }
-            kept.push(predicate);
-            continue;
+            list.delimiter = syn::MacroDelimiter::Paren(parens);
+            let mut param: syn::TypeParam = input.parse()?;
+            param.attrs.push(attr);
+            GenericParam::Type(param)
+        } else {
+            input.parse()?
         };
-
-        let params = predicate_tokens[..at_idx]
-            .iter()
-            .cloned()
-            .collect::<TokenStream>();
-        let params = syn::parse2::<syn::PreciseCapture>(params).map_err(|_| {
-            let err_msg = "expected dispatch parameters such as `use<T>` before `@`";
-            syn::Error::new_spanned(&predicate, err_msg)
-        })?;
-        for param in &params.params {
-            if let syn::CapturedParam::Lifetime(lifetime) = param {
-                let err = "dispatch parameters cannot be lifetimes";
-                return Err(syn::Error::new_spanned(lifetime, err));
-            }
+        params.push_value(param);
+        if !input.peek(syn::Token![,]) {
+            break;
         }
-        let targets = predicate_tokens[at_idx + 1..]
-            .iter()
-            .cloned()
-            .collect::<TokenStream>();
-        let targets = normalize_targets(targets)?;
-        dispatch_span.get_or_insert(predicate.span());
-        dispatch_predicates.push(quote!(#params @ (#(#targets)|*)));
+        params.push_punct(input.parse()?);
     }
-
-    let mut attrs = Vec::new();
-    if !dispatch_predicates.is_empty() {
-        let span = dispatch_span.expect("dispatch predicate has a span");
-        attrs.push(parse_quote_spanned!(span=> #[erased(#(#dispatch_predicates),*)]));
-    }
-
-    if kept.is_empty() {
-        return Ok((prefix, attrs));
-    }
-    Ok((quote!(#prefix where #(#kept),*), attrs))
-}
-
-fn preprocess_dispatch_params(header: TokenStream) -> syn::Result<TokenStream> {
-    let mut out = TokenStream::new();
-    let tokens = header.into_iter().collect::<Vec<_>>();
-    let mut angle_depth = 0usize;
-    let mut at_param_start = false;
-    let mut generic_params_finished = false;
-
-    let mut idx = 0usize;
-    while idx < tokens.len() {
-        let tt = tokens[idx].clone();
-
-        if generic_params_finished {
-            out.extend(core::iter::once(tt));
-            idx += 1;
-            continue;
-        }
-
-        match &tt {
-            proc_macro2::TokenTree::Group(group)
-                if angle_depth == 0 && group.delimiter() == proc_macro2::Delimiter::Parenthesis =>
-            {
-                generic_params_finished = true;
-                out.extend(core::iter::once(tt));
-                idx += 1;
-            }
-            proc_macro2::TokenTree::Punct(punct) if punct.as_char() == '<' => {
-                angle_depth += 1;
-                at_param_start = angle_depth == 1;
-                out.extend(core::iter::once(tt));
-                idx += 1;
-            }
-            proc_macro2::TokenTree::Punct(punct) if punct.as_char() == '>' => {
-                angle_depth = angle_depth.saturating_sub(1);
-                at_param_start = false;
-                out.extend(core::iter::once(tt));
-                idx += 1;
-            }
-            proc_macro2::TokenTree::Punct(punct) if punct.as_char() == ',' && angle_depth == 1 => {
-                at_param_start = true;
-                out.extend(core::iter::once(tt));
-                idx += 1;
-            }
-            proc_macro2::TokenTree::Ident(ident)
-                if angle_depth == 1 && at_param_start && ident == "dyn" =>
-            {
-                let err_msg = "tagged-dispatch type parameters must use `dyn(TagTy) T`";
-
-                let Some(proc_macro2::TokenTree::Group(group)) = tokens.get(idx + 1) else {
-                    return Err(syn::Error::new(ident.span(), err_msg));
-                };
-                if group.delimiter() != proc_macro2::Delimiter::Parenthesis {
-                    return Err(syn::Error::new(group.span(), err_msg));
-                }
-
-                let repr = syn::parse2::<Type>(group.stream()).map_err(|_| {
-                    syn::Error::new(group.span(), "expected id repr in `dyn(TagTy) T`")
-                })?;
-
-                out.extend(quote_spanned!(ident.span()=> #[erased(#repr)]));
-                at_param_start = true;
-                idx += 2;
-            }
-            proc_macro2::TokenTree::Punct(punct) if angle_depth == 1 && punct.as_char() == '#' => {
-                at_param_start = false;
-                out.extend(core::iter::once(tt));
-                idx += 1;
-            }
-            proc_macro2::TokenTree::Ident(_) if angle_depth == 1 && at_param_start => {
-                at_param_start = false;
-                out.extend(core::iter::once(tt));
-                idx += 1;
-            }
-            _ => {
-                out.extend(core::iter::once(tt));
-                idx += 1;
-            }
-        }
-    }
-
-    Ok(out)
-}
-
-struct PreprocessedArg {
-    tokens: TokenStream,
+    Ok(syn::Generics {
+        lt_token,
+        params,
+        gt_token: Some(input.parse()?),
+        where_clause: None,
+    })
 }
 
 fn push_by_val(attrs: &mut Vec<Attribute>, span: proc_macro2::Span) {
@@ -1514,209 +1258,138 @@ fn parse_move_by_val(
     Ok(false)
 }
 
-impl PreprocessedArg {
-    fn parse_with(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        let attrs = input.call(syn::Attribute::parse_outer)?;
-        let mut merged_attrs = attrs;
-
-        let receiver = if input.peek(syn::Token![&]) {
-            let ahead = input.fork();
-            let _ = ahead.parse::<syn::Token![&]>()?;
-            let _ = ahead.parse::<Option<syn::Lifetime>>()?;
-            let _ = ahead.parse::<Option<syn::Token![mut]>>()?;
-            ahead.peek(syn::Token![self])
-        } else if input.peek(syn::Token![self]) {
-            let ahead = input.fork();
-            let _ = ahead.parse::<syn::Token![self]>()?;
-            !ahead.peek(syn::Token![:])
-        } else {
-            false
-        };
-
-        if receiver {
-            let mut receiver = input.parse::<syn::Receiver>()?;
-            merged_attrs.append(&mut receiver.attrs);
-            let ty = if let syn::ReceiverKind::Reference(and_token, lifetime, mutability) =
-                receiver.kind
-            {
-                Type::Reference(syn::TypeReference {
-                    attrs: Vec::new(),
-                    and_token,
-                    lifetime,
-                    mutability,
-                    elem: Box::new(parse_quote!(Self)),
-                })
-            } else {
-                parse_quote!(Self)
-            };
-            return Ok(Self {
-                tokens: quote!(#(#merged_attrs)* __co3_self: #ty),
-            });
-        }
-
-        if input.peek(syn::Token![self]) {
-            let ahead = input.fork();
-            let _ = ahead.parse::<syn::Token![self]>()?;
-            if ahead.peek(syn::Token![:]) {
-                input.parse::<syn::Token![self]>()?;
-                input.parse::<syn::Token![:]>()?;
-                let _ = parse_move_by_val(input, &mut merged_attrs)?;
-                let ty = input.parse::<Type>()?;
-                return Ok(Self {
-                    tokens: quote! { #(#merged_attrs)* __co3_self: #ty },
-                });
-            }
-        }
-
-        let pat = syn::Pat::parse_single(input)?;
-        let colon_token = input.parse::<syn::Token![:]>()?;
-        let _ = parse_move_by_val(input, &mut merged_attrs)?;
-        let ty = input.parse::<Type>()?;
-        let arg = PatType {
-            attrs: merged_attrs,
-            pat: Box::new(pat),
-            colon_token,
-            ty: Box::new(ty),
-        };
-        Ok(Self {
-            tokens: quote!(#arg),
-        })
+fn parse_arg(input: ParseStream) -> Result<FnArg> {
+    let mut attrs = input.call(Attribute::parse_outer)?;
+    if input.peek(syn::Token![self]) && input.peek2(syn::Token![:]) {
+        let self_token = input.parse()?;
+        let colon = input.parse()?;
+        parse_move_by_val(input, &mut attrs)?;
+        return Ok(FnArg::Receiver(syn::Receiver {
+            attrs,
+            mutability: None,
+            self_token,
+            kind: syn::ReceiverKind::Typed(colon, input.parse()?),
+        }));
     }
+    let receiver_input = input.fork();
+    if let Ok(mut receiver) = receiver_input.parse::<syn::Receiver>() {
+        input.advance_to(&receiver_input);
+        receiver.attrs = attrs;
+        return Ok(FnArg::Receiver(receiver));
+    }
+    let pat = Box::new(syn::Pat::parse_single(input)?);
+    let colon_token = input.parse()?;
+    parse_move_by_val(input, &mut attrs)?;
+    Ok(FnArg::Typed(PatType {
+        attrs,
+        pat,
+        colon_token,
+        ty: input.parse()?,
+    }))
 }
 
-fn preprocess_signature_inputs(inputs: TokenStream) -> syn::Result<TokenStream> {
-    let parser = move |input: syn::parse::ParseStream| -> syn::Result<TokenStream> {
-        let mut args = Vec::new();
-        while !input.is_empty() {
-            args.push(PreprocessedArg::parse_with(input)?.tokens);
-            if input.is_empty() {
-                break;
-            }
-            input.parse::<syn::Token![,]>()?;
-        }
-        Ok(quote!(#(#args),*))
-    };
-    parser.parse2(inputs)
-}
-
-fn preprocess_signature_tokens(
-    signature_tokens: TokenStream,
-    attrs: &mut Vec<Attribute>,
-) -> syn::Result<TokenStream> {
-    let mut rewritten = Vec::new();
-    let mut saw_inputs = false;
-    let mut saw_fn = false;
-    let mut angle_depth = 0usize;
-    for tt in signature_tokens {
-        if !saw_fn
-            && let proc_macro2::TokenTree::Ident(ident) = &tt
-            && ident == "fn"
-        {
-            saw_fn = true;
-        }
-        if let proc_macro2::TokenTree::Punct(punct) = &tt {
-            match punct.as_char() {
-                '<' => angle_depth += 1,
-                '>' => angle_depth = angle_depth.saturating_sub(1),
-                _ => {}
-            }
-        }
-        if let proc_macro2::TokenTree::Group(group) = &tt
-            && group.delimiter() == proc_macro2::Delimiter::Parenthesis
-            && saw_fn
-            && angle_depth == 0
-            && !saw_inputs
-        {
-            let rewritten_args = preprocess_signature_inputs(group.stream())?;
-            let mut new_group =
-                proc_macro2::Group::new(proc_macro2::Delimiter::Parenthesis, rewritten_args);
-            new_group.set_span(group.span());
-            rewritten.push(proc_macro2::TokenTree::Group(new_group));
-            saw_inputs = true;
-            continue;
-        }
-        rewritten.push(tt);
+fn parse_output(input: ParseStream, attrs: &mut Vec<Attribute>) -> Result<syn::ReturnType> {
+    if !input.peek(syn::Token![->]) {
+        return Ok(syn::ReturnType::Default);
     }
-
-    // In an FFI declaration, `move` on the return type selects ownership transfer.
-    let mut rewritten = rewritten.into_iter().peekable();
-    let mut output = Vec::new();
-    let mut saw_return_type = false;
-    while let Some(token) = rewritten.next() {
-        output.push(token.clone());
-        if saw_inputs
-            && !saw_return_type
-            && matches!(&token, proc_macro2::TokenTree::Punct(punct) if punct.as_char() == '-')
-            && rewritten.peek().is_some_and(|next| matches!(next, proc_macro2::TokenTree::Punct(punct) if punct.as_char() == '>'))
-        {
-            saw_return_type = true;
-            output.push(rewritten.next().expect("peeked arrow token"));
-            if let Some(proc_macro2::TokenTree::Ident(ident)) = rewritten.peek()
-                && ident == "move"
-            {
-                let span = ident.span();
-                rewritten.next();
-                push_by_val(attrs, span);
-            }
-        }
-    }
-
-    Ok(output.into_iter().collect())
+    let arrow = input.parse()?;
+    parse_move_by_val(input, attrs)?;
+    Ok(syn::ReturnType::Type(arrow, input.parse()?))
 }
 
 fn parse_signature(
-    input: syn::parse::ParseStream,
+    input: ParseStream,
     attrs: &mut Vec<Attribute>,
-) -> syn::Result<syn::Signature> {
-    let mut signature_tokens = TokenStream::new();
-    let mut angle_depth = 0usize;
-    while !input.peek(syn::Token![;]) && !(angle_depth == 0 && input.peek(syn::token::Brace)) {
-        let tt: proc_macro2::TokenTree = input.parse()?;
-        if let proc_macro2::TokenTree::Punct(punct) = &tt {
-            match punct.as_char() {
-                '<' => angle_depth += 1,
-                '>' => angle_depth = angle_depth.saturating_sub(1),
-                _ => {}
-            }
-        }
-        signature_tokens.extend(core::iter::once(tt));
-    }
-
-    let (signature_tokens, dispatch_attrs) = preprocess_dispatch_where_clause(signature_tokens)?;
-    attrs.extend(dispatch_attrs);
-    let signature_tokens = preprocess_dispatch_params(signature_tokens)?;
-    let rewritten = preprocess_signature_tokens(signature_tokens, attrs)?;
-    let mut sig = syn::parse2::<syn::Signature>(rewritten)?;
-    rewrite_erased_param_bounds_to_where_clause(&mut sig.generics);
+) -> Result<(syn::Signature, Vec<DispatchPredicate>)> {
+    let constness = input.parse()?;
+    let asyncness = input.parse()?;
+    let safety = if input.peek(syn::Token![unsafe]) {
+        syn::Safety::Unsafe(input.parse()?)
+    } else {
+        syn::Safety::Default
+    };
+    let abi = input.parse()?;
+    let fn_token = input.parse()?;
+    let ident = input.parse()?;
+    let mut generics = parse_generics(input)?;
+    let content;
+    let paren_token = syn::parenthesized!(content in input);
+    let inputs = content.parse_terminated(parse_arg, syn::Token![,])?;
+    let output = parse_output(input, attrs)?;
+    let dispatch = parse_where_clause(input, &mut generics)?;
+    rewrite_erased_param_bounds_to_where_clause(&mut generics);
+    let mut sig = syn::Signature {
+        constness,
+        asyncness,
+        safety,
+        abi,
+        fn_token,
+        ident,
+        generics,
+        paren_token,
+        inputs,
+        variadic: None,
+        output,
+    };
     normalize_const_args_in_fn(&mut sig);
-
-    Ok(sig)
+    Ok((sig, dispatch))
 }
 
-fn parse_type_item(input: ParseStream) -> syn::Result<syn::ForeignItemType> {
-    let mut attrs = input.call(syn::Attribute::parse_outer)?;
-    let mut type_tokens = TokenStream::new();
-    while !input.peek(syn::Token![;]) {
-        let token = input.parse::<TokenTree>()?;
-        type_tokens.extend(core::iter::once(token));
-    }
-    input.parse::<syn::Token![;]>()?;
-
-    let (type_tokens, dispatch_attrs) = preprocess_dispatch_where_clause(type_tokens)?;
-    attrs.extend(dispatch_attrs);
-    syn::parse2(quote!(#(#attrs)* #type_tokens;))
+fn parse_type_item(input: ParseStream) -> Result<crate::ForeignItemType> {
+    let attrs = input.call(Attribute::parse_outer)?;
+    let vis = input.parse()?;
+    let type_token = input.parse()?;
+    let ident = input.parse()?;
+    let mut generics = input.parse()?;
+    let dispatch = parse_where_clause(input, &mut generics)?;
+    let mut ty = syn::ForeignItemType {
+        attrs,
+        vis,
+        modifiers: Default::default(),
+        type_token,
+        ident,
+        generics,
+        semi_token: input.parse()?,
+    };
+    let (id, id_value, covariant_lifetimes) = parse_opaque_type_attrs(&mut ty.attrs, &ty.generics)?;
+    Ok(crate::ForeignItemType {
+        ty,
+        id: id.map(Box::new),
+        id_value: id_value.map(Box::new),
+        covariant_lifetimes,
+        dispatch_span: dispatch
+            .first()
+            .map(|predicate| predicate.params.use_token.span),
+        drop: None,
+        self_impls: Vec::new(),
+    })
 }
 
-fn parse_fn_item(input: syn::parse::ParseStream) -> syn::Result<ItemFn> {
-    let mut attrs = input.call(syn::Attribute::parse_outer)?;
-    let vis = input.parse::<syn::Visibility>()?;
-    let sig = parse_signature(input, &mut attrs)?;
+fn end_fn(input: ParseStream) -> Result<()> {
     if input.peek(syn::token::Brace) {
         return Err(input.error(FN_BODIES_NOT_ALLOWED_MSG));
     }
     input.parse::<syn::Token![;]>()?;
-    syn::parse2(quote! {
-        #(#attrs)* #vis #sig {}
+    Ok(())
+}
+
+fn parse_fn_item(input: ParseStream) -> Result<crate::Co3Fn> {
+    let mut attrs = input.call(Attribute::parse_outer)?;
+    let vis = input.parse()?;
+    let (sig, predicates) = parse_signature(input, &mut attrs)?;
+    let dispatch_args = dispatch_groups(&mut attrs, &sig.generics, predicates, None)?;
+    end_fn(input)?;
+    let item = ItemFn {
+        attrs,
+        vis,
+        modifiers: Default::default(),
+        sig,
+        block: Box::new(parse_quote!({})),
+    };
+    Ok(crate::Co3Fn {
+        item,
+        dispatch_args,
+        import_mode: crate::ImportMode::Regular,
     })
 }
 
@@ -1745,96 +1418,126 @@ fn rewrite_erased_param_bounds_to_where_clause(generics: &mut syn::Generics) {
         .extend(erased_bounds);
 }
 
-fn parse_impl_item(input: syn::parse::ParseStream) -> syn::Result<ItemImpl> {
-    fn preprocess_impl_items(input: syn::parse::ParseStream) -> syn::Result<TokenStream> {
-        let mut out = TokenStream::new();
-        while !input.is_empty() {
-            while input.peek(syn::Token![;]) {
-                let _: syn::Token![;] = input.parse()?;
-            }
-            if input.is_empty() {
-                break;
-            }
-
-            let mut attrs = input.call(syn::Attribute::parse_outer)?;
-            let vis = input.parse::<syn::Visibility>()?;
-            let ahead = input.fork();
-            if ahead.peek(syn::Ident) && ahead.parse::<syn::Ident>()? == "raw" {
-                let _: syn::Ident = input.parse()?;
-                let sig = parse_signature(input, &mut attrs)?;
-                if input.peek(syn::token::Brace) {
-                    return Err(input.error(FN_BODIES_NOT_ALLOWED_MSG));
-                }
-                input.parse::<syn::Token![;]>()?;
-                let marker = Ident::new(RAW_IMPL_ITEM_ATTR, proc_macro2::Span::call_site());
-                attrs.push(parse_quote!(#[#marker]));
-                out.extend(quote!(#(#attrs)* #vis #sig {}));
-                continue;
-            }
-            if ahead.peek(syn::Token![type]) {
-                let item = input.parse::<syn::ImplItemType>()?;
-                out.extend(quote!(#(#attrs)* #vis #item));
-                continue;
-            }
-            if ahead.peek(syn::Token![const]) && !is_fn_head(&ahead)? {
-                let item = input.parse::<syn::ImplItemConst>()?;
-                out.extend(quote!(#(#attrs)* #vis #item));
-                continue;
-            }
-
-            let sig = parse_signature(input, &mut attrs)?;
-            let body = if input.peek(syn::token::Brace) {
-                return Err(input.error(FN_BODIES_NOT_ALLOWED_MSG));
-            } else {
-                input.parse::<syn::Token![;]>()?;
-                quote!({})
-            };
-            out.extend(quote!(#(#attrs)* #vis #sig #body));
+fn parse_impl_item(input: ParseStream) -> Result<ParsedImpl> {
+    let attrs = input.call(Attribute::parse_outer)?;
+    let mut modifiers = syn::ImplModifiers::default();
+    modifiers.defaultness = input.parse()?;
+    let unsafety = input.parse()?;
+    let impl_token = input.parse()?;
+    let ahead = input.fork();
+    // An impl may start with generic parameters or a qualified self type.
+    let (mut generics, generic_error) = match parse_generics(&ahead) {
+        Ok(generics) => {
+            input.advance_to(&ahead);
+            (generics, None)
         }
-        Ok(out)
-    }
-
-    let mut attrs = input.call(syn::Attribute::parse_outer)?;
-    let defaultness = input.parse::<Option<syn::Token![default]>>()?;
-    let unsafety = input.parse::<Option<syn::Token![unsafe]>>()?;
-    input.parse::<syn::Token![impl]>()?;
-
-    let mut header = TokenStream::new();
-    while !input.peek(syn::token::Brace) {
-        let tt: proc_macro2::TokenTree = input.parse()?;
-        header.extend(core::iter::once(tt));
-    }
-
-    let content;
-    syn::braced!(content in input);
-
-    let items = preprocess_impl_items(&content)?;
-    let (header, dispatch_attrs) = preprocess_dispatch_where_clause(header)?;
-    attrs.extend(dispatch_attrs);
-    let header = preprocess_dispatch_params(header)?;
-
-    let impl_tokens = quote! {
-        #(#attrs)* #defaultness #unsafety impl #header {
-            #items
-        }
+        Err(error) => (Default::default(), Some(error)),
     };
-
-    let mut impl_: ItemImpl = syn::parse2(impl_tokens)?;
-    rewrite_erased_param_bounds_to_where_clause(&mut impl_.generics);
-    normalize_const_generic_args_in_impl(&mut impl_);
-
-    normalize_self_tag_ids(&mut impl_);
-
-    for item in &mut impl_.items {
-        let syn::ImplItem::Fn(method) = item else {
-            continue;
-        };
-
-        restore_synthetic_receiver(&mut method.sig);
-        normalize_const_args_in_fn(&mut method.sig);
+    if input.peek(syn::Token![!]) && !input.peek2(syn::token::Brace) {
+        modifiers.polarity = input.parse()?;
     }
-
-    Ok(impl_)
+    let first: Type = input
+        .parse()
+        .map_err(|error| generic_error.unwrap_or(error))?;
+    let (trait_, self_ty) = if input.peek(syn::Token![for]) {
+        let Type::Path(TypePath {
+            qself: None, path, ..
+        }) = crate::utils::peel_grouped_type(&first)
+        else {
+            return Err(Error::new_spanned(first, "expected trait path"));
+        };
+        (Some((path.clone(), input.parse()?)), input.parse()?)
+    } else {
+        if let Some(polarity) = modifiers.polarity {
+            return Err(Error::new(
+                polarity.span,
+                "inherent impls cannot be negative",
+            ));
+        }
+        (None, Box::new(first))
+    };
+    let mut attrs = attrs;
+    let predicates = parse_where_clause(input, &mut generics)?;
+    let mut errors = None;
+    let mut check_dispatch = |attrs: &mut Vec<Attribute>, generics: &syn::Generics, predicates| {
+        dispatch_groups(attrs, generics, predicates, Some(&self_ty)).unwrap_or_else(|error| {
+            push_error(&mut errors, error);
+            Default::default()
+        })
+    };
+    let dispatch_args = check_dispatch(&mut attrs, &generics, predicates);
+    rewrite_erased_param_bounds_to_where_clause(&mut generics);
+    let content;
+    let brace_token = syn::braced!(content in input);
+    let mut items = Vec::new();
+    let mut method_dispatch_args = HashMap::new();
+    let mut raw_methods = BTreeMap::new();
+    while !content.is_empty() {
+        if content.peek(syn::Token![;]) {
+            content.parse::<syn::Token![;]>()?;
+            continue;
+        }
+        let ahead = content.fork();
+        ahead.call(Attribute::parse_outer)?;
+        ahead.parse::<syn::Visibility>()?;
+        if ahead.peek(syn::Token![type]) {
+            items.push(syn::ImplItem::Type(content.parse()?));
+            continue;
+        }
+        if ahead.peek(syn::Token![const]) && !is_fn_head(&ahead)? {
+            items.push(syn::ImplItem::Const(content.parse()?));
+            continue;
+        }
+        let mut attrs = content.call(Attribute::parse_outer)?;
+        let vis = content.parse()?;
+        if content.peek(syn::Ident) && content.fork().parse::<Ident>()? == "raw" {
+            raw_methods.insert(items.len(), content.parse::<Ident>()?.span());
+        } else if let Some(index) = attrs.iter().position(|attr| attr.path().is_ident("raw")) {
+            raw_methods.insert(items.len(), attrs.remove(index).span());
+        }
+        let (sig, predicates) = parse_signature(&content, &mut attrs)?;
+        end_fn(&content)?;
+        let groups = check_dispatch(&mut attrs, &sig.generics, predicates);
+        if !groups.is_empty()
+            && method_dispatch_args
+                .insert(sig.ident.clone(), groups)
+                .is_some()
+        {
+            return Err(Error::new_spanned(&sig.ident, "duplicate method"));
+        }
+        items.push(syn::ImplItem::Fn(syn::ImplItemFn {
+            attrs,
+            vis,
+            modifiers: Default::default(),
+            sig,
+            block: parse_quote!({}),
+        }));
+    }
+    if let Some(errors) = errors {
+        return Err(errors);
+    }
+    let mut item = ItemImpl {
+        attrs,
+        modifiers,
+        unsafety,
+        impl_token,
+        generics,
+        trait_,
+        self_ty,
+        brace_token,
+        items,
+    };
+    normalize_const_generic_args_in_impl(&mut item);
+    normalize_self_tag_ids(&mut item);
+    Ok(ParsedImpl {
+        item: crate::Co3Impl {
+            item,
+            dispatch_args,
+            method_dispatch_args,
+            import_mode: crate::ImportMode::Regular,
+        },
+        raw_methods,
+    })
 }
 
 fn normalize_self_tag_ids(impl_: &mut ItemImpl) {
@@ -1862,55 +1565,6 @@ fn normalize_self_tag_ids(impl_: &mut ItemImpl) {
     };
 
     normalizer.visit_item_impl_mut(impl_);
-}
-
-fn restore_synthetic_receiver(signature: &mut syn::Signature) {
-    let Some(position) = signature.inputs.iter().position(|input| {
-        matches!(
-            input,
-            FnArg::Typed(PatType { pat, .. })
-                if matches!(pat.as_ref(), syn::Pat::Ident(pat_ident) if pat_ident.ident == "__co3_self")
-        )
-    }) else {
-        return;
-    };
-
-    let mut inputs = core::mem::take(&mut signature.inputs)
-        .into_iter()
-        .collect::<Vec<_>>();
-
-    let Some(FnArg::Typed(PatType { attrs, ty, .. })) = inputs.get_mut(position) else {
-        signature.inputs = inputs.into_iter().collect();
-        return;
-    };
-
-    let receiver_span = ty.span();
-    let mut receiver: syn::Receiver = match &**ty {
-        Type::Path(ty_path) if ty_path.qself.is_none() && ty_path.path.is_ident("Self") => {
-            parse_quote_spanned!(receiver_span=> self)
-        }
-        Type::Reference(ty)
-            if matches!(
-                ty.elem.as_ref(),
-                Type::Path(ty_path) if ty_path.qself.is_none() && ty_path.path.is_ident("Self")
-            ) =>
-        {
-            let lifetime = &ty.lifetime;
-
-            if ty.mutability.is_some() {
-                parse_quote_spanned!(receiver_span=> &#lifetime mut self)
-            } else {
-                parse_quote_spanned!(receiver_span=> &#lifetime self)
-            }
-        }
-        ty => {
-            parse_quote_spanned!(receiver_span=> self: #ty)
-        }
-    };
-
-    receiver.attrs = core::mem::take(attrs);
-    inputs[position] = FnArg::Receiver(receiver);
-    signature.inputs = inputs.into_iter().collect();
 }
 
 fn normalize_const_generic_args_in_impl(impl_: &mut ItemImpl) {
@@ -1943,6 +1597,67 @@ fn normalize_const_args_in_fn(sig: &mut syn::Signature) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn export_languages_are_restricted_but_import_languages_are_open() {
+        for name in [
+            "C",
+            "Rust",
+            "C++",
+            "Swift",
+            "Objective-C",
+            "Java",
+            "C#",
+            "Python",
+        ] {
+            let language = syn::LitStr::new(name, proc_macro2::Span::call_site());
+            let export = super::ParsedInput::parse(quote::quote! {
+                #![unsafe(export("C"))]
+                #![lang = #language]
+            });
+            assert_eq!(export.is_ok(), matches!(name, "C" | "Rust"));
+            let import = super::ParsedInput::parse(quote::quote! {
+                #![unsafe(extern("C"))]
+                #![lang = #language]
+            });
+            assert!(import.is_ok());
+        }
+    }
+
+    #[test]
+    fn language_attributes() {
+        for name in [
+            "C",
+            "C++",
+            "Rust",
+            "Swift",
+            "Objective-C",
+            "Java",
+            "C#",
+            "Python",
+        ] {
+            let value = syn::LitStr::new(name, proc_macro2::Span::call_site());
+            let mut attrs = vec![syn::parse_quote!(#![lang = #value])];
+            assert!(super::parse_language_attr(&mut attrs, DeclKind::Extern).is_ok());
+            assert!(attrs.is_empty());
+        }
+        for tokens in [
+            quote::quote!(#![lang = "Go"]),
+            quote::quote!(#![lang = 1]),
+            quote::quote!(#![lang("C")]),
+            quote::quote!(#![lang = "C"] #![lang = "Rust"]),
+        ] {
+            let mut attrs =
+                syn::parse::Parser::parse2(syn::Attribute::parse_inner, tokens).unwrap();
+            assert!(super::parse_language_attr(&mut attrs, DeclKind::Extern).is_err());
+        }
+        let default = super::parse_language_attr(&mut vec![], DeclKind::Extern).unwrap();
+        let mut explicit = vec![syn::parse_quote!(#![lang = "C"])];
+        assert_eq!(
+            default,
+            super::parse_language_attr(&mut explicit, DeclKind::Extern).unwrap()
+        );
+    }
+
     use super::*;
 
     #[test]
@@ -1950,7 +1665,7 @@ mod tests {
         let impl_ = "impl Value { fn name(self: move Self); }";
         let item = Parser::parse_str(parse_impl_item, impl_).unwrap();
 
-        let syn::ImplItem::Fn(method) = &item.items[0] else {
+        let syn::ImplItem::Fn(method) = &item.item.items[0] else {
             panic!("expected method");
         };
         let FnArg::Receiver(receiver) = &method.sig.inputs[0] else {
@@ -1974,13 +1689,13 @@ mod tests {
             "impl Value { fn name(#[soft] self: move Self); }",
         )
         .unwrap();
-        let syn::ImplItem::Fn(method) = &implementation.items[0] else {
+        let syn::ImplItem::Fn(method) = &implementation.item.items[0] else {
             panic!("expected method");
         };
         let (callback, _) =
             parse_raw_function_type(quote!(raw extern "C" fn(#[soft] move u8))).unwrap();
 
-        for signature in [&function.sig, &method.sig, &callback] {
+        for signature in [&function.item.sig, &method.sig, &callback] {
             let attrs = match &signature.inputs[0] {
                 FnArg::Typed(arg) => &arg.attrs,
                 FnArg::Receiver(receiver) => &receiver.attrs,
@@ -1994,7 +1709,12 @@ mod tests {
     fn parses_move_return_type() {
         let item = Parser::parse_str(parse_fn_item, "fn name() -> move Value;").unwrap();
 
-        assert!(item.attrs.iter().any(|attr| attr.path().is_ident("by_val")));
+        assert!(
+            item.item
+                .attrs
+                .iter()
+                .any(|attr| attr.path().is_ident("by_val"))
+        );
     }
 
     #[test]
@@ -2005,7 +1725,7 @@ mod tests {
         )
         .unwrap();
 
-        for input in &item.sig.inputs {
+        for input in &item.item.sig.inputs {
             let FnArg::Typed(input) = input else {
                 panic!("expected typed argument");
             };
@@ -2044,15 +1764,24 @@ mod tests {
         )
         .unwrap();
 
-        assert!(item.attrs.iter().any(|attr| attr.path().is_ident("by_val")));
-        assert!(matches!(item.sig.safety, syn::Safety::Unsafe(_)));
-        assert!(item.sig.abi.is_some());
+        assert!(
+            item.item
+                .attrs
+                .iter()
+                .any(|attr| attr.path().is_ident("by_val"))
+        );
+        assert!(matches!(item.item.sig.safety, syn::Safety::Unsafe(_)));
+        assert!(item.item.sig.abi.is_some());
     }
 
     #[test]
     fn rejects_reordered_move_fn_return() {
-        Parser::parse_str(parse_fn_item, "move unsafe fn name() -> Value;").unwrap_err();
-        Parser::parse_str(parse_fn_item, "move async fn name() -> Value;").unwrap_err();
+        Parser::parse_str(parse_fn_item, "move unsafe fn name() -> Value;")
+            .err()
+            .unwrap();
+        Parser::parse_str(parse_fn_item, "move async fn name() -> Value;")
+            .err()
+            .unwrap();
     }
 
     #[test]
@@ -2060,7 +1789,7 @@ mod tests {
         let impl_ = "impl<dyn(u8) T> Trait<T> for Value<T> { fn name(&mut self, value: &T); }";
         let item = Parser::parse_str(parse_impl_item, impl_).unwrap();
 
-        let syn::GenericParam::Type(param) = item.generics.params.first().unwrap() else {
+        let syn::GenericParam::Type(param) = item.item.generics.params.first().unwrap() else {
             panic!("expected type param");
         };
         assert!(
@@ -2076,18 +1805,18 @@ mod tests {
         let item =
             Parser::parse_str(parse_fn_item, "fn name<dyn(u8) T = (u8, i8)>(value: T);").unwrap();
 
-        let syn::GenericParam::Type(param) = item.sig.generics.params.first().unwrap() else {
+        let syn::GenericParam::Type(param) = item.item.sig.generics.params.first().unwrap() else {
             panic!("expected type param");
         };
         assert_eq!(param.default.as_ref().unwrap().1, parse_quote!((u8, i8)));
     }
 
     #[test]
-    fn restores_receiver_after_id_arg() {
+    fn parses_receiver_after_id_arg() {
         let impl_ = "impl<dyn(u8) T> Trait<T> for Value { fn name(self_id: <dyn Self>::TAG, &mut self, value: &T); }";
         let item = Parser::parse_str(parse_impl_item, impl_).unwrap();
 
-        let syn::ImplItem::Fn(method) = &item.items[0] else {
+        let syn::ImplItem::Fn(method) = &item.item.items[0] else {
             panic!("expected method");
         };
         let FnArg::Receiver(receiver) = method.sig.inputs.iter().nth(1).unwrap() else {
@@ -2105,7 +1834,7 @@ mod tests {
         let impl_ = "impl<dyn(u32) U> Trait<T> for U { fn name(self_id: <dyn Self>::TAG); }";
         let item = Parser::parse_str(parse_impl_item, impl_).unwrap();
 
-        let syn::ImplItem::Fn(method) = &item.items[0] else {
+        let syn::ImplItem::Fn(method) = &item.item.items[0] else {
             panic!("expected method");
         };
         let FnArg::Typed(syn::PatType { ty, .. }) = &method.sig.inputs[0] else {
@@ -2123,10 +1852,12 @@ mod tests {
 
     #[test]
     fn rejects_where_predicate_after_dispatch_predicate() {
-        let err = preprocess_dispatch_where_clause(quote! {
-            fn name<T>() where use<T> @ <u32>, T: Copy
-        })
-        .unwrap_err();
+        let err = parse_fn_item
+            .parse2(quote! {
+                fn name<T>() where use<T> @ <u32>, T: Copy
+            })
+            .err()
+            .unwrap();
 
         assert!(
             err.to_string()
@@ -2136,10 +1867,12 @@ mod tests {
 
     #[test]
     fn rejects_lifetime_dispatch_parameter() {
-        let err = preprocess_dispatch_where_clause(quote! {
-            fn name<'a, T>() where use<'a, T> @ <u32>
-        })
-        .unwrap_err();
+        let err = parse_fn_item
+            .parse2(quote! {
+                fn name<'a, T>() where use<'a, T> @ <u32>
+            })
+            .err()
+            .unwrap();
 
         assert!(
             err.to_string()
@@ -2150,11 +1883,11 @@ mod tests {
     #[test]
     fn parses_statically_selected_const_generic() {
         let generics: syn::Generics = parse_quote!(<const N: usize>);
-        let attrs: Vec<syn::Attribute> = vec![parse_quote! {
+        let mut attrs: Vec<syn::Attribute> = vec![parse_quote! {
             #[erased(use<N> @ (<1> | <2>))]
         }];
 
-        let dispatch = parse_dispatch_attr(&attrs, &generics).unwrap();
+        let dispatch = dispatch_groups(&mut attrs, &generics, Vec::new(), None).unwrap();
         let (params, targets) = dispatch.groups().next().unwrap();
 
         assert_eq!(params.len(), 1);

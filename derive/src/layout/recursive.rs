@@ -1,65 +1,21 @@
-//! Nominal storage for recursive value conversions.
+//! Nominal state breaks recursive field store projections. Its initially absent
+//! tuple also terminates Default before following the next Box or Vec.
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use syn::{parse_quote, visit_mut::VisitMut};
 
-use super::inference::RecursiveStores;
+use crate::{
+    codec::{Conversion, TraitRef},
+    known_type::Kind,
+    layout::{aggregate::Operation, inference::RecursiveStores},
+};
 
-/// Name the recursive state *after* borrowed conversion has selected its
-/// field stores and owners. The tuple for Box<Node> can contain Box<Node::Store>.
-/// A named enclosing type breaks that projection cycle. An initially absent
-/// tuple lets Default terminate before it follows the next box.
-pub(super) fn name_stores(
-    input: &syn::DeriveInput,
-    stores: &RecursiveStores,
-    codecs: TokenStream,
-) -> TokenStream {
-    if !stores.has_owned {
-        return codecs;
-    }
-    let mut file = syn::parse2::<syn::File>(codecs).expect("generated value codecs");
-    NameStores {
-        ordinary: &stores.codec_fields,
-        dispatch: &stores.allocations,
-        input,
-    }
-    .visit_file_mut(&mut file);
-    quote!(#file)
-}
-
-struct NameStores<'a> {
+struct NamedState<'a> {
+    codec: &'a TraitRef,
+    generics: &'a syn::Generics,
+    own: &'a syn::Type,
+    case: usize,
     ordinary: &'a [&'a syn::Type],
-    dispatch: &'a [(crate::known_type::Kind, &'a syn::Type)],
-    input: &'a syn::DeriveInput,
-}
-
-impl VisitMut for NameStores<'_> {
-    fn visit_item_mut(&mut self, item: &mut syn::Item) {
-        let syn::Item::Impl(implementation) = item else {
-            if let syn::Item::Const(_) = item {
-                syn::visit_mut::visit_item_mut(self, item);
-            }
-            return;
-        };
-        let Some((codec, _)) = &implementation.trait_ else {
-            return;
-        };
-        // The value codecs have Store or SoftStore. Marker and ReprC impls
-        // share this scope and have no conversion state to wrap.
-        if !implementation.items.iter().any(|item| {
-            matches!(item,
-                syn::ImplItem::Type(assoc) if assoc.ident == "Store" || assoc.ident == "SoftStore"
-            )
-        }) {
-            return;
-        }
-        if self.dispatch.is_empty() {
-            let defs = self.state_items(implementation, &codec.clone(), "");
-            *item = parse_quote!(const _: () = { #(#defs)* #implementation };);
-        } else {
-            *item = self.dispatch_codec(implementation);
-        }
-    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -71,59 +27,72 @@ enum LayoutCase {
     Unstable,
 }
 
-impl NameStores<'_> {
-    fn state_items(
-        &self,
-        implementation: &mut syn::ItemImpl,
-        codec: &syn::Path,
-        suffix: &str,
-    ) -> Vec<TokenStream> {
-        let mut concrete = crate::utils::ConcreteSelfType(&implementation.self_ty);
-        let mut generics = implementation.generics.clone();
-        concrete.visit_generics_mut(&mut generics);
-        let mut storage = Vec::new();
-        for member in &mut implementation.items {
-            match member {
-                syn::ImplItem::Type(assoc) => {
-                    storage.push(self.define_state(assoc, codec, &generics, &mut concrete, suffix));
-                }
-                syn::ImplItem::Fn(method) => bind_field_stores(method),
-                _ => {}
-            }
-        }
-        storage
-    }
+pub(super) struct ValueImpl {
+    pub generics: syn::Generics,
+    pub store: syn::Type,
+    pub owner: Option<syn::Type>,
+    pub body: TokenStream,
+}
 
-    /// Make each library conversion type-check with the node's actual layout
-    /// in scope. Requiring the finished field codec on this impl would send
-    /// the trait solver back to the node. Method bodies still call that codec.
-    fn dispatch_codec(&self, original: &syn::ItemImpl) -> syn::Item {
-        use crate::known_type::Kind;
-        let codec = &original.trait_.as_ref().unwrap().0;
-        let segment = codec.segments.last().unwrap();
-        let name = &segment.ident;
-        let operation = name.to_string();
-        let borrowed_decode = operation == "BorrowedDecode";
-        let checked = operation == "EncodeMove";
-        let checked_borrow = operation == "BorrowedEncode";
-        let own = &*original.self_ty;
-        let (_, args, _) = self.input.generics.split_for_impl();
-        let ctype_name = super::ctype::gen_ctype_name(&self.input.ident);
-        let companion: syn::Type = parse_quote!(#ctype_name #args);
-        let has_box = self.dispatch.iter().any(|(kind, _)| *kind == Kind::Box);
-        let mut blocks = Vec::new();
-        let mut definitions = Vec::new();
-        use LayoutCase::*;
-        let variants: &[LayoutCase] = if borrowed_decode {
-            &[Any]
-        } else if checked && has_box {
-            &[StableRobust, StableNonRobust, Unstable]
-        } else {
-            &[Stable, Unstable]
-        };
-        for (index, &case) in variants.iter().enumerate() {
-            let mut implementation = original.clone();
-            let predicates = &mut implementation.generics.make_where_clause().predicates;
+pub(super) fn value_impl(
+    input: &syn::DeriveInput,
+    stores: &RecursiveStores,
+    op: Operation,
+    contract: &Conversion,
+    ValueImpl {
+        generics,
+        store: store_ty,
+        owner: owner_ty,
+        body,
+    }: ValueImpl,
+) -> TokenStream {
+    let (_, args, _) = input.generics.split_for_impl();
+    let ident = &input.ident;
+    let own: syn::Type = parse_quote!(#ident #args);
+    let ctype_name = super::ctype::gen_ctype_name(ident);
+    let companion = quote!(#ctype_name #args);
+    let codec = op.path(contract);
+    let TraitRef {
+        module,
+        name,
+        arguments,
+    } = &codec;
+    let borrowed_decode = op == Operation::BorrowedDecode;
+    let checked = op == Operation::Encode && contract.checked();
+    let checked_borrow = op == Operation::BorrowedEncode && contract.checked();
+    let has_box = stores
+        .allocations
+        .iter()
+        .any(|(kind, _)| *kind == Kind::Box);
+    use LayoutCase::*;
+    let cases: &[LayoutCase] = if stores.allocations.is_empty() || borrowed_decode {
+        &[Any]
+    } else if (checked || checked_borrow) && has_box {
+        &[StableRobust, StableNonRobust, Unstable]
+    } else {
+        &[Stable, Unstable]
+    };
+    let state = contract.store();
+    let owner_arg = (op == Operation::BorrowedEncode)
+        .then(|| quote!(, owner: &'_išč mut <Self as co3::borrow::BorrowedEncodeUnchecked>::Owner));
+    let method = contract.method(if op.encoding() {
+        "soft_encode"
+    } else {
+        "soft_decode"
+    });
+    let signature = if op.encoding() {
+        let unsafety = (!contract.checked()).then(|| quote!(unsafe));
+        quote!(#unsafety fn #method<'_išč>(self, store: &'_išč mut Self::#state #owner_arg) -> Self::CType where Self: '_išč)
+    } else {
+        let ret = contract.result(quote!(Self));
+        quote!(unsafe fn #method<'_išč: '_dšč>(source: Self::CType, store: &'_išč mut Self::#state) -> #ret)
+    };
+    let mut definitions = Vec::new();
+    let mut blocks = Vec::new();
+    for (i, &case) in cases.iter().enumerate() {
+        let mut generics = generics.clone();
+        if !stores.allocations.is_empty() {
+            let predicates = &mut generics.make_where_clause().predicates;
             let stable = matches!(case, Stable | StableRobust | StableNonRobust);
             let layout_bound = match case {
                 Any => None,
@@ -138,8 +107,12 @@ impl NameStores<'_> {
             predicates.push(parse_quote!(#own: co3::rust_spec::RustSpec<#layout_bound #trap_bound Size = co3::rust_spec::size::Sized<co3::rust_spec::Gt<co3::rust_spec::Zero>>>));
             predicates.push(parse_quote!(#own: co3::ReprC<CType = #companion>));
             if stable {
-                if (checked && has_box) || operation == "DecodeMove" {
-                    predicates.push(parse_quote!(#own: co3::convert::AbiCompatibleValidate));
+                if (checked && has_box)
+                    || checked_borrow
+                    || (op == Operation::Decode && contract.checked())
+                {
+                    let language = contract.language().unwrap();
+                    predicates.push(parse_quote!(#own: co3::convert::AbiValidate<#language>));
                 } else {
                     predicates.push(parse_quote!(#own: co3::marker::AbiCompatible));
                 }
@@ -147,72 +120,112 @@ impl NameStores<'_> {
             if borrowed_decode {
                 predicates.push(parse_quote!(#companion: Copy));
             }
-            for &(kind, alloc) in self.dispatch {
-                if kind == Kind::Vec && stable && operation == "DecodeMove" {
+            for &(kind, alloc) in &stores.allocations {
+                let alloc = crate::utils::peel_grouped_type(alloc);
+                if kind == Kind::Vec && stable && op == Operation::Decode {
                     predicates.push(parse_quote!(<#own as co3::rust_spec::RustSpec>::Mutability: co3::rust_spec::mutability::PointerMutability));
                 }
                 if kind == Kind::Box {
                     let niche = quote!(co3::rust_spec::niche::WithNiche<co3::rust_spec::Specified>);
-                    predicates.push(parse_quote!(#alloc: co3::rust_spec::RustSpec<#layout_bound Niche = #niche> + co3::ReprC<CType = co3::boxed::abi::Box<#companion>>));
+                    predicates.push(parse_quote!(#alloc: co3::rust_spec::RustSpec<#layout_bound Niche = #niche, Drop: co3::rust_spec::drop::DropKind> + co3::ReprC<CType = co3::boxed::abi::Box<#companion>>));
                 }
             }
-            let suffix = index.to_string();
-            definitions.extend(self.state_items(&mut implementation, codec, &suffix));
-            if variants.len() > 1 {
-                implementation.trait_.as_mut().unwrap().0 = parse_quote!(#segment);
-            }
-            blocks.push(implementation);
-        }
-        if variants.len() == 1 {
-            return parse_quote!(const _: () = { #(#definitions)* #(#blocks)* };);
-        }
-        let supertraits = if checked {
-            quote!(co3::convert::EncodeMoveUnchecked)
-        } else if checked_borrow {
-            quote!(co3::borrow::BorrowedEncodeUnchecked)
-        } else {
-            quote!(co3::ReprC<CType:Sized> + Sized)
-        };
-        let members = original.items.iter().map(|m| match m {
-            syn::ImplItem::Type(t) => {
-                let ident = &t.ident;
-                let store = (ident != "Owner").then(|| quote!(co3::convert::Store+));
-                quote!(type #ident: #store Default;)
-            }
-            syn::ImplItem::Fn(f) => {
-                let sig = &f.sig;
-                quote!(#sig;)
-            }
-            _ => unreachable!(),
-        });
-        let arguments = &segment.arguments;
-        let mut codec_import = codec.clone();
-        codec_import.segments.last_mut().unwrap().arguments = syn::PathArguments::None;
-        parse_quote!(const _: () = {
-            use #codec_import;
-            #(#definitions)*
-            co3::disjoint_impls! {
-                #[allow(clippy::missing_safety_doc, reason = "internal conversion trait generated by ReprC")]
-                #[disjoint_impls(remote)] pub unsafe trait #name #arguments: #supertraits { #(#members)* }
-                #(#blocks)*
-            }
-        };)
-    }
 
-    fn define_state(
+            NormalizeGroups.visit_generics_mut(&mut generics);
+        }
+        let (mut store, mut owner) = (quote!(#store_ty), owner_ty.as_ref().map(|ty| quote!(#ty)));
+        let bindings = stores.has_owned.then(|| {
+            let mut concrete = crate::utils::ConcreteSelfType(&own);
+            let mut concrete_generics = generics.clone();
+            concrete.visit_generics_mut(&mut concrete_generics);
+            let names = NamedState {
+                codec: &codec,
+                generics: &concrete_generics,
+                own: &own,
+                case: i,
+                ordinary: &stores.codec_fields,
+            };
+            let mut define = |state, fields, is_store| {
+                let (ty, def) = names.define(state, fields, is_store);
+                definitions.push(def);
+                ty
+            };
+            store = define(&state, &store_ty, true);
+            if let Some(ty) = &owner_ty {
+                owner = Some(define(&format_ident!("Owner"), ty, false));
+            }
+            let owner = owner_arg
+                .as_ref()
+                .map(|_| quote!(let owner = owner.0.get_or_insert_default();));
+            quote!(let store = store.0.get_or_insert_default(); #owner)
+        });
+        let owner = owner.map(|ty| quote!(type Owner = #ty;));
+        let (params, _, clause) = generics.split_for_impl();
+        let path = if cases.len() > 1 {
+            quote!(#name #arguments)
+        } else {
+            quote!(#codec)
+        };
+        blocks.push(quote!(unsafe impl #params #path for #own #clause {
+            type #state = #store;
+            #owner
+            #signature { #bindings #body }
+        }));
+    }
+    if cases.len() == 1 {
+        return quote!(const _: () = { #(#definitions)* #(#blocks)* };);
+    }
+    let supers = if checked {
+        quote!(co3::convert::EncodeMoveUnchecked)
+    } else if checked_borrow {
+        quote!(co3::borrow::BorrowedEncodeUnchecked)
+    } else {
+        quote!(co3::ReprC<CType: Sized> + Sized)
+    };
+    let owner = owner_ty.map(|_| {
+        quote!(
+            type Owner: Default;
+        )
+    });
+    let language = contract
+        .language()
+        .map(|l| quote!(where #l: co3::lang::Language));
+
+    quote!(const _: () = {
+        use #module #name;
+        #(#definitions)*
+        co3::disjoint_impls! {
+            #[allow(clippy::missing_safety_doc, reason = "internal conversion trait generated by ReprC")]
+            #[disjoint_impls(remote)]
+            pub unsafe trait #name #arguments: #supers #language {
+                type #state: co3::convert::Store + Default;
+                #owner
+                #signature;
+            }
+            #(#blocks)*
+        }
+    };)
+}
+
+impl NamedState<'_> {
+    fn define(
         &self,
-        assoc: &mut syn::ImplItemType,
-        codec: &syn::Path,
-        generics: &syn::Generics,
-        concrete: &mut crate::utils::ConcreteSelfType<'_>,
-        suffix: &str,
-    ) -> TokenStream {
+        state: &syn::Ident,
+        fields: &syn::Type,
+        is_store: bool,
+    ) -> (TokenStream, TokenStream) {
+        let Self {
+            generics,
+            codec,
+            case,
+            ..
+        } = *self;
+        let mut concrete = crate::utils::ConcreteSelfType(self.own);
         let (params, args, predicates) = generics.split_for_impl();
-        let state = &assoc.ident;
-        let name = format_ident!("__Co3{state}{suffix}");
-        let mut fields = assoc.ty.clone();
+        let name = format_ident!("__Co3{state}{case}");
+        let mut fields = fields.clone();
         concrete.visit_type_mut(&mut fields);
-        let sync = (state != "Owner").then(|| {
+        let sync = is_store.then(|| {
             let mut empty = generics.clone();
             for ty in self.ordinary {
                 let mut ty = (*ty).clone();
@@ -242,31 +255,25 @@ impl NameStores<'_> {
                 }
             }
         });
-        assoc.ty = parse_quote!(#name #args);
-        quote! {
-            pub struct #name #params (core::option::Option<#fields>) #predicates;
-            impl #params core::default::Default for #name #args #predicates {
-                fn default() -> Self { Self(core::option::Option::None) }
-            }
-            #sync
-        }
+        (
+            quote!(#name #args),
+            quote! {
+                pub struct #name #params (core::option::Option<#fields>) #predicates;
+                impl #params core::default::Default for #name #args #predicates {
+                    fn default() -> Self { Self(core::option::Option::None) }
+                }
+                #sync
+            },
+        )
     }
 }
 
-fn bind_field_stores(method: &mut syn::ImplItemFn) {
-    // The first parameter is the value or carrier. The others are its store
-    // and, for borrowed encoding, its owner. Preserve their hygienic names.
-    for arg in method.sig.inputs.iter().skip(1) {
-        let syn::FnArg::Typed(arg) = arg else {
-            unreachable!("codec store argument")
-        };
-        let syn::Pat::Ident(pattern) = &*arg.pat else {
-            unreachable!("codec store binding")
-        };
-        let var = &pattern.ident;
-        method
-            .block
-            .stmts
-            .insert(0, parse_quote!(let #var = #var.0.get_or_insert_default();));
+// Equivalent parenthesized predicates must share the same associated-type keys
+// when disjoint_impls groups the recursive layout cases.
+struct NormalizeGroups;
+impl VisitMut for NormalizeGroups {
+    fn visit_type_mut(&mut self, ty: &mut syn::Type) {
+        *ty = crate::utils::peel_grouped_type(ty).clone();
+        syn::visit_mut::visit_type_mut(self, ty);
     }
 }

@@ -1,4 +1,6 @@
-use co3::{marker::Native, reference::abi::SoftRef, string::abi::String as AbiString, vec::abi};
+use co3::{
+    lang, marker::Native, reference::abi::SoftRef, string::abi::String as AbiString, vec::abi,
+};
 
 #[test]
 fn shared_string_decodes_without_taking_source_ownership() {
@@ -7,9 +9,10 @@ fn shared_string_decodes_without_taking_source_ownership() {
         original.push_str(text);
         let source = AbiString::from_string(original);
         let mut store = Default::default();
-        let decoded =
-            unsafe { co3::soft_decode::<&String>(SoftRef::from_ref(&Native(source)), &mut store) }
-                .unwrap();
+        let decoded = unsafe {
+            co3::soft_decode::<&String, lang::C>(SoftRef::from_ref(&Native(source)), &mut store)
+        }
+        .unwrap();
         assert_eq!(decoded, text);
         assert_eq!(decoded.capacity(), source.capacity());
         assert_ne!(decoded.as_ptr(), source.as_ptr());
@@ -25,8 +28,10 @@ fn shared_string_rejects_invalid_utf8_without_consuming_source() {
     let source = AbiString(abi::Vec::from_vec(vec![0xff, 0xfe]));
     let mut store = Default::default();
     assert!(
-        unsafe { co3::soft_decode::<&String>(SoftRef::from_ref(&Native(source)), &mut store,) }
-            .is_none()
+        unsafe {
+            co3::soft_decode::<&String, lang::C>(SoftRef::from_ref(&Native(source)), &mut store)
+        }
+        .is_none()
     );
     drop(store);
     let original = unsafe { source.0.into_vec() }.unwrap();
@@ -37,19 +42,25 @@ fn shared_string_rejects_invalid_utf8_without_consuming_source() {
 fn shared_string_validates_carrier_headers() {
     let mut store = Default::default();
     assert!(
-        unsafe { co3::soft_decode::<&String>(SoftRef::from_raw(core::ptr::null()), &mut store) }
-            .is_none()
+        unsafe {
+            co3::soft_decode::<&String, lang::C>(SoftRef::from_raw(core::ptr::null()), &mut store)
+        }
+        .is_none()
     );
     let null = AbiString::null();
     assert!(
-        unsafe { co3::soft_decode::<&String>(SoftRef::from_ref(&Native(null)), &mut store) }
-            .is_none()
+        unsafe {
+            co3::soft_decode::<&String, lang::C>(SoftRef::from_ref(&Native(null)), &mut store)
+        }
+        .is_none()
     );
     let bytes = *b"a";
     let invalid = AbiString(unsafe { abi::Vec::from_raw_parts(bytes.as_ptr().cast_mut(), 2, 1) });
     assert!(
-        unsafe { co3::soft_decode::<&String>(SoftRef::from_ref(&Native(invalid)), &mut store,) }
-            .is_none()
+        unsafe {
+            co3::soft_decode::<&String, lang::C>(SoftRef::from_ref(&Native(invalid)), &mut store)
+        }
+        .is_none()
     );
 }
 

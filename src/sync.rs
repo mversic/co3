@@ -16,7 +16,11 @@ use crate::{
 };
 use crate::{
     ReprC,
-    convert::{DecodeMove, EmptyStore, EncodeMove, Store, decode_move, encode_move},
+    convert::{
+        DecodeMove, DecodeMoveUnchecked, EmptyStore, EncodeMove, EncodeMoveUnchecked, Store,
+        decode_move, decode_move_unchecked, encode_move, encode_move_unchecked,
+    },
+    lang::{self, Language},
     reference::abi::{SoftRef, SoftRefMut},
 };
 
@@ -60,13 +64,13 @@ pub unsafe trait TakeDecoded {
 
 /// Field extraction adapter used by generated aggregate decoders.
 #[doc(hidden)]
-pub struct DecodedField<'d, T: ?Sized, S, L> {
+pub struct DecodedField<'d, T: ?Sized, S, Layout, L = lang::C> {
     value: &'d T,
     store: *mut S,
-    layout: core::marker::PhantomData<L>,
+    layout: core::marker::PhantomData<(Layout, fn() -> L)>,
 }
 
-impl<'d, T: ?Sized, S, L> DecodedField<'d, T, S, L> {
+impl<'d, T: ?Sized, S, Layout, L> DecodedField<'d, T, S, Layout, L> {
     /// # Safety
     /// `value` must be the result of decoding into `store`. The store pointer
     /// must be captured before decoding and remain valid through extraction.
@@ -81,9 +85,9 @@ impl<'d, T: ?Sized, S, L> DecodedField<'d, T, S, L> {
     }
 }
 
-impl<'d, T: ?Sized, S: 'd, L> DecodedField<'d, T, S, L>
+impl<'d, T: ?Sized, S: 'd, Layout, L: Language> DecodedField<'d, T, S, Layout, L>
 where
-    &'d T: DecodeMove<'d, Store = S>,
+    &'d T: DecodeMove<'d, L, Store = S>,
     Self: TakeDecoded,
 {
     /// Decode a shared field and extract its owned value.
@@ -95,27 +99,23 @@ where
         source: <&'d T as ReprC>::CType,
         store: &'d mut S,
     ) -> Option<<Self as TakeDecoded>::Value> {
-        unsafe { Self::decode_with(store, |store| <&'d T>::soft_decode(source, store)) }
-    }
-
-    /// Decode a known-valid shared field and extract its owned value.
-    ///
-    /// # Safety
-    /// The requirements of `Self::decode` and `DecodeMove::soft_decode_unchecked` apply.
-    pub unsafe fn decode_unchecked(
-        source: <&'d T as ReprC>::CType,
-        store: &'d mut S,
-    ) -> <Self as TakeDecoded>::Value {
         unsafe {
             Self::decode_with(store, |store| {
-                Some(<&'d T>::soft_decode_unchecked(source, store))
+                <&'d T as DecodeMove<'d, L>>::soft_decode(source, store)
             })
         }
-        .expect("unchecked decoding produces a value")
     }
+}
 
-    // SAFETY: `decode` must return the corresponding decoder's reference and
-    // must not retain an alias to the result slot that is used after extraction.
+impl<'d, T: ?Sized, S: 'd, Layout, L> DecodedField<'d, T, S, Layout, L>
+where
+    Self: TakeDecoded,
+{
+    /// Extract the owned field from the reference returned by `decode`.
+    ///
+    /// # Safety
+    /// `decode` must return the corresponding decoder's reference and must not
+    /// retain an alias to the result slot that is used after extraction.
     unsafe fn decode_with(
         store: &'d mut S,
         decode: impl FnOnce(&'d mut S) -> Option<&'d T>,
@@ -130,7 +130,7 @@ where
     }
 }
 
-unsafe impl<T: Clone, S> TakeDecoded for DecodedField<'_, T, S, rust_spec::Specified> {
+unsafe impl<T: Clone, S, L> TakeDecoded for DecodedField<'_, T, S, rust_spec::Specified, L> {
     type Value = T;
 
     unsafe fn take_decoded(field: *mut Self) -> Option<T> {
@@ -138,11 +138,40 @@ unsafe impl<T: Clone, S> TakeDecoded for DecodedField<'_, T, S, rust_spec::Speci
     }
 }
 
-unsafe impl<T: ?Sized, S: TakeDecoded> TakeDecoded for DecodedField<'_, T, S, Unspecified> {
+unsafe impl<T: ?Sized, S: TakeDecoded, L> TakeDecoded for DecodedField<'_, T, S, Unspecified, L> {
     type Value = S::Value;
 
     unsafe fn take_decoded(field: *mut Self) -> Option<Self::Value> {
         unsafe { S::take_decoded((*field).store) }
+    }
+}
+
+/// Field extraction adapter for decoders that take no language parameter.
+#[doc(hidden)]
+pub type DecodedFieldUnchecked<'d, T, S, Layout> = DecodedField<'d, T, S, Layout, ()>;
+
+impl<'d, T: ?Sized, S: 'd, Layout> DecodedFieldUnchecked<'d, T, S, Layout>
+where
+    &'d T: DecodeMoveUnchecked<'d, SoftStore = S>,
+    Self: TakeDecoded,
+{
+    /// Decode a known-valid shared field and extract its owned value.
+    ///
+    /// # Safety
+    /// The source must satisfy `DecodeMoveUnchecked::soft_decode_unchecked` for
+    /// `&T`. Its result must be available for immediate extraction by `TakeDecoded`.
+    pub unsafe fn decode_unchecked(
+        source: <&'d T as ReprC>::CType,
+        store: &'d mut S,
+    ) -> <Self as TakeDecoded>::Value {
+        unsafe {
+            Self::decode_with(store, |store| {
+                Some(<&'d T as DecodeMoveUnchecked<'d>>::soft_decode_unchecked(
+                    source, store,
+                ))
+            })
+        }
+        .expect("unchecked decoding produces a value")
     }
 }
 
@@ -210,16 +239,30 @@ impl<R, S: Store> Store for RefSizedDecodeStore<R, S> {
     }
 }
 
-pub struct RefMutSizedEncodeStore<'d, R: DecodeMove<'d, Store: EmptyStore + 'd>, S: Store + Default>
-{
-    state: OwnedEncodeState<'d, R, R, S>,
+pub struct RefMutSizedEncodeStore<
+    'd,
+    R: DecodeMove<'d, L, Store: EmptyStore + 'd>,
+    S: Store + Default,
+    L: Language = lang::C,
+> {
+    state: OwnedEncodeState<'d, R, R, S, L>,
 }
 
-impl<'d, R: DecodeMove<'d, Store: EmptyStore + 'd>, S: Store + Default>
-    RefMutSizedEncodeStore<'d, R, S>
+impl<'d, R: DecodeMove<'d, L, Store: EmptyStore + 'd>, S: Store + Default, L: Language>
+    RefMutSizedEncodeStore<'d, R, S, L>
 {
+    /// Encode a clone with its matching writeback store.
     #[doc(hidden)]
-    pub fn encode(
+    pub fn encode_clone(&mut self, original: &'d mut R) -> SoftRefMut<R::CType>
+    where
+        R: Clone + EncodeMove<L, Store = S>,
+    {
+        self.encode(original, |value, fields| {
+            EncodeMove::<L>::soft_encode(R::clone(value), fields)
+        })
+    }
+
+    pub(crate) fn encode(
         &mut self,
         original: &'d mut R,
         encode: impl FnOnce(&mut R, &mut S) -> R::CType,
@@ -228,8 +271,8 @@ impl<'d, R: DecodeMove<'d, Store: EmptyStore + 'd>, S: Store + Default>
     }
 }
 
-impl<'d, R: DecodeMove<'d, Store: EmptyStore + 'd>, S: Store + Default> Default
-    for RefMutSizedEncodeStore<'d, R, S>
+impl<'d, R: DecodeMove<'d, L, Store: EmptyStore + 'd>, S: Store + Default, L: Language> Default
+    for RefMutSizedEncodeStore<'d, R, S, L>
 {
     fn default() -> Self {
         Self {
@@ -238,8 +281,8 @@ impl<'d, R: DecodeMove<'d, Store: EmptyStore + 'd>, S: Store + Default> Default
     }
 }
 
-impl<'d, R: DecodeMove<'d, Store: EmptyStore + 'd>, S: Store + Default> Store
-    for RefMutSizedEncodeStore<'d, R, S>
+impl<'d, R: DecodeMove<'d, L, Store: EmptyStore + 'd>, S: Store + Default, L: Language> Store
+    for RefMutSizedEncodeStore<'d, R, S, L>
 {
     fn sync(mut self) -> Option<()> {
         let (original, value) = self.state.finish()?;
@@ -248,21 +291,87 @@ impl<'d, R: DecodeMove<'d, Store: EmptyStore + 'd>, S: Store + Default> Store
     }
 }
 
+pub struct RefMutSizedEncodeStoreUnchecked<
+    'd,
+    R: DecodeMoveUnchecked<'d, SoftStore: EmptyStore + 'd>,
+    S: Store + Default,
+> {
+    state: OwnedEncodeState<'d, R, R, S, Unchecked>,
+}
+
+impl<'d, R: DecodeMoveUnchecked<'d, SoftStore: EmptyStore + 'd>, S: Store + Default>
+    RefMutSizedEncodeStoreUnchecked<'d, R, S>
+{
+    #[cfg(feature = "repr-rust")]
+    pub(crate) fn encode(
+        &mut self,
+        original: &'d mut R,
+        encode: impl FnOnce(&mut R, &mut S) -> R::CType,
+    ) -> SoftRefMut<R::CType> {
+        SoftRefMut::from_mut(self.state.encode(original, encode))
+    }
+}
+
+impl<'d, R: DecodeMoveUnchecked<'d, SoftStore: EmptyStore + 'd>, S: Store + Default> Default
+    for RefMutSizedEncodeStoreUnchecked<'d, R, S>
+{
+    fn default() -> Self {
+        Self {
+            state: OwnedEncodeState::default(),
+        }
+    }
+}
+
+impl<'d, R: DecodeMoveUnchecked<'d, SoftStore: EmptyStore + 'd>, S: Store + Default> Store
+    for RefMutSizedEncodeStoreUnchecked<'d, R, S>
+{
+    fn sync(mut self) -> Option<()> {
+        let (original, value) = self.state.finish()?;
+        *original = value;
+        Some(())
+    }
+}
+
+// Drop, reuse, and explicit sync must all reclaim an owned carrier exactly once.
+trait WritebackDecoder<'d, V: ReprC<CType: Sized>> {
+    /// # Safety
+    /// The carrier must satisfy the decoder's ownership and validity contract.
+    unsafe fn decode(carrier: V::CType) -> Option<V>;
+}
+
+impl<'d, L: Language, V: DecodeMove<'d, L, Store: EmptyStore + 'd>> WritebackDecoder<'d, V> for L {
+    unsafe fn decode(carrier: V::CType) -> Option<V> {
+        unsafe { decode_move::<V, L>(carrier) }
+    }
+}
+
+struct Unchecked;
+
+impl<'d, V: DecodeMoveUnchecked<'d, SoftStore: EmptyStore + 'd>> WritebackDecoder<'d, V>
+    for Unchecked
+{
+    unsafe fn decode(carrier: V::CType) -> Option<V> {
+        Some(unsafe { decode_move_unchecked::<V>(carrier) })
+    }
+}
+
 /// Owns one pending carrier. Finishing consumes it exactly once; callers decide
 /// whether to commit the decoded value or drop it during cleanup and reuse.
 struct OwnedEncodeState<
     'd,
     R: ?Sized,
-    V: DecodeMove<'d, Store: EmptyStore + 'd>,
+    V: ReprC<CType: Sized>,
     S: Store + Default,
+    D: WritebackDecoder<'d, V>,
 > {
+    decoder: core::marker::PhantomData<fn() -> D>,
     ctype: Option<V::CType>,
     store: S,
     original: Option<&'d mut R>,
 }
 
-impl<'d, R: ?Sized, V: DecodeMove<'d, Store: EmptyStore + 'd>, S: Store + Default>
-    OwnedEncodeState<'d, R, V, S>
+impl<'d, R: ?Sized, V: ReprC<CType: Sized>, S: Store + Default, D: WritebackDecoder<'d, V>>
+    OwnedEncodeState<'d, R, V, S, D>
 {
     fn encode(
         &mut self,
@@ -277,7 +386,7 @@ impl<'d, R: ?Sized, V: DecodeMove<'d, Store: EmptyStore + 'd>, S: Store + Defaul
 
     fn finish(&mut self) -> Option<(&'d mut R, V)> {
         let ctype = self.ctype.take()?;
-        let value = unsafe { decode_move(ctype) };
+        let value = unsafe { D::decode(ctype) };
         let synced = core::mem::take(&mut self.store).sync();
         let original = self.original.take()?;
         synced?;
@@ -285,11 +394,12 @@ impl<'d, R: ?Sized, V: DecodeMove<'d, Store: EmptyStore + 'd>, S: Store + Defaul
     }
 }
 
-impl<'d, R: ?Sized, V: DecodeMove<'d, Store: EmptyStore + 'd>, S: Store + Default> Default
-    for OwnedEncodeState<'d, R, V, S>
+impl<'d, R: ?Sized, V: ReprC<CType: Sized>, S: Store + Default, D: WritebackDecoder<'d, V>> Default
+    for OwnedEncodeState<'d, R, V, S, D>
 {
     fn default() -> Self {
         Self {
+            decoder: core::marker::PhantomData,
             ctype: None,
             store: S::default(),
             original: None,
@@ -297,8 +407,8 @@ impl<'d, R: ?Sized, V: DecodeMove<'d, Store: EmptyStore + 'd>, S: Store + Defaul
     }
 }
 
-impl<'d, R: ?Sized, V: DecodeMove<'d, Store: EmptyStore + 'd>, S: Store + Default> Drop
-    for OwnedEncodeState<'d, R, V, S>
+impl<'d, R: ?Sized, V: ReprC<CType: Sized>, S: Store + Default, D: WritebackDecoder<'d, V>> Drop
+    for OwnedEncodeState<'d, R, V, S, D>
 {
     fn drop(&mut self) {
         drop(self.finish());
@@ -328,7 +438,7 @@ impl<R: EncodeMove<Store: EmptyStore>, S: Store + Default> RefMutSizedDecodeStor
             self.decode_with_order(
                 |fields| build(fields).map(|value| (value, source)),
                 |value, source| {
-                    source.write(encode_move(value));
+                    source.write(encode_move::<_, lang::C>(value));
                     Some(())
                 },
                 true,
@@ -395,6 +505,65 @@ impl<R: ReprC, S: Default, P> Default for RefMutSizedDecodeStore<R, S, P> {
 impl<R: ReprC, S: Store + Default, P> Store for RefMutSizedDecodeStore<R, S, P> {
     fn sync(mut self) -> Option<()> {
         self.finish()
+    }
+}
+
+pub struct RefMutSizedDecodeStoreUnchecked<R: ReprC, S, P = *mut <R as ReprC>::CType>(
+    RefMutSizedDecodeStore<R, S, P>,
+);
+
+impl<R: EncodeMoveUnchecked<SoftStore: EmptyStore>, S: Store + Default>
+    RefMutSizedDecodeStoreUnchecked<R, S>
+{
+    /// The source must remain valid and exclusively accessible until synchronization or reuse.
+    #[doc(hidden)]
+    pub unsafe fn decode<'a>(
+        &'a mut self,
+        source: *mut R::CType,
+        build: impl FnOnce(&'a mut S) -> Option<R>,
+    ) -> Option<&'a mut R> {
+        if source.is_null() {
+            return None;
+        }
+        unsafe {
+            self.0.decode_with_order(
+                |fields| build(fields).map(|value| (value, source)),
+                |value, source| {
+                    source.write(encode_move_unchecked::<_>(value));
+                    Some(())
+                },
+                true,
+            )
+        }
+    }
+}
+
+impl<R: ReprC, S: Store + Default, P> RefMutSizedDecodeStoreUnchecked<R, S, P> {
+    /// Retain a reconstructed value and type-specific writeback state.
+    ///
+    /// # Safety
+    /// State must remain valid until synchronization. Any pointers into field
+    /// stores must point into pinned backing allocations, since sync moves Self.
+    /// The callback must not let references to temporary storage escape.
+    #[doc(hidden)]
+    pub unsafe fn decode_with<'a>(
+        &'a mut self,
+        build: impl FnOnce(&'a mut S) -> Option<(R, P)>,
+        writeback: fn(R, P) -> Option<()>,
+    ) -> Option<&'a mut R> {
+        unsafe { self.0.decode_with(build, writeback) }
+    }
+}
+
+impl<R: ReprC, S: Default, P> Default for RefMutSizedDecodeStoreUnchecked<R, S, P> {
+    fn default() -> Self {
+        Self(RefMutSizedDecodeStore::default())
+    }
+}
+
+impl<R: ReprC, S: Store + Default, P> Store for RefMutSizedDecodeStoreUnchecked<R, S, P> {
+    fn sync(self) -> Option<()> {
+        self.0.sync()
     }
 }
 
@@ -479,10 +648,10 @@ impl<R: ToOwned + ?Sized, S: Store> Store for RefDstDecodeStore<R, S> {
 /// Owns a slice or slice-tailed C pointee and retains its source borrow until writeback.
 ///
 /// ```compile_fail,E0506
-/// use co3::convert::Store;
+/// use co3::{convert::Store, lang};
 /// let mut values = [false, true];
 /// let mut store = Default::default();
-/// co3::soft_encode(&mut values[..], &mut store);
+/// unsafe { co3::soft_encode::<_, lang::C>(&mut values[..], &mut store) };
 /// values[0] = true;
 /// store.sync();
 /// ```
@@ -573,17 +742,17 @@ impl<'a, R: ReprC<CType: Wide> + ?Sized, S: Store, P, B: core::ops::DerefMut<Tar
 }
 
 #[cfg(feature = "alloc")]
-pub struct RefMutDstEncodeStore<'d, R, S: Store + Default>
+pub struct RefMutDstEncodeStore<'d, R, S: Store + Default, L: Language = lang::C>
 where
-    R: ToOwned<Owned: DecodeMove<'d, Store: EmptyStore + 'd>> + ?Sized,
+    R: ToOwned<Owned: DecodeMove<'d, L, Store: EmptyStore + 'd>> + ?Sized,
 {
-    state: OwnedEncodeState<'d, R, R::Owned, S>,
+    state: OwnedEncodeState<'d, R, R::Owned, S, L>,
 }
 
 #[cfg(feature = "alloc")]
-impl<'d, R, S: Store + Default> RefMutDstEncodeStore<'d, R, S>
+impl<'d, R, S: Store + Default, L: Language> RefMutDstEncodeStore<'d, R, S, L>
 where
-    R: ToOwned<Owned: DecodeMove<'d, Store: EmptyStore + 'd>> + ?Sized,
+    R: ToOwned<Owned: DecodeMove<'d, L, Store: EmptyStore + 'd>> + ?Sized,
 {
     #[cfg(feature = "repr-rust")]
     pub(crate) fn encode(
@@ -596,9 +765,9 @@ where
 }
 
 #[cfg(feature = "alloc")]
-impl<'d, R, S: Store + Default> Default for RefMutDstEncodeStore<'d, R, S>
+impl<'d, R, S: Store + Default, L: Language> Default for RefMutDstEncodeStore<'d, R, S, L>
 where
-    R: ToOwned<Owned: DecodeMove<'d, Store: EmptyStore + 'd>> + ?Sized,
+    R: ToOwned<Owned: DecodeMove<'d, L, Store: EmptyStore + 'd>> + ?Sized,
 {
     fn default() -> Self {
         Self {
@@ -608,9 +777,9 @@ where
 }
 
 #[cfg(feature = "alloc")]
-impl<'d, R, S: Store + Default> Store for RefMutDstEncodeStore<'d, R, S>
+impl<'d, R, S: Store + Default, L: Language> Store for RefMutDstEncodeStore<'d, R, S, L>
 where
-    R: AssignFromOwned + ToOwned<Owned: DecodeMove<'d, Store: EmptyStore + 'd>> + ?Sized,
+    R: AssignFromOwned + ToOwned<Owned: DecodeMove<'d, L, Store: EmptyStore + 'd>> + ?Sized,
 {
     fn sync(mut self) -> Option<()> {
         let (original, owned) = self.state.finish()?;
@@ -653,10 +822,8 @@ impl<R: ReprC<CType: Sized>, S: Default> Default for RefMutSliceDecodeStore<R, S
 }
 
 #[cfg(feature = "alloc")]
-impl<R: EncodeMove<CType: Sized, Store: EmptyStore>, S: Store> Store
-    for RefMutSliceDecodeStore<R, S>
-{
-    fn sync(self) -> Option<()> {
+impl<R: ReprC<CType: Sized>, S: Store> RefMutSliceDecodeStore<R, S> {
+    fn sync_with(self, encode: impl Fn(R) -> R::CType) -> Option<()> {
         let source = self.source?;
         self.store.sync()?;
         let value = self.value?;
@@ -667,9 +834,51 @@ impl<R: EncodeMove<CType: Sized, Store: EmptyStore>, S: Store> Store
 
         let source = unsafe { source.into_mut()? };
         for (destination, value) in source.iter_mut().zip(value) {
-            *destination = encode_move(value);
+            *destination = encode(value);
         }
         Some(())
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl<R: EncodeMove<CType: Sized, Store: EmptyStore>, S: Store> Store
+    for RefMutSliceDecodeStore<R, S>
+{
+    fn sync(self) -> Option<()> {
+        self.sync_with(|value| unsafe { encode_move::<_, lang::C>(value) })
+    }
+}
+
+#[cfg(feature = "alloc")]
+pub struct RefMutSliceDecodeStoreUnchecked<R: ReprC<CType: Sized>, S>(RefMutSliceDecodeStore<R, S>);
+
+#[cfg(feature = "alloc")]
+impl<R: ReprC<CType: Sized>, S> RefMutSliceDecodeStoreUnchecked<R, S> {
+    /// The source must remain valid and exclusively accessible until synchronization.
+    #[cfg(feature = "repr-rust")]
+    pub(crate) unsafe fn decode<'a>(
+        &'a mut self,
+        source: AbiSoftWideRefMut<<[R] as crate::ReprC>::CType>,
+        decode: impl FnOnce(&'a [R::CType], &'a mut S) -> Option<Vec<R>>,
+    ) -> Option<&'a mut [R]> {
+        unsafe { self.0.decode(source, decode) }
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl<R: ReprC<CType: Sized>, S: Default> Default for RefMutSliceDecodeStoreUnchecked<R, S> {
+    fn default() -> Self {
+        Self(RefMutSliceDecodeStore::default())
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl<R: EncodeMoveUnchecked<CType: Sized, SoftStore: EmptyStore>, S: Store> Store
+    for RefMutSliceDecodeStoreUnchecked<R, S>
+{
+    fn sync(self) -> Option<()> {
+        self.0
+            .sync_with(|value| unsafe { encode_move_unchecked(value) })
     }
 }
 
@@ -781,6 +990,8 @@ impl<T: ReprC<CType: Sized>, S: Store> Store for RefVecEncodeStore<T, S> {
 
 #[cfg(test)]
 mod tests {
+    use crate::lang;
+
     #[test]
     fn take_decoded_preserves_non_static_borrows_and_extracts_once() {
         let value = 7;
@@ -794,24 +1005,66 @@ mod tests {
     }
 
     #[cfg(feature = "alloc")]
-    use alloc::boxed::Box;
-    #[cfg(feature = "alloc")]
-    use alloc::sync::Arc;
-    #[cfg(feature = "alloc")]
-    use alloc::vec::Vec;
+    use alloc::{boxed::Box, sync::Arc, vec::Vec};
     use core::cell::RefCell;
     #[cfg(feature = "alloc")]
     use core::sync::atomic::{AtomicUsize, Ordering};
 
-    #[cfg(feature = "alloc")]
-    use super::*;
     use super::{
         ArrayStore, RefMutSizedDecodeStore, RefSizedDecodeStore, RefSizedEncodeStore, Store,
     };
     #[cfg(feature = "alloc")]
-    use super::{RefMutWideEncodeStore, RefWideEncodeStore};
+    use super::{RefMutWideEncodeStore, RefWideEncodeStore, *};
     #[cfg(feature = "alloc")]
     use crate::wide::tests::{Custom, Metadata};
+
+    #[test]
+    fn encoding_store_uses_its_language_for_sync_reuse_and_drop() {
+        use core::sync::atomic::{AtomicUsize, Ordering};
+
+        use crate::lang::{self, Language};
+
+        static C_CALLS: AtomicUsize = AtomicUsize::new(0);
+        static CPP_CALLS: AtomicUsize = AtomicUsize::new(0);
+        struct Value(u8);
+        impl crate::ReprC for Value {
+            type CType = u8;
+        }
+        macro_rules! decoder {
+            ($language:ty, $calls:ident) => {
+                unsafe impl<'d> crate::convert::DecodeMove<'d, $language> for Value {
+                    type Store = ();
+                    unsafe fn soft_decode<'itm: 'd>(source: u8, _: &'itm mut ()) -> Option<Self> {
+                        $calls.fetch_add(1, Ordering::SeqCst);
+                        Some(Value(source))
+                    }
+                }
+            };
+        }
+        decoder!(lang::C, C_CALLS);
+        decoder!(lang::Cpp, CPP_CALLS);
+        fn run<L: Language>()
+        where
+            for<'d> Value: crate::convert::DecodeMove<'d, L, Store = ()>,
+        {
+            let mut first = Value(1);
+            let mut second = Value(2);
+            let mut store = super::RefMutSizedEncodeStore::<Value, (), L>::default();
+            store.encode(&mut first, |_, _| 3);
+            // Reuse decodes the previous carrier before replacing it.
+            store.encode(&mut second, |_, _| 4);
+            Store::sync(store).unwrap();
+            assert_eq!(second.0, 4);
+            // Cleanup also consumes a pending carrier once.
+            let mut store = super::RefMutSizedEncodeStore::<Value, (), L>::default();
+            store.encode(&mut first, |_, _| 5);
+            drop(store);
+        }
+        run::<lang::C>();
+        run::<lang::Cpp>();
+        assert_eq!(C_CALLS.load(Ordering::SeqCst), 3);
+        assert_eq!(CPP_CALLS.load(Ordering::SeqCst), 3);
+    }
 
     #[cfg(feature = "alloc")]
     #[derive(Clone)]
@@ -846,6 +1099,15 @@ mod tests {
         type CType = *mut u8;
     }
 
+    #[cfg(feature = "alloc")]
+    unsafe impl<'d> DecodeMoveUnchecked<'d> for Tracked {
+        type SoftStore = ();
+        unsafe fn soft_decode_unchecked<'itm: 'd>(source: *mut u8, _: &'itm mut ()) -> Self {
+            let value = *unsafe { Box::from_raw(source.cast::<Tracked>()) };
+            value.decodes.fetch_add(1, Ordering::SeqCst);
+            value
+        }
+    }
     #[cfg(feature = "alloc")]
     unsafe impl<'d> DecodeMove<'d> for Tracked {
         type Store = ();
@@ -971,6 +1233,14 @@ mod tests {
     );
     #[cfg(feature = "alloc")]
     state_tests!(
+        RefMutSizedEncodeStoreUnchecked,
+        unchecked_sized_drop,
+        unchecked_sized_sync,
+        unchecked_sized_panic,
+        unchecked_sized_failure
+    );
+    #[cfg(feature = "alloc")]
+    state_tests!(
         RefMutDstEncodeStore,
         dst_drop,
         dst_sync,
@@ -1077,7 +1347,8 @@ mod tests {
     fn tuple_writeback_continues_after_invalid_field() {
         let (mut first, mut second) = (false, false);
         let mut store = Default::default();
-        let encoded = crate::soft_encode((&mut first, &mut second), &mut store);
+        let encoded =
+            unsafe { crate::soft_encode::<_, lang::C>((&mut first, &mut second), &mut store) };
         unsafe {
             // Both carriers point into live conversion stores. Only the first
             // carrier contains an invalid Rust bool representation.

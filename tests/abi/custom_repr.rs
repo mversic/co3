@@ -1,6 +1,6 @@
 use std::cell::{Cell, UnsafeCell};
 
-use co3::{ReprC, marker::AbiCompatible, niche::Niche, rust_spec::RustSpec};
+use co3::{ReprC, lang, marker::AbiCompatible, niche::Niche, rust_spec::RustSpec};
 use static_assertions::{assert_impl_all, assert_not_impl_any};
 
 #[derive(RustSpec, ReprC)]
@@ -57,28 +57,28 @@ enum ValidatedVariant {
 #[cfg(debug_assertions)]
 #[should_panic(expected = "encoding failed custom is_valid")]
 fn checked_owned_encoding_asserts_custom_validity() {
-    let _ = co3::encode(ValidatedOwned(10));
+    let _ = unsafe { co3::encode::<_, lang::C>(ValidatedOwned(10)) };
 }
 
 #[test]
 #[cfg(debug_assertions)]
 #[should_panic(expected = "encoding failed custom is_valid")]
 fn checked_variant_encoding_asserts_custom_validity() {
-    let _ = co3::encode(ValidatedVariant::Value(10));
+    let _ = unsafe { co3::encode::<_, lang::C>(ValidatedVariant::Value(10)) };
 }
 
 #[test]
 #[cfg(debug_assertions)]
 #[should_panic(expected = "encoding failed custom is_valid")]
 fn checked_field_encoding_asserts_custom_validity() {
-    let _ = co3::encode(ValidatedByte(10));
+    let _ = unsafe { co3::encode::<_, lang::C>(ValidatedByte(10)) };
 }
 
 #[test]
 #[cfg(debug_assertions)]
-#[should_panic(expected = "encoding failed AbiCompatibleValidate::is_valid")]
+#[should_panic(expected = "encoding failed AbiValidate::is_valid")]
 fn checked_reference_encoding_asserts_pointee_validity() {
-    let _ = co3::encode(&ValidatedByte(10));
+    let _ = unsafe { co3::encode::<_, lang::C>(&ValidatedByte(10)) };
 }
 
 #[test]
@@ -87,15 +87,15 @@ fn checked_reference_encoding_asserts_pointee_validity() {
 fn checked_mut_reference_encoding_asserts_pointee_validity() {
     let mut value = ValidatedByte(10);
     let mut store = Default::default();
-    let _ = co3::soft_encode(&mut value, &mut store);
+    let _ = unsafe { co3::soft_encode::<_, lang::C>(&mut value, &mut store) };
 }
 
 #[test]
 #[cfg(debug_assertions)]
-#[should_panic(expected = "encoding failed AbiCompatibleValidate::is_valid")]
+#[should_panic(expected = "encoding failed AbiValidate::is_valid")]
 fn checked_wide_reference_encoding_asserts_each_pointee() {
     let values = [ValidatedByte(11), ValidatedByte(10)];
-    let _ = co3::encode(&values[..]);
+    let _ = unsafe { co3::encode::<_, lang::C>(&values[..]) };
 }
 
 #[test]
@@ -104,21 +104,21 @@ fn checked_wide_reference_encoding_asserts_each_pointee() {
 fn checked_mut_wide_reference_encoding_asserts_each_pointee() {
     let mut values = [ValidatedByte(11), ValidatedByte(10)];
     let mut store = Default::default();
-    let _ = co3::soft_encode(&mut values[..], &mut store);
+    let _ = unsafe { co3::soft_encode::<_, lang::C>(&mut values[..], &mut store) };
 }
 
 #[test]
 #[cfg(debug_assertions)]
 fn checked_interior_wide_reference_encoding_does_not_inspect_cells() {
     let values = [UnsafeCell::new(11_u8), UnsafeCell::new(10_u8)];
-    let _ = co3::encode(&values[..]);
+    let _ = unsafe { co3::encode::<_, lang::C>(&values[..]) };
 }
 
 #[test]
 #[cfg(debug_assertions)]
 fn checked_mut_interior_wide_reference_encoding_does_not_inspect_cells() {
     let mut values = [UnsafeCell::new(11_u8), UnsafeCell::new(10_u8)];
-    let _ = co3::encode(&mut values[..]);
+    let _ = unsafe { co3::encode::<_, lang::C>(&mut values[..]) };
 }
 
 #[test]
@@ -127,7 +127,7 @@ fn checked_mut_interior_wide_reference_encoding_does_not_inspect_cells() {
 fn checked_mut_nonrobust_wide_reference_asserts_original_pointee_validity() {
     let mut values = [ValidatedBool(true), ValidatedBool(false)];
     let mut store = Default::default();
-    let _ = co3::soft_encode(&mut values[..], &mut store);
+    let _ = unsafe { co3::soft_encode::<_, lang::C>(&mut values[..], &mut store) };
 }
 
 #[test]
@@ -135,14 +135,14 @@ fn checked_mut_nonrobust_wide_reference_asserts_original_pointee_validity() {
 #[should_panic(expected = "encoding failed custom is_valid")]
 fn checked_wide_box_encoding_asserts_each_pointee() {
     let values = [ValidatedByte(11), ValidatedByte(10)];
-    let _ = co3::encode(Vec::from(values).into_boxed_slice());
+    let _ = unsafe { co3::encode::<_, lang::C>(Vec::from(values).into_boxed_slice()) };
 }
 
 #[test]
 #[cfg(debug_assertions)]
 #[should_panic(expected = "encoding failed custom is_valid")]
 fn checked_box_encoding_asserts_pointee_validity() {
-    let _ = co3::encode(Box::new(ValidatedByte(10)));
+    let _ = unsafe { co3::encode::<_, lang::C>(Box::new(ValidatedByte(10))) };
 }
 
 impl From<u8> for ValidatedByte {
@@ -195,30 +195,34 @@ fn field_representation_maps_owned_conversion_and_transmutation() {
     assert_impl_all!(StableFieldHandle: co3::convert::EncodeMoveUnchecked);
     assert_impl_all!(TransparentFieldHandle: co3::convert::EncodeMoveUnchecked);
     assert!(!unsafe {
-        <ValidatedByte as co3::convert::AbiCompatibleValidate>::is_valid(
+        <ValidatedByte as co3::convert::AbiValidate>::is_valid(
             &<ValidatedByte as ReprC>::CType::from_fields(10),
         )
     });
     assert!(unsafe {
-        <ValidatedByte as co3::convert::AbiCompatibleValidate>::is_valid(
+        <ValidatedByte as co3::convert::AbiValidate>::is_valid(
             &<ValidatedByte as ReprC>::CType::from_fields(11),
         )
     });
     assert!(
-        unsafe { co3::decode::<ValidatedByte>(<ValidatedByte as ReprC>::CType::from_fields(10)) }
-            .is_none()
+        unsafe {
+            co3::decode::<ValidatedByte, lang::C>(<ValidatedByte as ReprC>::CType::from_fields(10))
+        }
+        .is_none()
     );
     assert_eq!(
-        unsafe { co3::decode::<ValidatedByte>(<ValidatedByte as ReprC>::CType::from_fields(11)) }
-            .unwrap()
-            .0,
+        unsafe {
+            co3::decode::<ValidatedByte, lang::C>(<ValidatedByte as ReprC>::CType::from_fields(11))
+        }
+        .unwrap()
+        .0,
         11
     );
     assert!(!unsafe {
-        <NonZeroField as co3::convert::AbiCompatibleValidate>::is_valid(&core::mem::zeroed())
+        <NonZeroField as co3::convert::AbiValidate>::is_valid(&core::mem::zeroed())
     });
     assert!(unsafe {
-        <NonZeroField as co3::convert::AbiCompatibleValidate>::is_valid(
+        <NonZeroField as co3::convert::AbiValidate>::is_valid(
             &<NonZeroField as ReprC>::CType::from_fields(co3::marker::NonZero(1)),
         )
     });
@@ -226,11 +230,13 @@ fn field_representation_maps_owned_conversion_and_transmutation() {
     assert_impl_all!(FieldSlice<u8>: AbiCompatible);
     assert_impl_all!(<FieldSlice<core::mem::MaybeUninit<u8>> as ReprC>::CType: ReprC<CType = <FieldSlice<core::mem::MaybeUninit<u8>> as ReprC>::CType>);
     assert_impl_all!(FieldSlice<core::mem::MaybeUninit<u8>>: AbiCompatible);
-    assert_eq!(co3::encode(FieldHandle(7)).0, 7);
+    assert_eq!(unsafe { co3::encode::<_, lang::C>(FieldHandle(7)) }.0, 7);
     assert_eq!(
-        unsafe { co3::decode::<FieldHandle>(<FieldHandle as ReprC>::CType::from_fields(7)) }
-            .unwrap()
-            .0,
+        unsafe {
+            co3::decode::<FieldHandle, lang::C>(<FieldHandle as ReprC>::CType::from_fields(7))
+        }
+        .unwrap()
+        .0,
         7
     );
 }
@@ -240,25 +246,30 @@ fn field_representation_preserves_inner_niche() {
     assert_impl_all!(NonZeroField: Niche<CType = <NonZeroField as ReprC>::CType>);
     assert_eq!(<NonZeroField as Niche>::NICHE.0.0, 0);
     assert!(matches!(
-        unsafe { co3::decode::<Option<NonZeroField>>(core::mem::zeroed()) },
+        unsafe { co3::decode::<Option<NonZeroField>, lang::C>(core::mem::zeroed()) },
         Some(None)
     ));
 }
 
 #[test]
 fn field_representation_selects_generic_drop_behavior() {
-    assert_eq!(co3::encode(GenericField(13_u32)).0, 13);
-    let encoded = co3::encode(GenericField(Box::new(17_u32)));
-    let decoded: GenericField<Box<u32>> = unsafe { co3::decode(encoded) }.unwrap();
+    assert_eq!(
+        unsafe { co3::encode::<_, lang::C>(GenericField(13_u32)) }.0,
+        13
+    );
+    let encoded = unsafe { co3::encode::<_, lang::C>(GenericField(Box::new(17_u32))) };
+    let decoded: GenericField<Box<u32>> = unsafe { co3::decode::<_, lang::C>(encoded) }.unwrap();
     assert_eq!(*decoded.0, 17);
 }
 
 #[test]
 fn field_representation_moves_auto_drop_field() {
-    let encoded = co3::encode(AutoDropBox {
-        inner: Box::new(11),
-    });
-    let decoded: AutoDropBox = unsafe { co3::decode(encoded) }.unwrap();
+    let encoded = unsafe {
+        co3::encode::<_, lang::C>(AutoDropBox {
+            inner: Box::new(11),
+        })
+    };
+    let decoded: AutoDropBox = unsafe { co3::decode::<_, lang::C>(encoded) }.unwrap();
     assert_eq!(*decoded.inner, 11);
 }
 

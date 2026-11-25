@@ -7,7 +7,7 @@ use std::{
 use co3::{
     ReprC,
     boxed::{Box, abi::Box as AbiBox},
-    ffi,
+    ffi, lang,
     ops::CFn1,
     rust_spec::{self, RustSpec},
 };
@@ -24,7 +24,7 @@ impl Clone for RemoteString {
     fn clone(&self) -> Self {
         let ptr = self.0;
         let value = unsafe { CStr::from_ptr(ptr.as_ptr().cast()) }.to_owned();
-        Self(co3::encode(value))
+        Self(unsafe { co3::encode::<_, lang::C>(value) })
     }
 }
 
@@ -61,13 +61,14 @@ ffi! {
 fn regular_drop_decodes_owned_carrier() {
     let callback: unsafe extern "C" fn(_) = drop_cstr;
     let result: Option<()> =
-        unsafe { callback.call(co3::encode(CString::new("battery").unwrap())) };
+        unsafe { callback.call(co3::encode::<_, lang::C>(CString::new("battery").unwrap())) };
     assert_eq!(result, Some(()));
 }
 
 #[test]
 fn regular_drop_import_calls_export() {
-    let remote = RemoteString(co3::encode(CString::new("battery").unwrap()));
+    let remote =
+        RemoteString(unsafe { co3::encode::<_, lang::C>(CString::new("battery").unwrap()) });
     drop(remote);
 }
 
@@ -137,35 +138,36 @@ impl Drop for MovableTransparentFieldlessDrop {
 fn custom_drop_types_transfer_ownership_through_their_companions() {
     let before = MOVABLE_DROPS.load(Ordering::Relaxed);
 
-    let carrier = co3::encode(MovableDrop(7));
+    let carrier = unsafe { co3::encode::<_, lang::C>(MovableDrop(7)) };
     assert_eq!(carrier.0, 7);
     assert_eq!(MOVABLE_DROPS.load(Ordering::Relaxed), before);
-    let decoded: MovableDrop = unsafe { co3::decode(carrier) }.unwrap();
+    let decoded: MovableDrop = unsafe { co3::decode::<_, lang::C>(carrier) }.unwrap();
     assert_eq!(decoded.0, 7);
     drop(decoded);
 
-    let carrier = unsafe { co3::encode_unchecked(MovableDrop(9)) };
+    let carrier = unsafe { co3::encode_unchecked::<_>(MovableDrop(9)) };
     assert_eq!(MOVABLE_DROPS.load(Ordering::Relaxed), before + 1);
-    let decoded: MovableDrop = unsafe { co3::decode(carrier) }.unwrap();
+    let decoded: MovableDrop = unsafe { co3::decode::<_, lang::C>(carrier) }.unwrap();
     assert_eq!(decoded.0, 9);
     drop(decoded);
 
-    let carrier = co3::encode(MovableFieldlessDrop::Value);
+    let carrier = unsafe { co3::encode::<_, lang::C>(MovableFieldlessDrop::Value) };
     assert_eq!(carrier.tag(), 3);
     assert_eq!(MOVABLE_DROPS.load(Ordering::Relaxed), before + 2);
-    let decoded: MovableFieldlessDrop = unsafe { co3::decode(carrier) }.unwrap();
+    let decoded: MovableFieldlessDrop = unsafe { co3::decode::<_, lang::C>(carrier) }.unwrap();
     drop(decoded);
 
-    let carrier = co3::encode(MovableTransparentDrop(11));
+    let carrier = unsafe { co3::encode::<_, lang::C>(MovableTransparentDrop(11)) };
     assert_eq!(carrier.0, 11);
     assert_eq!(MOVABLE_DROPS.load(Ordering::Relaxed), before + 3);
-    let decoded: MovableTransparentDrop = unsafe { co3::decode(carrier) }.unwrap();
+    let decoded: MovableTransparentDrop = unsafe { co3::decode::<_, lang::C>(carrier) }.unwrap();
     assert_eq!(decoded.0, 11);
     drop(decoded);
 
-    let carrier = co3::encode(MovableTransparentFieldlessDrop::Value);
+    let carrier = unsafe { co3::encode::<_, lang::C>(MovableTransparentFieldlessDrop::Value) };
     assert_eq!(MOVABLE_DROPS.load(Ordering::Relaxed), before + 4);
-    let decoded: MovableTransparentFieldlessDrop = unsafe { co3::decode(carrier) }.unwrap();
+    let decoded: MovableTransparentFieldlessDrop =
+        unsafe { co3::decode::<_, lang::C>(carrier) }.unwrap();
     drop(decoded);
 
     assert_eq!(MOVABLE_DROPS.load(Ordering::Relaxed), before + 5);

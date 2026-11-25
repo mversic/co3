@@ -1,6 +1,6 @@
 use std::{cmp::Ordering, ffi::c_void};
 
-use co3::{ReprC, ffi, rust_spec::RustSpec};
+use co3::{ReprC, ffi, lang, rust_spec::RustSpec};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, RustSpec)]
 #[rust_spec(opaque)]
@@ -63,17 +63,19 @@ unsafe extern "C" {
 
 #[test]
 fn opaque_helpers_cross_exported_abi() {
-    let value = unsafe { new_raw(co3::encode(String::from("X"))) };
+    let value = unsafe { new_raw(co3::encode::<_, lang::C>(String::from("X"))) };
     assert!(!value.is_null());
 
     let cloned = unsafe { clone_raw(value) };
     assert!(!cloned.is_null());
 
     let equal = unsafe { equals_raw(value, cloned) };
-    assert_eq!(Some(true), unsafe { co3::decode(equal) });
+    assert_eq!(Some(true), unsafe { co3::decode::<_, lang::C>(equal) });
 
     let ordering = unsafe { compare_raw(value, cloned) };
-    assert_eq!(Some(Ordering::Equal), unsafe { co3::decode(ordering) });
+    assert_eq!(Some(Ordering::Equal), unsafe {
+        co3::decode::<_, lang::C>(ordering)
+    });
 
     unsafe {
         drop_raw(value);

@@ -19,6 +19,13 @@
 //! ABI contract, including symbol names, calling convention, complete item signatures, ownership,
 //! lifetime, mutability, and aliasing requirements.
 //!
+//! The unsafe import or export declaration also promises the mapped native source guarantees
+//! of `#![lang = "..."]` (C by default) for values decoded from the foreign side: exported
+//! arguments, imported return values, and imported static values. Exports accept C and Rust,
+//! while imports accept every supported language. Rust selects unchecked conversions. The selected language can
+//! elide validity checks; violating its guarantees can cause undefined behavior. A matching
+//! calling convention or a manually constructed raw carrier does not establish these guarantees.
+//!
 //! Foreign callers must ensure that non-null pointer-backed arguments satisfy Rust's reference
 //! rules for the types declared by the exported function for the duration of the call.
 //!
@@ -34,7 +41,7 @@
 //! ```rust
 //! # #[cfg(feature = "derive")]
 //! # mod _doctest {
-//! use co3::{ffi, ReprC, rust_spec::RustSpec};
+//! use co3::{ReprC, ffi, rust_spec::RustSpec};
 //!
 //! // `ReprC` generates a stable C-compatible companion even without an explicit `#[repr(...)]`.
 //! // If given, an explicit representation would be leveraged to produce a more optimal mapping.
@@ -42,7 +49,7 @@
 //! struct Value(u32);
 //!
 //! trait Counter {
-//!    fn increment(&mut self, by: Value);
+//!     fn increment(&mut self, by: Value);
 //! }
 //!
 //! ffi! {
@@ -74,14 +81,14 @@
 //!
 //! #[cfg(feature = "export")]
 //! impl core::ops::AddAssign<u32> for CounterHandle {
-//!    fn add_assign(&mut self, rhs: u32) {
-//!        self.0 += rhs;
-//!    }
+//!     fn add_assign(&mut self, rhs: u32) {
+//!         self.0 += rhs;
+//!     }
 //! }
 //!
 //! #[cfg(feature = "export")]
 //! fn increment<T: core::ops::AddAssign<u32>>(value: &mut T) {
-//!    *value += 1;
+//!     *value += 1;
 //! }
 //!
 //! ffi! {
@@ -115,7 +122,7 @@
 //! use co3::ffi;
 //!
 //! trait Operations {
-//!    fn add(&self, left: u32, right: u32) -> u32;
+//!     fn add(&self, left: u32, right: u32) -> u32;
 //! }
 //!
 //! ffi! {
@@ -201,8 +208,7 @@
 //! ```rust
 //! # #[cfg(feature = "derive")]
 //! # mod _doctest {
-//! use co3::{ffi, Tag, ReprC, rust_spec::RustSpec};
-//! use co3::tag::Tagged;
+//! use co3::{ReprC, Tag, ffi, rust_spec::RustSpec, tag::Tagged};
 //!
 //! #[derive(RustSpec, Tag, ReprC)]
 //! #[tag(u8, unsafe(1))]
@@ -215,19 +221,19 @@
 //! struct RemoteCounter(u16);
 //!
 //! trait Counter {
-//!    fn increment(&mut self, by: u8);
+//!     fn increment(&mut self, by: u8);
 //! }
 //!
 //! trait Reset {
-//!    fn reset(&mut self);
+//!     fn reset(&mut self);
 //! }
 //!
 //! unsafe impl Tagged for CounterHandle<i16> {
-//!    const TAG: u8 = 3;
+//!     const TAG: u8 = 3;
 //! }
 //!
 //! unsafe impl Tagged for CounterHandle<u16> {
-//!    const TAG: u8 = 4;
+//!     const TAG: u8 = 4;
 //! }
 //!
 //! ffi! {
@@ -281,11 +287,11 @@
 //! use co3::ffi;
 //!
 //! fn passthrough(input: Vec<u8>) -> Vec<u8> {
-//!    input
+//!     input
 //! }
 //!
 //! fn clone_into(input: Box<u8>) {
-//!    drop(input);
+//!     drop(input);
 //! }
 //!
 //! ffi! {
@@ -319,7 +325,7 @@
 //! use co3::ffi;
 //!
 //! fn increment(value: &(u8, u32)) -> u8 {
-//!    value.0 + 1
+//!     value.0 + 1
 //! }
 //!
 //! ffi! {
@@ -366,26 +372,32 @@
 //! ```rust
 //! # #[cfg(feature = "derive")]
 //! # mod _doctest {
-//! use co3::{ffi, Error, ReprC, rust_spec::RustSpec};
+//! use co3::{Error, ReprC, ffi, rust_spec::RustSpec};
 //!
 //! #[derive(RustSpec, ReprC)]
 //! #[repr(u8)]
 //! enum ApiError {
-//!    #[repr_c(allow_zero_tag)]
-//!    InvalidRepresentation,
-//!    UnknownHandle,
-//!    SoftSync,
+//!     #[repr_c(allow_zero_tag)]
+//!     InvalidRepresentation,
+//!     UnknownHandle,
+//!     SoftSync,
 //! }
 //!
 //! impl Error for ApiError {
-//!    fn trap_value() -> Self { Self::InvalidRepresentation }
-//!    fn unknown_tag() -> Self { Self::UnknownHandle }
-//!    fn soft_sync_error() -> Self { Self::SoftSync }
+//!     fn trap_value() -> Self {
+//!         Self::InvalidRepresentation
+//!     }
+//!     fn unknown_tag() -> Self {
+//!         Self::UnknownHandle
+//!     }
+//!     fn soft_sync_error() -> Self {
+//!         Self::SoftSync
+//!     }
 //! }
 //!
 //! fn check_error(value: u8) -> ApiError {
-//!    let _ = value;
-//!    ApiError::InvalidRepresentation
+//!     let _ = value;
+//!     ApiError::InvalidRepresentation
 //! }
 //!
 //! ffi! {
@@ -411,7 +423,7 @@
 //! ```rust
 //! # #[cfg(feature = "derive")]
 //! # mod _doctest {
-//! use co3::{ops::CFn2, ReprC, ffi, rust_spec::RustSpec};
+//! use co3::{ReprC, ffi, ops::CFn2, rust_spec::RustSpec};
 //!
 //! #[derive(Clone, Copy, RustSpec, ReprC)]
 //! // Without `#[repr_c(identity)]`, `ReprC` derive produces `ValueCType`, in which case you'd
@@ -443,16 +455,16 @@
 //! ```rust
 //! # #[cfg(feature = "derive")]
 //! # mod _doctest {
-//! use co3::{ReprC, ffi, rust_spec::RustSpec};
+//! use co3::{ReprC, ffi, lang, rust_spec::RustSpec};
 //!
 //! #[derive(Clone, Copy, RustSpec, ReprC)]
 //! struct Value(u8);
 //!
 //! fn apply_callback(callback: Callback, value: Value) -> Value {
-//!     let value = co3::encode(value);
+//!     let value = unsafe { co3::encode::<_, lang::C>(value) };
 //!
 //!     let output = unsafe { callback(value, 1) };
-//!     unsafe { co3::decode(output) }.unwrap()
+//!     unsafe { co3::decode::<_, lang::C>(output) }.unwrap()
 //! }
 //!
 //! ffi! {
@@ -556,8 +568,20 @@
 //! ```
 #![no_std]
 
-use crate::wide::{Wide, WideHeader};
+#[cfg(feature = "repr-rust")]
+use rust_spec::{
+    Unspecified,
+    size::{MetaSized, NulTerminated, SliceLike},
+};
 
+use crate::{
+    convert::Store,
+    lang::Language,
+    marker::Native,
+    niche::Niche,
+    reference::abi::{Ref, RefMut, SoftRefMut},
+    wide::{Wide, WideHeader},
+};
 #[cfg(feature = "repr-rust")]
 use crate::{
     reference::abi::SoftRef,
@@ -565,10 +589,6 @@ use crate::{
         SoftWideRef as AbiSoftWideRef, SoftWideRefMut as AbiSoftWideRefMut, WideRef as AbiWideRef,
     },
 };
-#[cfg(feature = "repr-rust")]
-use rust_spec::size::{MetaSized, NulTerminated, SliceLike};
-
-use crate::marker::Native;
 #[cfg(feature = "alloc")]
 extern crate alloc;
 extern crate self as co3;
@@ -578,7 +598,7 @@ use alloc::boxed::Box;
 
 #[cfg(feature = "derive")]
 pub use co3_derive::*;
-use convert::{Decode, EmptyStore, Encode, EncodeUnchecked};
+use convert::{Decode, DecodeUnchecked, EmptyStore, Encode, EncodeUnchecked};
 #[doc(hidden)]
 pub use disjoint_impls::disjoint_impls;
 #[doc(hidden)]
@@ -588,7 +608,7 @@ pub use rust_spec;
 #[cfg(all(feature = "alloc", feature = "repr-rust"))]
 use rust_spec::size::MetadataKind;
 use rust_spec::{
-    RustSpec, Specified, Unspecified,
+    RustSpec, Specified,
     layout::{NonRobust, Robust},
     size::{ExternTypeLike, SizedKind, Zero},
 };
@@ -596,14 +616,7 @@ use rust_spec::{
 #[cfg(feature = "alloc")]
 use crate::boxed::abi::Box as AbiBox;
 #[cfg(all(feature = "alloc", feature = "repr-rust"))]
-use crate::ffi::NulTerminatedBuf;
-#[cfg(all(feature = "alloc", feature = "repr-rust"))]
-use crate::wide::abi::WideBox as AbiWideBox;
-use crate::{
-    convert::Store,
-    niche::Niche,
-    reference::abi::{Ref, RefMut, SoftRefMut},
-};
+use crate::{ffi::NulTerminatedBuf, wide::abi::WideBox as AbiWideBox};
 
 mod abi;
 pub mod borrow;
@@ -614,10 +627,12 @@ mod cell;
 #[doc(hidden)]
 pub mod cmp;
 pub mod convert;
+#[cfg(feature = "repr-rust")]
 mod decoded;
 #[doc(hidden)]
 pub mod either;
 pub mod ffi;
+pub mod lang;
 pub mod marker;
 mod mem;
 mod mutable;
@@ -952,8 +967,13 @@ disjoint_impls! {
 }
 
 /// Convert `T` into its C-compatible representation, [`T::CType`](ReprC::CType).
-pub fn encode<T: Encode<Store: EmptyStore>>(item: T) -> T::CType {
-    convert::encode_move(item)
+///
+/// # Safety
+/// Foreign code must uphold `L`'s mapped native validity and aliasing guarantees
+/// for any modifications consumed by writeback, including when storage is cleaned
+/// up or reused. This obligation also applies after this function returns.
+pub unsafe fn encode<T: Encode<L, Store: EmptyStore>, L: Language>(item: T) -> T::CType {
+    unsafe { convert::encode_move::<T, L>(item) }
 }
 
 /// Perform the conversion from [`T::CType`](ReprC::CType) into `T`.
@@ -962,15 +982,22 @@ pub fn encode<T: Encode<Store: EmptyStore>>(item: T) -> T::CType {
 ///
 /// If decoding uses a pointer in `source` to access memory, form a reference, or take ownership,
 /// the caller must uphold the validity, lifetime, aliasing, ownership and allocation requirements
-/// of the resulting value.
-pub unsafe fn decode<'d, T: Decode<'d, Store: EmptyStore> + 'd>(source: T::CType) -> Option<T> {
-    unsafe { convert::decode_move(source) }
+/// of the resulting value. The source must also uphold the mapped native validity
+/// and aliasing guarantees of `L`, including any validity checks it elides.
+pub unsafe fn decode<'d, T: Decode<'d, L, Store: EmptyStore + 'd> + 'd, L: Language>(
+    source: T::CType,
+) -> Option<T> {
+    unsafe { convert::decode_move::<T, L>(source) }
 }
 
 /// Convert `T` into [`T::CType`](ReprC::CType) using external storage.
 ///
 /// Prefer using [`encode`] whenever possible
-pub fn soft_encode<T: Encode>(item: T, store: &mut T::Store) -> T::CType {
+///
+/// # Safety
+/// The requirements of [`encode`] apply throughout the store's use, including
+/// synchronization, cleanup, and reuse.
+pub unsafe fn soft_encode<T: Encode<L>, L: Language>(item: T, store: &mut T::Store) -> T::CType {
     item.soft_encode(store)
 }
 
@@ -981,7 +1008,7 @@ pub fn soft_encode<T: Encode>(item: T, store: &mut T::Store) -> T::CType {
 /// # Safety
 ///
 /// See safety section in [`decode`]
-pub unsafe fn soft_decode<'d, T: Decode<'d>>(
+pub unsafe fn soft_decode<'d, T: Decode<'d, L>, L: Language>(
     source: T::CType,
     store: &'d mut T::Store,
 ) -> Option<T> {
@@ -997,22 +1024,24 @@ pub unsafe fn soft_decode<'d, T: Decode<'d>>(
 /// The caller must ensure that foreign code preserves every invariant of the
 /// original Rust value, including validity of any pointees it can mutate.
 pub unsafe fn encode_unchecked<T: EncodeUnchecked<SoftStore: EmptyStore>>(item: T) -> T::CType {
-    unsafe { crate::stored::encode_move_unchecked(item) }
+    unsafe { crate::stored::encode_move_unchecked::<T>(item) }
 }
 
-/// Decode a value known to be accepted by [`decode`].
+/// Decode a carrier whose Rust validity is guaranteed by the caller.
 ///
-/// The default implementation still performs checked decoding. A type may
-/// override the unchecked path to avoid validation.
+/// Uses independent unchecked conversion traits and storage.
 ///
 /// Prefer using [`decode`] whenever possible
 ///
 /// # Safety
 ///
-/// - The caller must uphold all of the safety obligations of [`decode`]. Additionally,
-/// - for the same values of `store` and `source` arguments, [`decode`] must return `Some`.
-pub unsafe fn decode_unchecked<'d, T: Decode<'d, Store: EmptyStore> + 'd>(source: T::CType) -> T {
-    unsafe { crate::stored::decode_move_unchecked(source) }
+/// The source must satisfy all Rust validity, lifetime, aliasing, ownership,
+/// and allocation requirements. Any foreign modifications must preserve those
+/// invariants for the duration of the conversion and its storage.
+pub unsafe fn decode_unchecked<'d, T: DecodeUnchecked<'d, SoftStore: EmptyStore + 'd> + 'd>(
+    source: T::CType,
+) -> T {
+    unsafe { crate::stored::decode_move_unchecked::<T>(source) }
 }
 
 /// Encode `T` using its unchecked conversion store.
@@ -1029,17 +1058,17 @@ pub unsafe fn soft_encode_unchecked<T: EncodeUnchecked>(
     unsafe { T::soft_encode_unchecked(item, store) }
 }
 
-/// Decode a value known to be accepted by [`soft_decode`] using external storage.
+/// Decode a known-valid carrier using independent unchecked conversion storage.
 ///
 /// Prefer using [`soft_decode`] whenever possible
 ///
 /// # Safety
 ///
-/// - The caller must uphold all of the safety obligations of [`soft_decode`]. Additionally,
-/// - for the same values of `store` and `source` arguments, [`soft_decode`] must return `Some`.
-pub unsafe fn soft_decode_unchecked<'d, T: Decode<'d>>(
+/// The requirements of [`decode_unchecked`] apply, and the store must remain
+/// alive for every returned value that borrows from it.
+pub unsafe fn soft_decode_unchecked<'d, T: DecodeUnchecked<'d>>(
     source: T::CType,
-    store: &'d mut T::Store,
+    store: &'d mut T::SoftStore,
 ) -> T {
     unsafe { T::soft_decode_unchecked(source, store) }
 }
@@ -1058,6 +1087,7 @@ mod tests {
 
     use super::*;
     use crate::{
+        lang,
         marker::{Borrowed, Native, NonZero},
         option::abi::Option as AbiOption,
         reference::abi::SoftRefMut,
@@ -1091,12 +1121,13 @@ mod tests {
         static_assertions::assert_type_eq_all!(<Wrapped as ReprC>::CType, Carrier);
 
         let value = NonZero(NonZeroU8::new(7).unwrap());
-        assert_eq!(encode(value).0.0, 7);
+        assert_eq!(unsafe { encode::<_, lang::C>(value) }.0.0, 7);
         assert_eq!(
-            unsafe { decode::<Wrapped>(NonZero(NonZero(7))) }.map(|wrapped| wrapped.0.get()),
+            unsafe { decode::<Wrapped, lang::C>(NonZero(NonZero(7))) }
+                .map(|wrapped| wrapped.0.get()),
             Some(value.0.get())
         );
-        assert!(unsafe { decode::<Wrapped>(core::mem::zeroed()) }.is_none());
+        assert!(unsafe { decode::<Wrapped, lang::C>(core::mem::zeroed()) }.is_none());
     }
 
     #[test]
@@ -1114,22 +1145,22 @@ mod tests {
         static_assertions::assert_impl_all!(TaggedResult<NonZeroU8, ()>: AbiCompatible);
         let value = NonZeroU8::new(7).unwrap();
         let native: Native<option::abi::OptionSome<<NonZeroU8 as crate::ReprC>::CType>> =
-            encode(Some(value));
+            unsafe { encode::<_, lang::C>(Some(value)) };
         assert_eq!(option::abi::OptionSome(NonZero(7)), native.0);
         let tagged: AbiOption<<NonZeroU8 as crate::ReprC>::CType> =
-            encode(TaggedOption::Some(value));
+            unsafe { encode::<_, lang::C>(TaggedOption::Some(value)) };
         assert_eq!(native.0.0.0, 7);
         assert_eq!(tagged.into_option(), Some(Some(NonZero(7))));
         assert_eq!(
-            unsafe { decode::<TaggedOption<NonZeroU8>>(tagged) },
+            unsafe { decode::<TaggedOption<NonZeroU8>, lang::C>(tagged) },
             Some(TaggedOption::Some(value))
         );
         assert!(<NonZeroU8 as crate::niche::Niche>::is_niche(
-            &encode(None::<NonZeroU8>).0.0
+            &unsafe { encode::<_, lang::C>(None::<NonZeroU8>) }.0.0
         ));
 
         let native: Native<result::abi::ResultOk<<NonZeroU8 as crate::ReprC>::CType, ()>> =
-            encode(Result::<NonZeroU8, ()>::Err(()));
+            unsafe { encode::<_, lang::C>(Result::<NonZeroU8, ()>::Err(())) };
         assert_eq!(
             result::abi::ResultOk::<<NonZeroU8 as crate::ReprC>::CType, ()>(
                 NonZero(7),
@@ -1147,19 +1178,19 @@ mod tests {
             NonZero(7)
         );
         let tagged: AbiResult<<NonZeroU8 as crate::ReprC>::CType, ()> =
-            encode(TaggedResult::<NonZeroU8, ()>::Err(()));
+            unsafe { encode::<_, lang::C>(TaggedResult::<NonZeroU8, ()>::Err(())) };
         assert!(<NonZeroU8 as crate::niche::Niche>::is_niche(&native.0.0));
         assert_eq!(
-            unsafe { decode::<TaggedResult<NonZeroU8, ()>>(tagged) },
+            unsafe { decode::<TaggedResult<NonZeroU8, ()>, lang::C>(tagged) },
             Some(TaggedResult::Err(()))
         );
 
         for value in [None, Some(3_u8)] {
-            let encoded = unsafe { encode_unchecked(value) };
+            let encoded = unsafe { encode_unchecked::<_>(value) };
             assert_eq!(unsafe { decode_unchecked::<Option<u8>>(encoded) }, value);
         }
         for value in [Ok(3_u8), Err(false)] {
-            let encoded = unsafe { encode_unchecked(value) };
+            let encoded = unsafe { encode_unchecked::<_>(value) };
             assert_eq!(
                 unsafe { decode_unchecked::<Result<u8, bool>>(encoded) },
                 value
@@ -1175,13 +1206,13 @@ mod tests {
             result::{Result as StableResult, abi::Result as AbiResult},
         };
 
-        let encoded = encode(StableOption::Some(true));
+        let encoded = unsafe { encode::<_, lang::C>(StableOption::Some(true)) };
         assert_eq!(
             encoded.into_option(),
-            Some(Some(co3::primitive::abi::bool::TRUE))
+            Some(Some(crate::primitive::abi::bool::TRUE))
         );
         assert_eq!(
-            unsafe { decode::<StableOption<bool>>(encoded) },
+            unsafe { decode::<StableOption<bool>, lang::C>(encoded) },
             Some(StableOption::Some(true))
         );
         let niche = unsafe {
@@ -1199,11 +1230,14 @@ mod tests {
             )
         };
         assert!(!other_tag.is_niche());
-        assert_eq!(unsafe { decode::<StableOption<bool>>(niche) }, None);
-
-        let encoded = encode(StableResult::<bool, u8>::Err(7));
         assert_eq!(
-            unsafe { decode::<StableResult<bool, u8>>(encoded) },
+            unsafe { decode::<StableOption<bool>, lang::C>(niche) },
+            None
+        );
+
+        let encoded = unsafe { encode::<_, lang::C>(StableResult::<bool, u8>::Err(7)) };
+        assert_eq!(
+            unsafe { decode::<StableResult<bool, u8>, lang::C>(encoded) },
             Some(StableResult::Err(7))
         );
         let niche = unsafe {
@@ -1221,40 +1255,43 @@ mod tests {
             )
         };
         assert!(!other_tag.is_niche());
-        assert_eq!(unsafe { decode::<StableResult<bool, u8>>(niche) }, None);
+        assert_eq!(
+            unsafe { decode::<StableResult<bool, u8>, lang::C>(niche) },
+            None
+        );
 
         let mut store = Default::default();
-        let encoded = soft_encode(None::<StableOption<u8>>, &mut store);
+        let encoded = unsafe { soft_encode::<_, lang::C>(None::<StableOption<u8>>, &mut store) };
         assert_eq!(store.sync(), Some(()));
         let mut store = Default::default();
         assert_eq!(
-            unsafe { soft_decode::<Option<StableOption<u8>>>(encoded, &mut store) },
+            unsafe { soft_decode::<Option<StableOption<u8>>, lang::C>(encoded, &mut store) },
             Some(None)
         );
 
         let value = StableOption::Some(alloc::vec![1_u32, 2]);
         let mut store = Default::default();
-        let carrier = crate::soft_encode(&value, &mut store);
+        let carrier = unsafe { crate::soft_encode::<_, lang::C>(&value, &mut store) };
         assert_eq!(unsafe { (*carrier.as_ptr()).tag() }, 1);
         assert_eq!(store.sync(), Some(()));
 
         let value = StableResult::<alloc::vec::Vec<u32>, u8>::Ok(alloc::vec![3]);
         let mut store = Default::default();
-        let carrier = crate::soft_encode(&value, &mut store);
+        let carrier = unsafe { crate::soft_encode::<_, lang::C>(&value, &mut store) };
         assert_eq!(unsafe { (*carrier.as_ptr()).tag() }, 0);
         assert_eq!(store.sync(), Some(()));
 
         let mut value = StableOption::Some(true);
         let mut store = Default::default();
-        let carrier = crate::soft_encode(&mut value, &mut store);
+        let carrier = unsafe { crate::soft_encode::<_, lang::C>(&mut value, &mut store) };
         unsafe { *carrier.as_ptr() = AbiOption::None() };
         assert_eq!(store.sync(), Some(()));
         assert_eq!(value, StableOption::None);
 
         let mut value = StableResult::<u32, bool>::Ok(4);
         let mut store = Default::default();
-        let carrier = crate::soft_encode(&mut value, &mut store);
-        unsafe { *carrier.as_ptr() = AbiResult::Err(co3::primitive::abi::bool::TRUE) };
+        let carrier = unsafe { crate::soft_encode::<_, lang::C>(&mut value, &mut store) };
+        unsafe { *carrier.as_ptr() = AbiResult::Err(crate::primitive::abi::bool::TRUE) };
         assert_eq!(store.sync(), Some(()));
         assert_eq!(value, StableResult::Err(true));
     }
@@ -1268,7 +1305,7 @@ mod tests {
         let value_mut_ref: &mut Option<u8> = &mut value;
         {
             let mut store = Default::default();
-            let encoded = soft_encode(value_mut_ref, &mut store);
+            let encoded = unsafe { soft_encode::<_, lang::C>(value_mut_ref, &mut store) };
             unsafe {
                 *encoded.as_ptr() = Native(AbiOption::Some(other));
             }
@@ -1280,7 +1317,7 @@ mod tests {
         let ref_mut: &mut [_] = &mut slice;
         {
             let mut store = Default::default();
-            let encoded = soft_encode(ref_mut, &mut store);
+            let encoded = unsafe { soft_encode::<_, lang::C>(ref_mut, &mut store) };
             let c_slice = unsafe { encoded.into_mut().unwrap() };
             c_slice[0] = Native(AbiOption::Some(other));
             store.sync().unwrap();
@@ -1296,7 +1333,7 @@ mod tests {
         let new_val: u8 = 42;
         {
             let mut store = Default::default();
-            let decoded = unsafe { soft_decode::<&mut _>(c_ptr, &mut store) }.unwrap();
+            let decoded = unsafe { soft_decode::<&mut _, lang::C>(c_ptr, &mut store) }.unwrap();
 
             *decoded = Some(new_val);
             store.sync().unwrap();
@@ -1309,7 +1346,7 @@ mod tests {
         let x: u8 = 10;
         {
             let mut store = Default::default();
-            let decoded = unsafe { soft_decode::<&mut [_]>(c_slice, &mut store) }.unwrap();
+            let decoded = unsafe { soft_decode::<&mut [_], lang::C>(c_slice, &mut store) }.unwrap();
 
             decoded[0] = Some(x);
             store.sync().unwrap();
@@ -1328,11 +1365,11 @@ mod tests {
         {
             let mut store = Default::default();
 
-            let encoded = soft_encode(slice_ref, &mut store);
+            let encoded = unsafe { soft_encode::<_, lang::C>(slice_ref, &mut store) };
             let c_slice = unsafe { encoded.into_mut().unwrap() };
 
-            c_slice[0] = Native(abi::Tuple2(100_u32, co3::primitive::abi::bool::FALSE));
-            c_slice[1] = Native(abi::Tuple2(200_u32, co3::primitive::abi::bool::TRUE));
+            c_slice[0] = Native(abi::Tuple2(100_u32, crate::primitive::abi::bool::FALSE));
+            c_slice[1] = Native(abi::Tuple2(200_u32, crate::primitive::abi::bool::TRUE));
             store.sync().unwrap();
         }
 
@@ -1351,11 +1388,11 @@ mod tests {
 
         {
             let mut store = Default::default();
-            let encoded = soft_encode(&mut value, &mut store);
+            let encoded = unsafe { soft_encode::<_, lang::C>(&mut value, &mut store) };
             let original_data = unsafe { (*encoded.as_ptr()).as_ptr() };
             let replacement = AbiBox::from_box(Box::new(Native(AbiTuple2(
                 100,
-                co3::primitive::abi::bool::TRUE,
+                crate::primitive::abi::bool::TRUE,
             ))));
             let replacement_data = replacement.as_ptr();
 
@@ -1375,14 +1412,14 @@ mod tests {
     fn decode_stored_ref_mut_slice() {
         use tuple::abi::Tuple2 as AbiTuple2;
 
-        let mut tuples = [Native(AbiTuple2(10_u32, co3::primitive::abi::bool::TRUE))];
+        let mut tuples = [Native(AbiTuple2(10_u32, crate::primitive::abi::bool::TRUE))];
         let c_slice =
             AbiSoftWideRefMut::<<[(u32, bool)] as crate::ReprC>::CType>::from_mut(&mut tuples[..]);
 
         {
             let mut store = Default::default();
             let decoded =
-                unsafe { soft_decode::<&mut [(u32, bool)]>(c_slice, &mut store) }.unwrap();
+                unsafe { soft_decode::<&mut [(u32, bool)], lang::C>(c_slice, &mut store) }.unwrap();
 
             decoded[0].0 = 100;
             store.sync().unwrap();
@@ -1477,9 +1514,9 @@ mod tests {
             core::mem::size_of::<Tuple2<u8, crate::primitive::abi::bool>>()
         );
         let source = Tuple2(7_u8, true);
-        let encoded = crate::encode(source);
+        let encoded = unsafe { crate::encode::<_, lang::C>(source) };
         assert_eq!(
-            unsafe { crate::decode::<Tuple2<u8, bool>>(encoded) },
+            unsafe { crate::decode::<Tuple2<u8, bool>, lang::C>(encoded) },
             Some(source)
         );
     }
@@ -1508,20 +1545,22 @@ mod tests {
         );
         let source = Cell::new(Vec::from([true, false]));
         let mut store = Default::default();
-        let encoded = crate::soft_encode(source, &mut store);
+        let encoded = unsafe { crate::soft_encode::<_, lang::C>(source, &mut store) };
         let mut decoded_store: () = Default::default();
         let decoded =
-            unsafe { crate::soft_decode::<Cell<Vec<bool>>>(encoded, &mut decoded_store) }.unwrap();
+            unsafe { crate::soft_decode::<Cell<Vec<bool>>, lang::C>(encoded, &mut decoded_store) }
+                .unwrap();
         assert_eq!(decoded.into_inner(), [true, false]);
         crate::Store::sync(decoded_store).unwrap();
         crate::Store::sync(store).unwrap();
         let stable: crate::vec::Vec<bool> = Vec::from([true, false]).into();
         let mut store = Default::default();
-        let encoded = crate::soft_encode(stable, &mut store);
+        let encoded = unsafe { crate::soft_encode::<_, lang::C>(stable, &mut store) };
         let mut decoded_store: () = Default::default();
-        let decoded =
-            unsafe { crate::soft_decode::<crate::vec::Vec<bool>>(encoded, &mut decoded_store) }
-                .unwrap();
+        let decoded = unsafe {
+            crate::soft_decode::<crate::vec::Vec<bool>, lang::C>(encoded, &mut decoded_store)
+        }
+        .unwrap();
         assert_eq!(&*decoded, &[true, false]);
         crate::Store::sync(decoded_store).unwrap();
         crate::Store::sync(store).unwrap();

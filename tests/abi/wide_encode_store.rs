@@ -1,4 +1,5 @@
 use co3::{
+    lang,
     sync::{RefMutWideEncodeStore, RefWideEncodeStore},
     tuple::{Tuple2, Tuple3},
     wide::Wide,
@@ -75,11 +76,14 @@ fn store_can_move_after_pointer_writes_before_sync() {
     let mut values = [false, true];
     let original = values.as_mut_ptr().cast::<()>();
     let mut store = Default::default();
-    let encoded = co3::soft_encode(&mut values[..], &mut store);
+    let encoded = unsafe { co3::soft_encode::<_, lang::C>(&mut values[..], &mut store) };
     assert_ne!(encoded.as_ptr().cast::<()>(), original);
     unsafe {
-        encoded.as_ptr().write(co3::encode(true));
-        encoded.as_ptr().add(1).write(co3::encode(false));
+        encoded.as_ptr().write(co3::encode::<_, lang::C>(true));
+        encoded
+            .as_ptr()
+            .add(1)
+            .write(co3::encode::<_, lang::C>(false));
     }
 
     let synced = {
@@ -123,8 +127,8 @@ fn one_field_wide_tuples_are_unsupported() {
     static_assertions::assert_not_impl_any!(Tuple2<u32, [u8]>: co3::convert::SoftEncodeMut<'static>, co3::convert::SoftEncodeMutUnchecked<'static>);
     static_assertions::assert_impl_all!(&'static Tuple1<u8>: co3::convert::Encode, co3::convert::EncodeUnchecked);
     let tuple = Tuple1(7_u8);
-    let carrier = co3::encode(&tuple);
-    let decoded = unsafe { co3::decode::<&Tuple1<u8>>(carrier) }.unwrap();
+    let carrier = unsafe { co3::encode::<_, lang::C>(&tuple) };
+    let decoded = unsafe { co3::decode::<&Tuple1<u8>, lang::C>(carrier) }.unwrap();
     assert!(core::ptr::eq(decoded, &tuple));
     assert_not_shared_encoder!(Tuple1<core::ffi::CStr>: co3::convert::SoftEncodeRef<'static>, co3::convert::SoftEncodeRefUnchecked<'static>);
     assert_not_shared_encoder!(Tuple2<u32, core::ffi::CStr>: co3::convert::SoftEncodeRef<'static>, co3::convert::SoftEncodeRefUnchecked<'static>);

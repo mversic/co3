@@ -1,6 +1,6 @@
 use core::cell::UnsafeCell;
 
-use co3::ffi;
+use co3::{ffi, lang};
 
 #[derive(co3::rust_spec::RustSpec)]
 #[rust_spec(opaque)]
@@ -23,9 +23,9 @@ ffi! {
 
 fn main() {
     let dropped = DropOpaque(UnsafeCell::new(1));
-    let _ = co3::encode::<&DropOpaque>(&dropped);
+    let _ = unsafe { co3::encode::<&DropOpaque, lang::C>(&dropped) };
 
     let mut value = 1;
     let mut_ref = MutRefOpaque(&mut value);
-    let _ = co3::encode::<&MutRefOpaque<'_>>(&mut_ref);
+    let _ = unsafe { co3::encode::<&MutRefOpaque<'_>, lang::C>(&mut_ref) };
 }

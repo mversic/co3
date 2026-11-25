@@ -1,4 +1,4 @@
-use co3::{ReprC, encode, niche::Niche, rust_spec::RustSpec, soft_decode};
+use co3::{ReprC, encode, lang, niche::Niche, rust_spec::RustSpec, soft_decode};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, RustSpec, ReprC)]
 #[repr(u8)]
@@ -64,9 +64,13 @@ fn explicit_tags_drive_encoding_decoding_and_niches() {
         CONST_FIELDLESS_NICHE.tag(),
         <SparseFieldless as Niche>::NICHE.tag()
     );
-    assert!(!encode(SparseFieldless::A).is_niche());
+    assert!(!unsafe { encode::<_, lang::C>(SparseFieldless::A) }.is_niche());
     assert_eq!(
-        unsafe { co3::decode::<Option<SparseFieldless>>(encode(None::<SparseFieldless>)) },
+        unsafe {
+            co3::decode::<Option<SparseFieldless>, lang::C>(encode::<_, lang::C>(
+                None::<SparseFieldless>,
+            ))
+        },
         Some(None)
     );
     assert_eq!((CONST_INT_TAG, CONST_C_TAG), (1, 1));
@@ -74,7 +78,7 @@ fn explicit_tags_drive_encoding_decoding_and_niches() {
     assert!(CONST_C_NICHE.is_niche());
     assert_eq!(CONST_INT_NICHE.tag(), <SparseInt as Niche>::NICHE.tag());
     assert_eq!(CONST_C_NICHE.tag(), <SparseC as Niche>::NICHE.tag());
-    let a = encode(SparseInt::A(42));
+    let a = unsafe { encode::<_, lang::C>(SparseInt::A(42)) };
     assert!(!a.is_niche());
     let raw =
         unsafe { <SparseInt as ReprC>::CType::from_raw_parts(1, core::mem::MaybeUninit::new(a)) };
@@ -83,8 +87,8 @@ fn explicit_tags_drive_encoding_decoding_and_niches() {
         unsafe { <SparseInt as ReprC>::CType::from_raw_parts(0, core::mem::MaybeUninit::uninit()) };
     assert!(raw_niche.is_niche());
     assert!(raw_niche != <SparseInt as Niche>::NICHE);
-    let b = encode(SparseInt::B);
-    let c = encode(SparseInt::C);
+    let b = unsafe { encode::<_, lang::C>(SparseInt::B) };
+    let c = unsafe { encode::<_, lang::C>(SparseInt::C) };
     assert_eq!([a.tag(), b.tag(), c.tag()], [1, 2, 5]);
     assert!(a == <SparseInt as ReprC>::CType::A(42));
     assert!(b == <SparseInt as ReprC>::CType::B());
@@ -103,36 +107,36 @@ fn explicit_tags_drive_encoding_decoding_and_niches() {
         "SparseIntCType::<invalid> { tag: 0 }"
     );
     assert_eq!(
-        unsafe { soft_decode::<SparseInt>(a, &mut None) },
+        unsafe { soft_decode::<SparseInt, lang::C>(a, &mut None) },
         Some(SparseInt::A(42))
     );
     assert_eq!(
-        unsafe { soft_decode::<SparseInt>(b, &mut None) },
+        unsafe { soft_decode::<SparseInt, lang::C>(b, &mut None) },
         Some(SparseInt::B)
     );
     assert_eq!(
-        unsafe { soft_decode::<SparseInt>(c, &mut None) },
+        unsafe { soft_decode::<SparseInt, lang::C>(c, &mut None) },
         Some(SparseInt::C)
     );
     assert_eq!(<SparseInt as Niche>::NICHE.tag(), 0);
 
-    let a = encode(SparseC::A(42));
-    let b = encode(SparseC::B);
-    let c = encode(SparseC::C);
+    let a = unsafe { encode::<_, lang::C>(SparseC::A(42)) };
+    let b = unsafe { encode::<_, lang::C>(SparseC::B) };
+    let c = unsafe { encode::<_, lang::C>(SparseC::C) };
     assert_eq!([a.tag(), b.tag(), c.tag()], [1, 2, 5]);
     assert!(a == <SparseC as ReprC>::CType::A(42));
     assert!(b == <SparseC as ReprC>::CType::B());
     assert!(c == <SparseC as ReprC>::CType::C());
     assert_eq!(
-        unsafe { soft_decode::<SparseC>(a, &mut None) },
+        unsafe { soft_decode::<SparseC, lang::C>(a, &mut None) },
         Some(SparseC::A(42))
     );
     assert_eq!(
-        unsafe { soft_decode::<SparseC>(b, &mut None) },
+        unsafe { soft_decode::<SparseC, lang::C>(b, &mut None) },
         Some(SparseC::B)
     );
     assert_eq!(
-        unsafe { soft_decode::<SparseC>(c, &mut None) },
+        unsafe { soft_decode::<SparseC, lang::C>(c, &mut None) },
         Some(SparseC::C)
     );
     assert_eq!(<SparseC as Niche>::NICHE.tag(), 0);
@@ -144,11 +148,11 @@ fn explicit_tags_drive_encoding_decoding_and_niches() {
     assert!(!other_invalid.is_niche());
     assert!(uninitialized != <SparseC as Niche>::NICHE);
     assert_eq!(
-        unsafe { soft_decode::<SparseC>(uninitialized, &mut None) },
+        unsafe { soft_decode::<SparseC, lang::C>(uninitialized, &mut None) },
         None
     );
 
-    assert_eq!(encode(WithZero::A(7)).tag(), 0);
+    assert_eq!(unsafe { encode::<_, lang::C>(WithZero::A(7)) }.tag(), 0);
     assert_eq!(<WithZero as Niche>::NICHE.tag(), u8::MAX);
     assert_eq!(<WithZeroAndMax as Niche>::NICHE.tag(), u8::MAX - 1);
     assert!(<WithZeroAndMax as Niche>::NICHE.is_niche());

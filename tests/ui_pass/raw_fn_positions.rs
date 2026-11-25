@@ -1,7 +1,18 @@
-use co3::{ffi, ffi::{c_char, c_int}};
+use co3::{
+    ffi,
+    ffi::{c_char, c_int},
+};
 
 macro_rules! macro_owned_type {
     (raw fn($($arg:tt)*)) => {
+        u8
+    };
+}
+
+type __Co3RawType0 = u16;
+
+macro_rules! __co3_raw_fn_type {
+    () => {
         u8
     };
 }
@@ -24,6 +35,8 @@ ffi! {
 
     type GenericDefault<T = raw fn()> = T;
     type InsideMacro = macro_owned_type!(raw fn());
+    type UserMacro = __co3_raw_fn_type!();
+    type UserAlias = __Co3RawType0;
     type Unpacked = raw fn(#[unpack(_, _)] &mut [u8]) -> c_int;
     type CIntAlias = c_int;
     type CCharPointer = *const c_char;
@@ -42,5 +55,7 @@ fn main() {
     let _: Option<unsafe extern "C" fn(u8)> = CALLBACK.read();
     let _: GenericDefault = None;
     let _: InsideMacro = 0u8;
+    let _: UserMacro = 0u8;
+    let _: UserAlias = 0u16;
     let _: Option<Unpacked> = None;
 }

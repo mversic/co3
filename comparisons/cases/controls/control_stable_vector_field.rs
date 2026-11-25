@@ -1,16 +1,13 @@
-
-
-
-use co3::convert::{lang};
+use co3::convert::lang;
 
 include!("../support/mod.rs");
 
 #[cfg(feature = "abi_stable")]
 use abi_stable::std_types::RVec as Vec;
-#[cfg(feature = "stabby")]
-use stabby::vec::Vec;
 #[cfg(feature = "co3")]
 use co3::vec::Vec;
+#[cfg(feature = "stabby")]
+use stabby::vec::Vec;
 
 #[cfg_attr(feature = "abi_stable", derive(abi_stable::StableAbi))]
 #[cfg_attr(feature = "stabby", stabby::stabby)]
@@ -37,13 +34,26 @@ co3::ffi! {
 #[cfg(feature = "abi_stable")]
 abi_stable_signature!(echo: (Node) -> Node);
 
+#[cfg(any(
+    feature = "co3",
+    feature = "uniffi",
+    feature = "diplomat",
+    feature = "interoptopus",
+    feature = "safer_ffi",
+    feature = "boltffi"
+))]
+fn main() {}
+
+#[cfg(any(feature = "abi_stable", feature = "stabby"))]
 fn main() {
-    #[cfg(any(feature = "abi_stable", feature = "stabby"))]
     {
         let export: extern "C" fn(Node) -> Node = echo;
         let mut children = Vec::new();
         children.push(23);
-        let result = export(Node { weight: 7, children });
+        let result = export(Node {
+            weight: 7,
+            children,
+        });
         assert_eq!(result.weight, 7);
         assert_eq!(&result.children[..], &[23]);
     }

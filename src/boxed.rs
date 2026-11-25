@@ -1,4 +1,5 @@
 //! Owning C-ABI carrier types.
+
 #[doc(hidden)]
 // TODO: Questionable export
 pub use alloc::boxed::Box;
@@ -8,7 +9,10 @@ use rust_spec::RustSpec;
 
 use crate::{
     CFnArg, CFnReturn, CType, ReprC,
-    convert::{Decode, DecodeMove, Encode, EncodeMove, EncodeMoveUnchecked},
+    convert::{
+        Decode, DecodeMove, DecodeMoveUnchecked, DecodeUnchecked, Encode, EncodeMove,
+        EncodeMoveUnchecked,
+    },
     marker::{AbiCompatible, Zeroable},
     reference::impl_thin_pointer_traits,
     wide::{impl_carrier_borrow, impl_identity_carrier},
@@ -33,6 +37,7 @@ impl<C> OwnedBoxCarrier<C> for C {
 #[doc(hidden)]
 pub mod abi {
     use super::*;
+    use crate::lang::Language;
 
     /// Owned ABI pointer to a lowered `T: CType` pointee.
     ///
@@ -128,7 +133,7 @@ mod tests {
     use static_assertions::{assert_impl_all, assert_type_eq_all};
 
     use super::{Box, abi};
-    use crate::{CType, ReprC};
+    use crate::{CType, ReprC, lang};
 
     struct Payload;
     unsafe impl CType for Payload {}
@@ -154,14 +159,18 @@ mod tests {
     fn interior_box_validation_checks_null_and_pointee() {
         use core::cell::Cell;
 
-        use crate::convert::AbiCompatibleValidate;
-
-        assert!(!unsafe { Box::<Cell<bool>>::is_valid(&abi::Box::null()) });
-        let carrier = unsafe { crate::encode_unchecked(Box::new(Cell::new(true))) };
-        assert!(unsafe { Box::<Cell<bool>>::is_valid(&carrier) });
+        assert!(!unsafe {
+            <Box<Cell<bool>> as crate::convert::AbiValidate<lang::C>>::is_valid(&abi::Box::null())
+        });
+        let carrier = unsafe { crate::encode_unchecked::<_>(Box::new(Cell::new(true))) };
+        assert!(unsafe {
+            <Box<Cell<bool>> as crate::convert::AbiValidate<lang::C>>::is_valid(&carrier)
+        });
         drop(
-            unsafe { crate::soft_decode::<Box<Cell<bool>>>(carrier, &mut Default::default()) }
-                .unwrap(),
+            unsafe {
+                crate::soft_decode::<Box<Cell<bool>>, lang::C>(carrier, &mut Default::default())
+            }
+            .unwrap(),
         );
     }
 }

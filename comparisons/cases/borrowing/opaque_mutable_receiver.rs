@@ -51,31 +51,61 @@ co3::ffi! {
     }
 }
 
+#[cfg(feature = "co3")]
 fn main() {
-    #[cfg(any(feature = "co3", feature = "diplomat", feature = "interoptopus"))]
     {
-        #[cfg(feature = "diplomat")]
-        use diplomat_case::Counter;
         let mut counter = Counter { input: 7 };
-        #[cfg(any(feature = "co3", feature = "diplomat"))]
+
         {
             unsafe extern "C" {
-                #[cfg_attr(
-                    feature = "co3",
-                    link_name = "opaque_mutable_receiver__Counter__increment"
-                )]
-                #[cfg_attr(feature = "diplomat", link_name = "Counter_increment")]
+                #[link_name = "opaque_mutable_receiver__Counter__increment"]
                 fn exported_increment(handle: *mut core::ffi::c_void);
             }
             unsafe { exported_increment(core::ptr::from_mut(&mut counter).cast()) };
         }
-        #[cfg(feature = "interoptopus")]
-        unsafe {
-            counter_increment(&mut counter)
-        };
+
         assert_eq!(counter.input, 8);
     }
-    #[cfg(feature = "boltffi")]
+}
+
+#[cfg(any(
+    feature = "uniffi",
+    feature = "safer_ffi",
+    feature = "abi_stable",
+    feature = "stabby"
+))]
+fn main() {}
+
+#[cfg(feature = "diplomat")]
+fn main() {
+    {
+        use diplomat_case::Counter;
+        let mut counter = Counter { input: 7 };
+
+        {
+            unsafe extern "C" {
+                #[link_name = "Counter_increment"]
+                fn exported_increment(handle: *mut core::ffi::c_void);
+            }
+            unsafe { exported_increment(core::ptr::from_mut(&mut counter).cast()) };
+        }
+
+        assert_eq!(counter.input, 8);
+    }
+}
+
+#[cfg(feature = "interoptopus")]
+fn main() {
+    {
+        let mut counter = Counter { input: 7 };
+
+        unsafe { counter_increment(&mut counter) };
+        assert_eq!(counter.input, 8);
+    }
+}
+
+#[cfg(feature = "boltffi")]
+fn main() {
     {
         let handle = __BoltffiCounterHandle::new(Counter { input: 7 });
         let status = unsafe {

@@ -1,7 +1,12 @@
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
-use crate::{Co3Static, co3_path, symbol_name_value, utils::cfg_attrs};
+use crate::{
+    Co3Static, co3_path,
+    codec::{Carrier, Conversion},
+    symbol_name_value,
+    utils::cfg_attrs,
+};
 
 fn static_raw_ident(ident: &syn::Ident) -> syn::Ident {
     format_ident!("__co3_static_{ident}")
@@ -130,104 +135,86 @@ fn gen_import_wrapper(
     ty: &syn::Type,
     raw_ident: &syn::Ident,
     mutable: bool,
+    language: &Conversion,
 ) -> TokenStream {
     let (wrapper_ident, definition, value) = wrapper_definition(vis, ident, ty, mutable);
 
     let co3 = co3_path();
     // A concrete lifetime lets rustc resolve the function pointer's DecodeMove
     // store before checking the EmptyStore bound.
-    let (decode_bounds, decode) = if matches!(ty, syn::Type::FnPtr(_)) {
-        (
-            quote! {
-                #ty: #co3::convert::Decode<'static, Store: #co3::convert::EmptyStore>,
-                <#ty as #co3::ReprC>::CType: Copy,
-            },
-            quote!(#co3::decode::<'static, #ty>(source)),
-        )
+    let fn_ptr = matches!(ty, syn::Type::FnPtr(_));
+    let lt = if fn_ptr {
+        syn::parse_quote!('static)
     } else {
-        (
-            quote! {
-                for<'__co3_decode> #ty: #co3::convert::Decode<'__co3_decode, Store: #co3::convert::EmptyStore>,
-                <#ty as #co3::ReprC>::CType: Copy,
-            },
-            quote!(#co3::decode::<#ty>(source)),
-        )
+        syn::parse_quote!('__co3_decode)
     };
-
-    let soft_read = if mutable {
-        quote! {
-            #[inline]
-            pub unsafe fn soft_read<'__co3_static_d>(
-                &self,
-                store: &'__co3_static_d mut <#ty as #co3::convert::DecodeMove<'__co3_static_d>>::Store,
-            ) -> Option<#ty>
-            where
-                for<'_dummy> #ty: #co3::convert::Decode<'__co3_static_d> + Copy,
-                <#ty as #co3::ReprC>::CType: Copy,
-            {
-                let source = unsafe { core::ptr::read(core::ptr::addr_of!(#raw_ident)) };
-                unsafe { #co3::soft_decode::<#ty>(source, store) }
-            }
-        }
+    let binder = (!fn_ptr).then(|| quote!(for<#lt>));
+    let decoder = language.bound(Carrier::Value, Some(&lt), language.empty_store());
+    let decode_bounds = quote!(#binder #ty: #decoder, <#ty as #co3::ReprC>::CType: Copy,);
+    let decode = language.decode(
+        Carrier::Value,
+        quote!(#ty),
+        fn_ptr.then_some(&lt),
+        quote!(source),
+        None,
+    );
+    let stored_lt = syn::parse_quote!('__co3_static_d);
+    let stored = language.bound(Carrier::Move, Some(&stored_lt), quote!());
+    let soft_bound = language.bound(Carrier::Value, Some(&stored_lt), quote!());
+    let state = language.store();
+    let soft = language.decode(
+        Carrier::Value,
+        quote!(#ty),
+        Some(&stored_lt),
+        quote!(source),
+        Some(quote!(store)),
+    );
+    let unsafe_fn = mutable.then(|| quote!(unsafe));
+    let source = if mutable {
+        quote!(unsafe { core::ptr::read(core::ptr::addr_of!(#raw_ident)) })
     } else {
-        quote! {
-            #[inline]
-            pub fn soft_read<'__co3_static_d>(
-                &self,
-                store: &'__co3_static_d mut <#ty as #co3::convert::DecodeMove<'__co3_static_d>>::Store,
-            ) -> Option<#ty>
-            where
-                for<'_dummy> #ty: #co3::convert::Decode<'__co3_static_d> + #co3::marker::AbiCompatible + Copy,
-                for<'_dummy> <#ty as #co3::rust_spec::RustSpec>::Mutability: __Co3InteriorTrap<Trap = #co3::rust_spec::layout::Robust>,
-                <#ty as #co3::ReprC>::CType: Copy,
-            {
-                let source = unsafe { #raw_ident };
-                unsafe { #co3::soft_decode::<#ty>(source, store) }
-            }
-        }
+        quote!(unsafe { #raw_ident })
     };
-
-    let read = if mutable {
-        quote! {
-            #[inline]
-            pub unsafe fn read(&self) -> Option<#ty>
-            where for<'_dummy> #ty: Copy, #decode_bounds
-            {
-                let source = unsafe { core::ptr::read(core::ptr::addr_of!(#raw_ident)) };
-                unsafe { #decode }
-            }
+    let shared = (!mutable).then(||quote!(
+        for<'_dummy> #ty: #co3::marker::AbiCompatible,
+        for<'_dummy> <#ty as #co3::rust_spec::RustSpec>::Mutability: __Co3InteriorTrap<Trap = #co3::rust_spec::layout::Robust>,
+    ));
+    let read = quote! {
+        #[inline]
+        pub #unsafe_fn fn read(&self) -> Option<#ty>
+        where #shared for<'_dummy> #ty: Copy, #decode_bounds {
+            let source = #source;
+            #decode
         }
-    } else {
-        quote! {
-            #[inline]
-            pub fn read(&self) -> Option<#ty>
-            where
-                for<'_dummy> <#ty as #co3::rust_spec::RustSpec>::Mutability: __Co3InteriorTrap<Trap = #co3::rust_spec::layout::Robust>,
-                for<'_dummy> #ty: #co3::marker::AbiCompatible + Copy,
-                #decode_bounds
-            {
-                let source = unsafe { #raw_ident };
-                unsafe { #decode }
-            }
+        #[inline]
+        pub #unsafe_fn fn soft_read<#stored_lt>(&self, store: &#stored_lt mut <#ty as #stored>::#state) -> Option<#ty>
+        where #shared for<'_dummy> #ty: #soft_bound + Copy, <#ty as #co3::ReprC>::CType: Copy {
+            let source = #source;
+            #soft
         }
     };
-
     let direct_access = (!mutable).then(|| {
+        let (get_bounds, validate) = match language {
+            Conversion::Checked(lang) => (quote! {
+                for<'_dummy> <#ty as #co3::rust_spec::RustSpec>::Mutability: __Co3InteriorTrap<Trap = #co3::rust_spec::layout::Robust>,
+                for<'_dummy> #ty: #co3::convert::AbiValidate<#lang> + Sync,
+            }, quote! {
+                if !unsafe { <#ty as #co3::convert::AbiValidate<#lang>>::is_valid(&#raw_ident) } {
+                    return None;
+                }
+            }),
+            Conversion::Unchecked => (quote! {
+                for<'_dummy> #ty: #co3::marker::AbiCompatible + Sync,
+            }, quote! {}),
+        };
         quote! {
             #[inline]
             pub fn get(&self) -> Option<&#ty>
             where
-                for<'_dummy> <#ty as #co3::rust_spec::RustSpec>::Mutability: __Co3InteriorTrap<Trap = #co3::rust_spec::layout::Robust>,
-                for<'_dummy> #ty: #co3::convert::AbiCompatibleValidate + Sync,
+                #get_bounds
             {
-                let valid = unsafe {
-                    <#ty as #co3::convert::AbiCompatibleValidate>::is_valid(
-                        unsafe { &#raw_ident },
-                    )
-                };
-                valid.then(|| unsafe {
-                    &*(&#raw_ident as *const _ as *const #ty)
-                })
+                #validate
+                Some(unsafe { self.get_unchecked() })
             }
 
             #[inline]
@@ -239,24 +226,29 @@ fn gen_import_wrapper(
         }
     });
 
+    let encoder = language.bound(Carrier::Value, None, language.empty_store());
+    let encode = |v| language.encode(Carrier::Value, quote!(#ty), v, None, None);
+    let set = encode(quote!(value));
+    let default = encode(quote!(<#ty as core::default::Default>::default()));
+    let take = language.decode(Carrier::Value, quote!(#ty), None, quote!(old), None);
     let mutable_methods = mutable.then(|| quote! {
         #[inline]
         pub unsafe fn set(&self, value: #ty)
-        where for<'_dummy> #ty: #co3::convert::Encode<Store: #co3::convert::EmptyStore>,
+        where for<'_dummy> #ty: #encoder,
         {
-            let value = #co3::encode(value);
+            let value = #set;
             unsafe { core::ptr::write(core::ptr::addr_of_mut!(#raw_ident), value); }
         }
 
         #[inline]
         pub unsafe fn take(&self) -> Option<#ty>
         where
-            for<'_dummy> #ty: #co3::convert::Encode<Store: #co3::convert::EmptyStore> + core::default::Default,
+            for<'_dummy> #ty: #encoder + core::default::Default,
             #decode_bounds
         {
-            let replacement = #co3::encode(<#ty as core::default::Default>::default());
+            let replacement = #default;
             let old = unsafe { core::ptr::replace(core::ptr::addr_of_mut!(#raw_ident), replacement) };
-            unsafe { #co3::decode::<#ty>(old) }
+            #take
         }
     });
 
@@ -287,7 +279,6 @@ fn gen_import_wrapper(
             #[allow(private_bounds, reason = "generated accessors use internal validation bounds")]
             impl #wrapper_ident {
                 #direct_access
-                #soft_read
                 #read
                 #mutable_methods
             }
@@ -300,6 +291,7 @@ pub(crate) fn gen_extern_static(
     abi: &syn::Abi,
     block_attrs: &[syn::Attribute],
     item: Co3Static,
+    language: &Conversion,
 ) -> TokenStream {
     let co3 = co3_path();
 
@@ -328,7 +320,7 @@ pub(crate) fn gen_extern_static(
 
     let static_assert = gen_static_assert(&ty);
     let mutable = !matches!(mutability, syn::StaticMutability::None);
-    let wrapper = gen_import_wrapper(&vis, &ident, &ty, &raw_ident, mutable);
+    let wrapper = gen_import_wrapper(&vis, &ident, &ty, &raw_ident, mutable, language);
 
     quote! {
         #(#cfg_attrs)*

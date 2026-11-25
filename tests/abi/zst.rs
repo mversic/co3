@@ -4,7 +4,7 @@ use core::{
     num::NonZero,
 };
 
-use co3::{CFnArg, CFnReturn, CType, ReprC, marker::AbiCompatible, rust_spec::RustSpec};
+use co3::{CFnArg, CFnReturn, CType, ReprC, lang, marker::AbiCompatible, rust_spec::RustSpec};
 use static_assertions::{assert_impl_all, assert_not_impl_any};
 
 #[derive(Debug, Clone, PartialEq, Eq, RustSpec, ReprC)]
@@ -172,10 +172,16 @@ fn unit_like_return_layout_requires_alignment_one() {
 #[test]
 fn tagged_result_with_empty_variant_round_trips() {
     for value in [Ok(42u32), Err(())] {
-        assert_eq!(unsafe { co3::decode(co3::encode(value)) }, Some(value));
+        assert_eq!(
+            unsafe { co3::decode::<_, lang::C>(co3::encode::<_, lang::C>(value)) },
+            Some(value)
+        );
     }
     for value in [Ok(()), Err(42u32)] {
-        assert_eq!(unsafe { co3::decode(co3::encode(value)) }, Some(value));
+        assert_eq!(
+            unsafe { co3::decode::<_, lang::C>(co3::encode::<_, lang::C>(value)) },
+            Some(value)
+        );
     }
 }
 
@@ -194,8 +200,10 @@ fn niche_optimized_option_and_result_are_function_values() {
 
 #[test]
 fn transparent_enum_carrier_constructs_its_variant() {
-    let carrier = <TransparentEnum<()> as ReprC>::CType::A(co3::encode(Box::new(())));
+    let carrier = <TransparentEnum<()> as ReprC>::CType::A(unsafe {
+        co3::encode::<_, lang::C>(Box::new(()))
+    });
     assert_eq!(carrier.tag(), ());
-    let decoded = unsafe { co3::decode::<TransparentEnum<()>>(carrier) }.unwrap();
+    let decoded = unsafe { co3::decode::<TransparentEnum<()>, lang::C>(carrier) }.unwrap();
     assert_eq!(decoded, TransparentEnum::A(Box::new(())));
 }

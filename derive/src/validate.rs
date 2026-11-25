@@ -902,6 +902,15 @@ fn validate_shared(items: &[crate::ForeignItem], validate_unpacks: bool) -> Resu
                 validate_no_dispatch_attrs(&item.attrs, &mut errors);
             }
             crate::ForeignItem::Type(item) => {
+                if let Some(span) = item.dispatch_span {
+                    push_error(
+                        &mut errors,
+                        Error::new(
+                            span,
+                            "tagged-dispatch predicates are not allowed in this position",
+                        ),
+                    );
+                }
                 validate_no_dispatch_attrs(&item.ty.attrs, &mut errors);
             }
             crate::ForeignItem::Fn(item) => {

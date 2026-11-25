@@ -5,6 +5,7 @@ use syn::{FnArg, ItemImpl, visit_mut::VisitMut};
 use crate::{
     ImportMode,
     argument::{self, Argument, Unpack},
+    codec::{Boundary, Carrier, Conversion},
     dispatch::{TagId, gen_return_derase_expr, gen_tag_erase_stmts, is_tag_id_arg, tag_id},
     ffi_fn::{
         self, gen_return_borrow_check, gen_soft_sync_error_value, gen_trap_value, is_by_val_attr,
@@ -44,12 +45,14 @@ pub(crate) fn strip_internal_arg_attrs(signature: &mut syn::Signature) {
 }
 
 pub(crate) fn wrap_fn_definition(
+    boundary: Boundary<'_>,
     abi: &syn::Abi,
-    failure_mode: FailureMode,
     block_attrs: &[syn::Attribute],
     import_mode: ImportMode,
     mut item: syn::ItemFn,
 ) -> TokenStream {
+    let contract = boundary.contract;
+    let failure_mode = boundary.failure_mode;
     if import_mode == ImportMode::Raw {
         let wrapper_abi = item.sig.abi.clone().unwrap_or_else(|| abi.clone());
         let raw_sig = ffi_fn::lower_abi_fn_signature(
@@ -101,7 +104,7 @@ pub(crate) fn wrap_fn_definition(
     strip_internal_arg_attrs(&mut wrapper_sig);
 
     let wrapper_body = gen_wrapper_body::<false>(
-        failure_mode,
+        boundary,
         item.attrs.iter().any(is_by_val_attr),
         None,
         None,
@@ -110,7 +113,8 @@ pub(crate) fn wrap_fn_definition(
     );
     let return_borrow_check = if item.sig.generics.params.is_empty() {
         ffi_fn::fn_return_ty(&item.sig).map(|ty| {
-            let check = gen_return_borrow_check(ty, item.attrs.iter().any(is_by_val_attr));
+            let check =
+                gen_return_borrow_check(contract, ty, item.attrs.iter().any(is_by_val_attr));
             let cfg = cfg_attrs(&item.attrs);
             quote! { #(#cfg)* const _: () = { #check }; }
         })
@@ -141,7 +145,7 @@ pub(crate) fn wrap_fn_definition(
 }
 
 pub fn wrap_impl_definition<const DISPATCHED: bool>(
-    failure_mode: FailureMode,
+    boundary: Boundary<'_>,
     import_mode: ImportMode,
     impl_: &ItemImpl,
     erase_declared_receiver: bool,
@@ -195,15 +199,10 @@ pub fn wrap_impl_definition<const DISPATCHED: bool>(
             });
             quote!(unsafe { #name(#(#args),*) })
         } else if drop_impl && !erase_declared_receiver {
-            gen_regular_drop_import_body::<DISPATCHED>(
-                failure_mode,
-                &wrapper_item,
-                self_ty,
-                generics,
-            )
+            gen_regular_drop_import_body::<DISPATCHED>(boundary, &wrapper_item, self_ty, generics)
         } else {
             gen_impl_wrapper_body::<DISPATCHED>(
-                failure_mode,
+                boundary,
                 &wrapper_item,
                 self_ty,
                 generics,
@@ -271,11 +270,12 @@ pub fn wrap_impl_definition<const DISPATCHED: bool>(
 }
 
 fn gen_regular_drop_import_body<const DISPATCHED: bool>(
-    failure_mode: FailureMode,
+    boundary: Boundary<'_>,
     item: &syn::ImplItemFn,
     self_ty: &syn::Type,
     generics: &syn::Generics,
 ) -> TokenStream {
+    let contract = boundary.contract;
     let mut owned_item = item.clone();
     ffi_fn::normalize_fn_signature(&mut owned_item.sig, Some(self_ty));
     let owned_ty: syn::Type = syn::parse_quote!(core::mem::ManuallyDrop<#self_ty>);
@@ -309,24 +309,19 @@ fn gen_regular_drop_import_body<const DISPATCHED: bool>(
         .expect("regular Drop requires a receiver");
     let receiver_cfg = cfg_attrs(receiver_attrs).collect::<Vec<_>>();
     let store_name = gen_store_name(&format_ident!("__co3_self"));
-    let input_convert = if soft_for_arg(receiver_attrs) {
-        quote! {
-            #(#receiver_cfg)*
-            let mut #store_name = Default::default();
-            #(#receiver_cfg)*
-            let __co3_self = co3::convert::EncodeMove::soft_encode(
-                __co3_self, &mut #store_name
-            );
-        }
-    } else {
-        quote! {
-            #(#receiver_cfg)*
-            let __co3_self = co3::convert::encode_move(__co3_self);
-        }
-    };
+    let soft = soft_for_arg(receiver_attrs);
+    let store = soft.then(|| quote!(#(#receiver_cfg)* let mut #store_name = Default::default();));
+    let encode = contract.encode(
+        Carrier::Move,
+        quote!(_),
+        quote!(__co3_self),
+        soft.then(|| quote!(&mut #store_name)),
+        None,
+    );
+    let input_convert = quote!(#store #(#receiver_cfg)* let __co3_self = #encode;);
 
     gen_impl_wrapper_body_with_self_binding::<DISPATCHED>(
-        failure_mode,
+        boundary,
         &owned_item,
         self_ty,
         generics,
@@ -349,7 +344,7 @@ fn gen_regular_drop_import_body<const DISPATCHED: bool>(
 }
 
 pub(crate) fn gen_impl_wrapper_body<const DISPATCHED: bool>(
-    failure_mode: FailureMode,
+    boundary: Boundary<'_>,
     item: &syn::ImplItemFn,
     self_ty: &syn::Type,
     generics: &syn::Generics,
@@ -363,7 +358,7 @@ pub(crate) fn gen_impl_wrapper_body<const DISPATCHED: bool>(
         .then(|| quote! { let __co3_self = self; });
 
     gen_impl_wrapper_body_with_self_binding::<DISPATCHED>(
-        failure_mode,
+        boundary,
         item,
         self_ty,
         generics,
@@ -377,7 +372,7 @@ pub(crate) fn gen_impl_wrapper_body<const DISPATCHED: bool>(
 }
 
 pub(crate) fn gen_owned_drop_wrapper_body<const DISPATCHED: bool>(
-    failure_mode: FailureMode,
+    boundary: Boundary<'_>,
     item: &syn::ImplItemFn,
     self_ty: &syn::Type,
     generics: &syn::Generics,
@@ -389,7 +384,7 @@ pub(crate) fn gen_owned_drop_wrapper_body<const DISPATCHED: bool>(
     let pointer_ty: syn::Type = syn::parse_quote!(*mut #self_ty);
     ffi_fn::drop_owned_receiver(&mut pointer_item.sig, Some(&pointer_ty));
     gen_impl_wrapper_body_with_self_binding::<DISPATCHED>(
-        failure_mode,
+        boundary,
         &pointer_item,
         self_ty,
         generics,
@@ -409,7 +404,7 @@ struct ImplWrapperCode<'a> {
 }
 
 fn gen_impl_wrapper_body_with_self_binding<const DISPATCHED: bool>(
-    failure_mode: FailureMode,
+    boundary: Boundary<'_>,
     item: &syn::ImplItemFn,
     self_ty: &syn::Type,
     generics: &syn::Generics,
@@ -436,7 +431,7 @@ fn gen_impl_wrapper_body_with_self_binding<const DISPATCHED: bool>(
     let wrapper_body = {
         let name = &item.sig.ident;
         gen_wrapper_body_with_input_conversion::<DISPATCHED>(
-            failure_mode,
+            boundary,
             item.attrs.iter().any(is_by_val_attr),
             Some(self_ty),
             Some(generics),
@@ -480,7 +475,7 @@ pub(crate) fn gen_extern_decl(
 }
 
 pub(crate) fn gen_wrapper_body<const DISPATCHED: bool>(
-    failure_mode: FailureMode,
+    boundary: Boundary<'_>,
     fn_by_val: bool,
     self_ty: Option<&syn::Type>,
     dispatch_generics: Option<&syn::Generics>,
@@ -489,7 +484,7 @@ pub(crate) fn gen_wrapper_body<const DISPATCHED: bool>(
 ) -> TokenStream {
     let fn_name = &sig.ident;
     gen_wrapper_body_with_callee::<DISPATCHED>(
-        failure_mode,
+        boundary,
         fn_by_val,
         self_ty,
         dispatch_generics,
@@ -500,7 +495,7 @@ pub(crate) fn gen_wrapper_body<const DISPATCHED: bool>(
 }
 
 pub(crate) fn gen_wrapper_body_with_callee<const DISPATCHED: bool>(
-    failure_mode: FailureMode,
+    boundary: Boundary<'_>,
     fn_by_val: bool,
     self_ty: Option<&syn::Type>,
     dispatch_generics: Option<&syn::Generics>,
@@ -509,7 +504,7 @@ pub(crate) fn gen_wrapper_body_with_callee<const DISPATCHED: bool>(
     callee: TokenStream,
 ) -> TokenStream {
     gen_wrapper_body_with_input_conversion::<DISPATCHED>(
-        failure_mode,
+        boundary,
         fn_by_val,
         self_ty,
         dispatch_generics,
@@ -530,7 +525,7 @@ struct WrapperBodyCode {
 }
 
 fn gen_wrapper_body_with_input_conversion<const DISPATCHED: bool>(
-    failure_mode: FailureMode,
+    boundary: Boundary<'_>,
     fn_by_val: bool,
     self_ty: Option<&syn::Type>,
     dispatch_generics: Option<&syn::Generics>,
@@ -538,13 +533,16 @@ fn gen_wrapper_body_with_input_conversion<const DISPATCHED: bool>(
     sig: &syn::Signature,
     code: WrapperBodyCode,
 ) -> TokenStream {
+    let contract = boundary.contract;
+    let failure_mode = boundary.failure_mode;
     let WrapperBodyCode {
         callee,
         input_convert,
         plain_inputs,
     } = code;
     let inputs = argument::analyze_with_plain_inputs(&sig.inputs, &plain_inputs);
-    let input_convert = input_convert.unwrap_or_else(|| gen_input_conversion_stmts(&inputs));
+    let input_convert =
+        input_convert.unwrap_or_else(|| gen_input_conversion_stmts(contract, &inputs));
     let tag_erase_stmts = if DISPATCHED {
         self_ty
             .zip(dispatch_generics)
@@ -573,20 +571,18 @@ fn gen_wrapper_body_with_input_conversion<const DISPATCHED: bool>(
     if let syn::ReturnType::Type(_, output_ty) = &sig.output {
         let return_derase =
             gen_return_derase::<DISPATCHED>(self_ty, dispatch_generics, output_ty, fn_by_val);
-        let return_borrow_check = gen_return_borrow_check(output_ty, fn_by_val);
+        let return_borrow_check = gen_return_borrow_check(contract, output_ty, fn_by_val);
         let decode_error = gen_return_decode_error(failure_mode, output_ty);
         let decode_output = if ffi_fn::is_identity_primitive(output_ty) {
             quote! { let __co3_out: Option<#output_ty> = Some(__co3_out); }
-        } else if ffi_fn::ownership_mode(output_ty, fn_by_val)
-            == crate::generate::OwnershipMode::ByValue
-        {
-            quote! {
-                let __co3_out: Option<#output_ty> = unsafe { co3::decode(__co3_out) };
-            }
         } else {
-            quote! {
-                let __co3_out: Option<#output_ty> = unsafe { co3::borrow::decode(__co3_out) };
-            }
+            let carrier = Carrier::for_borrow(
+                ffi_fn::ownership_mode(output_ty, fn_by_val)
+                    != crate::generate::OwnershipMode::ByValue,
+            );
+            let decode =
+                contract.decode(carrier, quote!(#output_ty), None, quote!(__co3_out), None);
+            quote!(let __co3_out: Option<#output_ty> = #decode;)
         };
 
         return quote! {
@@ -754,48 +750,33 @@ fn gen_store_sync_stmts(inputs: &[Argument<'_>]) -> TokenStream {
     }}
 }
 
-fn gen_input_conversion_stmts(inputs: &[Argument<'_>]) -> TokenStream {
+fn gen_input_conversion_stmts(contract: &Conversion, inputs: &[Argument<'_>]) -> TokenStream {
     let stmts = inputs.iter().filter(|input| !input.identity).map(|input| {
         let arg_name = input.name();
         let cfg = input.cfg().collect::<Vec<_>>();
         let store_name = gen_store_name(arg_name);
-        let encode = if input.is_borrowed() {
-            let ty = input.conversion_ty();
-            let owner_name = format_ident!("__co3_owner_{}", arg_name);
-            let conversion = if input.needs_encode_store() {
-                quote! {
-                    #(#cfg)*
-                    let mut #store_name = Default::default();
-                    #(#cfg)*
-                    let #arg_name = co3::marker::Borrowed::< <#ty as co3::ReprC>::CType >(
-                        <#ty as co3::borrow::BorrowedEncode>::soft_encode(
-                            #arg_name, &mut #store_name, &mut #owner_name,
-                        )
-                    );
-                }
-            } else {
-                quote! {
-                    #(#cfg)*
-                    let #arg_name = co3::borrow::encode::<#ty>(#arg_name, &mut #owner_name);
-                }
-            };
-            quote! {
-                // Declare the owner first so conversion storage is dropped first.
-                #(#cfg)*
-                let mut #owner_name = Default::default();
-                #conversion
-            }
-        } else if input.needs_encode_store() {
-            quote! {
-                #(#cfg)*
-                let mut #store_name = Default::default();
-                #(#cfg)*
-                let #arg_name = co3::soft_encode(#arg_name, &mut #store_name);
-            }
+        let ty = input.conversion_ty();
+        let borrowed = input.is_borrowed();
+        let owner = format_ident!("__co3_owner_{}", arg_name);
+        let owner_decl = borrowed.then(|| quote!(#(#cfg)* let mut #owner = Default::default();));
+        let store_decl = input
+            .needs_encode_store()
+            .then(|| quote!(#(#cfg)* let mut #store_name = Default::default();));
+        let encode_ty = if borrowed { quote!(#ty) } else { quote!(_) };
+        let call = contract.encode(
+            Carrier::for_borrow(borrowed),
+            encode_ty,
+            quote!(#arg_name),
+            input.needs_encode_store().then(|| quote!(&mut #store_name)),
+            borrowed.then(|| quote!(&mut #owner)),
+        );
+        let call = if borrowed && input.needs_encode_store() {
+            quote!(co3::marker::Borrowed::<<#ty as co3::ReprC>::CType>(#call))
         } else {
-            quote!(#(#cfg)* let #arg_name = co3::encode(#arg_name);)
+            call
         };
-        quote!(#encode)
+        // Owners outlive the stores that can refer to them.
+        quote!(#owner_decl #store_decl #(#cfg)* let #arg_name = #call;)
     });
     quote!(#(#stmts)*)
 }

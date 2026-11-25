@@ -9,15 +9,15 @@ help: the trait `BorrowedDecode<'_>` is not implemented for `Opaque`
    |
  5 | struct Opaque(u32);
    | ^^^^^^^^^^^^^
-   = help: the following other types implement trait `BorrowedDecode<'d>`:
-             `&'a T` implements `BorrowedDecode<'d>`
-             `&'a mut T` implements `BorrowedDecode<'d>`
-             `()` implements `BorrowedDecode<'_co3_d>`
-             `(A, B)` implements `BorrowedDecode<'d>`
-             `(A, B, C)` implements `BorrowedDecode<'d>`
-             `(A, B, C, D)` implements `BorrowedDecode<'d>`
-             `(A, B, C, D, E)` implements `BorrowedDecode<'d>`
-             `(A, B, C, D, E, F)` implements `BorrowedDecode<'d>`
+   = help: the following other types implement trait `BorrowedDecode<'d, L>`:
+             `&'a T` implements `BorrowedDecode<'d, L>`
+             `&'a mut T` implements `BorrowedDecode<'d, L>`
+             `()` implements `BorrowedDecode<'_co3_d, L>`
+             `(A, B)` implements `BorrowedDecode<'d, L>`
+             `(A, B, C)` implements `BorrowedDecode<'d, L>`
+             `(A, B, C, D)` implements `BorrowedDecode<'d, L>`
+             `(A, B, C, D, E)` implements `BorrowedDecode<'d, L>`
+             `(A, B, C, D, E, F)` implements `BorrowedDecode<'d, L>`
            and $N others
 note: required for `Kita5` to implement `SoftDecodeMut<'_>`
   --> tests/ui_fail/opaque_by_value.rs:8:8
@@ -42,7 +42,7 @@ error[E0277]: the trait bound `Opaque: Copy` is not satisfied
 24 | | }
    | |_^ the trait `Copy` is not implemented for `Opaque`
    |
-help: the trait `SoftDecodeMut<'_>` is conditionally implemented for `Kita5`
+help: the trait `SoftDecodeMut<'_, __Co3Lang>` is conditionally implemented for `Kita5`
   --> tests/ui_fail/opaque_by_value.rs:7:27
    |
  7 | #[derive(Clone, RustSpec, ReprC)]
@@ -81,15 +81,15 @@ help: the trait `BorrowedDecode<'_>` is not implemented for `Opaque`
    |
  5 | struct Opaque(u32);
    | ^^^^^^^^^^^^^
-   = help: the following other types implement trait `BorrowedDecode<'d>`:
-             `&'a T` implements `BorrowedDecode<'d>`
-             `&'a mut T` implements `BorrowedDecode<'d>`
-             `()` implements `BorrowedDecode<'_co3_d>`
-             `(A, B)` implements `BorrowedDecode<'d>`
-             `(A, B, C)` implements `BorrowedDecode<'d>`
-             `(A, B, C, D)` implements `BorrowedDecode<'d>`
-             `(A, B, C, D, E)` implements `BorrowedDecode<'d>`
-             `(A, B, C, D, E, F)` implements `BorrowedDecode<'d>`
+   = help: the following other types implement trait `BorrowedDecode<'d, L>`:
+             `&'a T` implements `BorrowedDecode<'d, L>`
+             `&'a mut T` implements `BorrowedDecode<'d, L>`
+             `()` implements `BorrowedDecode<'_co3_d, L>`
+             `(A, B)` implements `BorrowedDecode<'d, L>`
+             `(A, B, C)` implements `BorrowedDecode<'d, L>`
+             `(A, B, C, D)` implements `BorrowedDecode<'d, L>`
+             `(A, B, C, D, E)` implements `BorrowedDecode<'d, L>`
+             `(A, B, C, D, E, F)` implements `BorrowedDecode<'d, L>`
            and $N others
 note: required for `Kita5` to implement `SoftDecodeMut<'_>`
   --> tests/ui_fail/opaque_by_value.rs:8:8
@@ -111,15 +111,15 @@ help: the trait `BorrowedDecode<'_>` is not implemented for `Opaque`
    |
  5 | struct Opaque(u32);
    | ^^^^^^^^^^^^^
-   = help: the following other types implement trait `BorrowedDecode<'d>`:
-             `&'a T` implements `BorrowedDecode<'d>`
-             `&'a mut T` implements `BorrowedDecode<'d>`
-             `()` implements `BorrowedDecode<'_co3_d>`
-             `(A, B)` implements `BorrowedDecode<'d>`
-             `(A, B, C)` implements `BorrowedDecode<'d>`
-             `(A, B, C, D)` implements `BorrowedDecode<'d>`
-             `(A, B, C, D, E)` implements `BorrowedDecode<'d>`
-             `(A, B, C, D, E, F)` implements `BorrowedDecode<'d>`
+   = help: the following other types implement trait `BorrowedDecode<'d, L>`:
+             `&'a T` implements `BorrowedDecode<'d, L>`
+             `&'a mut T` implements `BorrowedDecode<'d, L>`
+             `()` implements `BorrowedDecode<'_co3_d, L>`
+             `(A, B)` implements `BorrowedDecode<'d, L>`
+             `(A, B, C)` implements `BorrowedDecode<'d, L>`
+             `(A, B, C, D)` implements `BorrowedDecode<'d, L>`
+             `(A, B, C, D, E)` implements `BorrowedDecode<'d, L>`
+             `(A, B, C, D, E, F)` implements `BorrowedDecode<'d, L>`
            and $N others
 note: required for `Kita5` to implement `BorrowedDecode<'_>`
   --> tests/ui_fail/opaque_by_value.rs:8:8
@@ -151,15 +151,15 @@ help: the trait `BorrowedDecode<'_>` is not implemented for `Opaque`
    |
  5 | struct Opaque(u32);
    | ^^^^^^^^^^^^^
-   = help: the following other types implement trait `BorrowedDecode<'d>`:
-             `&'a T` implements `BorrowedDecode<'d>`
-             `&'a mut T` implements `BorrowedDecode<'d>`
-             `()` implements `BorrowedDecode<'_co3_d>`
-             `(A, B)` implements `BorrowedDecode<'d>`
-             `(A, B, C)` implements `BorrowedDecode<'d>`
-             `(A, B, C, D)` implements `BorrowedDecode<'d>`
-             `(A, B, C, D, E)` implements `BorrowedDecode<'d>`
-             `(A, B, C, D, E, F)` implements `BorrowedDecode<'d>`
+   = help: the following other types implement trait `BorrowedDecode<'d, L>`:
+             `&'a T` implements `BorrowedDecode<'d, L>`
+             `&'a mut T` implements `BorrowedDecode<'d, L>`
+             `()` implements `BorrowedDecode<'_co3_d, L>`
+             `(A, B)` implements `BorrowedDecode<'d, L>`
+             `(A, B, C)` implements `BorrowedDecode<'d, L>`
+             `(A, B, C, D)` implements `BorrowedDecode<'d, L>`
+             `(A, B, C, D, E)` implements `BorrowedDecode<'d, L>`
+             `(A, B, C, D, E, F)` implements `BorrowedDecode<'d, L>`
            and $N others
 note: required for `Kita5` to implement `BorrowedDecode<'_>`
   --> tests/ui_fail/opaque_by_value.rs:8:8
@@ -182,23 +182,25 @@ error[E0277]: the trait bound `Opaque: Copy` is not satisfied
 24 | | }
    | |_^ the trait `Copy` is not implemented for `Opaque`
    |
-help: the following other types implement trait `SoftDecodeMut<'d>`
+help: the following other types implement trait `SoftDecodeMut<'d, L>`
   --> src/decoded.rs
    |
-   | / unsafe impl<'d, R: ReprC<CType: CType + Copy> + EncodeMove<Store: EmptyStore> + 'd>
-   | |     SoftDecodeMut<'d> for [R]
+   | / unsafe impl<'d, L: Language, R: ReprC + EncodeMove<Store: EmptyStore> + 'd> SoftDecodeMut<'d, L>
+   | |     for [R]
    | | where
-   | |     R: crate::borrow::BorrowedDecode<'d>,
+   | |     R: crate::borrow::BorrowedDecode<'d, L>,
    | |     &'d mut Self: ReprC<CType = crate::wide::abi::SoftWideRefMut<<Self as ReprC>::CType>>,
    | |     [R]: RustSpec<Size = MetaSized<SliceLike>>,
-   | |_______________________________________________^ `[R]`
+   | |     <R as ReprC>::CType: Copy,
+   | |______________________________^ `[R]`
 ...
-   | / unsafe impl<'d, T: ReprC<CType: CType + Copy> + 'd, const N: usize> SoftDecodeMut<'d> for [T; N]
+   | / unsafe impl<'d, L: Language, T: ReprC + 'd, const N: usize> SoftDecodeMut<'d, L> for [T; N]
    | | where
-   | |     T: crate::borrow::BorrowedDecode<'d>,
+   | |     T: crate::borrow::BorrowedDecode<'d, L>,
    | |     Self: RustSpec + ReprC<CType = [<T as ReprC>::CType; N]> + EncodeMove<Store: EmptyStore>,
    | |     &'d mut Self: ReprC<CType = SoftRefMut<<Self as ReprC>::CType>>,
-   | |____________________________________________________________________^ `[T; N]`
+   | |     <T as ReprC>::CType: Copy,
+   | |______________________________^ `[T; N]`
 note: required for `Kita5CType` to implement `Copy`
   --> tests/ui_fail/opaque_by_value.rs:7:27
    |

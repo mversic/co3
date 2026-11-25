@@ -1,8 +1,11 @@
+use std::collections::HashMap;
+
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use syn::{ItemFn, Result, parse_quote, visit::Visit, visit_mut::VisitMut};
 
 use crate::{
+    codec::{Boundary, Carrier, Conversion},
     ffi_fn,
     parse::{self, FailureMode},
     utils::{ParamUseDetector, cfg_attrs, co3_path, soft_for_arg},
@@ -58,54 +61,7 @@ pub(crate) fn lower_fn_pointer_type(
         .collect();
     sig.output = pointer.output.clone();
     crate::validate::validate_unpack(&sig, None)?;
-    lower_nested_fn_pointers(&mut sig, failure_mode)?;
     lower_callback_fn_type(sig, &abi, failure_mode, false)
-}
-
-pub(crate) fn lower_fn_pointers_in_type(
-    ty: &mut syn::Type,
-    failure_mode: FailureMode,
-) -> Result<()> {
-    struct Lowerer {
-        failure_mode: FailureMode,
-        error: Option<syn::Error>,
-    }
-
-    impl VisitMut for Lowerer {
-        fn visit_type_mut(&mut self, ty: &mut syn::Type) {
-            if self.error.is_some() {
-                return;
-            }
-            if let syn::Type::FnPtr(pointer) = ty {
-                match lower_fn_pointer_type(pointer, self.failure_mode) {
-                    Ok(lowered) => *ty = lowered,
-                    Err(error) => self.error = Some(error),
-                }
-            }
-        }
-    }
-
-    let mut lowerer = Lowerer {
-        failure_mode,
-        error: None,
-    };
-    lowerer.visit_type_mut(ty);
-    lowerer.error.map_or(Ok(()), Err)
-}
-
-pub(crate) fn lower_nested_fn_pointers(
-    sig: &mut syn::Signature,
-    failure_mode: FailureMode,
-) -> Result<()> {
-    for input in &mut sig.inputs {
-        if let syn::FnArg::Typed(arg) = input {
-            lower_fn_pointers_in_type(&mut arg.ty, failure_mode)?;
-        }
-    }
-    if let syn::ReturnType::Type(_, ty) = &mut sig.output {
-        lower_fn_pointers_in_type(ty, failure_mode)?;
-    }
-    Ok(())
 }
 
 pub(crate) fn lower_raw_alias_signature(
@@ -145,43 +101,51 @@ pub(crate) fn lower_raw_alias_signature(
         ));
     }
     crate::validate::validate_unpack(&sig, None)?;
-    lower_raw_fn_types_in_signature(&mut sig, failure_mode, block_abi)?;
-    lower_nested_fn_pointers(&mut sig, failure_mode)?;
     lower_callback_fn_type(sig, &abi, failure_mode, move_fn)
 }
 
-struct RawTypeLowerer<'a> {
+struct RawTypeLowerer {
+    resolved: HashMap<syn::Ident, syn::Type>,
     failure_mode: FailureMode,
-    block_abi: &'a syn::Abi,
+    nested: bool,
     error: Option<syn::Error>,
 }
 
-impl VisitMut for RawTypeLowerer<'_> {
+impl RawTypeLowerer {
+    fn resolve(&self, ty: &syn::Type) -> Option<&syn::Type> {
+        let syn::Type::Path(ty) = ty else { return None };
+        self.resolved.get(ty.path.get_ident()?)
+    }
+
+    fn visit_groups(&mut self, groups: &mut crate::DispatchGroups) {
+        for target in groups.groups.values_mut().flatten() {
+            self.visit_angle_bracketed_generic_arguments_mut(target);
+        }
+    }
+}
+
+impl VisitMut for RawTypeLowerer {
     fn visit_type_mut(&mut self, ty: &mut syn::Type) {
         if self.error.is_some() {
             return;
         }
-        if let syn::Type::Macro(mac) = ty
-            && mac.mac.path.is_ident(parse::RAW_FN_TYPE_MACRO)
-        {
-            let lowered = parse::parse_raw_function_type(mac.mac.tokens.clone()).and_then(
-                |(sig, move_fn)| {
-                    lower_raw_alias_signature(sig, move_fn, self.failure_mode, self.block_abi)
-                },
-            );
-            match lowered {
-                Ok(lowered) => *ty = lowered,
-                Err(error) => self.error = Some(error),
-            }
+        if let Some(callback) = self.resolve(ty) {
+            *ty = callback.clone();
         } else if let syn::Type::FnPtr(pointer) = ty
-            && pointer
-                .inputs
-                .iter()
-                .any(|arg| arg.attrs.iter().any(ffi_fn::is_unpack_attr))
+            && (self.nested
+                || pointer
+                    .inputs
+                    .iter()
+                    .any(|arg| arg.attrs.iter().any(ffi_fn::is_unpack_attr)))
         {
-            match lower_fn_pointer_type(pointer, self.failure_mode) {
-                Ok(lowered) => *ty = lowered,
-                Err(error) => self.error = Some(error),
+            let previous = std::mem::replace(&mut self.nested, true);
+            self.visit_type_fn_ptr_mut(pointer);
+            self.nested = previous;
+            if self.error.is_none() {
+                match lower_fn_pointer_type(pointer, self.failure_mode) {
+                    Ok(lowered) => *ty = lowered,
+                    Err(error) => self.error = Some(error),
+                }
             }
         } else {
             syn::visit_mut::visit_type_mut(self, ty);
@@ -189,56 +153,85 @@ impl VisitMut for RawTypeLowerer<'_> {
     }
 }
 
-pub(crate) fn lower_raw_fn_types_in_signature(
-    sig: &mut syn::Signature,
-    failure_mode: FailureMode,
-    block_abi: &syn::Abi,
-) -> Result<()> {
-    let mut lowerer = RawTypeLowerer {
-        failure_mode,
-        block_abi,
-        error: None,
-    };
-    lowerer.visit_signature_mut(sig);
-    lowerer.error.map_or(Ok(()), Err)
-}
-
-pub(crate) fn lower_raw_fn_types_in_items(
+pub(crate) fn lower_raw_types(
+    signatures: Vec<(syn::Ident, syn::Signature, bool)>,
     items: &mut [parse::ParsedItem],
     failure_mode: FailureMode,
     block_abi: &syn::Abi,
 ) -> Result<()> {
     let mut lowerer = RawTypeLowerer {
+        resolved: HashMap::new(),
         failure_mode,
-        block_abi,
+        nested: true,
         error: None,
     };
+    // Nested signatures precede every signature that uses them.
+    for (slot, mut signature, moved) in signatures {
+        lowerer.visit_signature_mut(&mut signature);
+        if let Some(error) = lowerer.error.take() {
+            return Err(error);
+        }
+        let ty = lower_raw_alias_signature(signature, moved, failure_mode, block_abi)?;
+        lowerer.resolved.insert(slot, ty);
+    }
+    lowerer.nested = false;
     for item in items {
         match item {
-            parse::ParsedItem::Fn(item) => lowerer.visit_item_fn_mut(item),
-            parse::ParsedItem::Raw(item) => lowerer.visit_signature_mut(&mut item.sig),
-            parse::ParsedItem::Static(item) => lowerer.visit_type_mut(&mut item.ty),
-            parse::ParsedItem::Impl(item) => lowerer.visit_item_impl_mut(item),
-            parse::ParsedItem::Type(item) => lowerer.visit_foreign_item_type_mut(item),
-            parse::ParsedItem::Alias(alias) => lowerer.visit_item_type_mut(&mut alias.item),
+            parse::ParsedItem::Fn(item) => {
+                lowerer.visit_item_fn_mut(&mut item.item);
+                lowerer.visit_groups(&mut item.dispatch_args);
+            }
+            parse::ParsedItem::Raw(item) => {
+                lowerer.visit_signature_mut(&mut item.sig);
+                lowerer.visit_groups(&mut item.dispatch_args);
+            }
+            parse::ParsedItem::Static(item) => {
+                lowerer.visit_type_mut(&mut item.ty);
+                if let Some(expr) = &mut item.expr {
+                    lowerer.visit_expr_mut(expr);
+                }
+            }
+            parse::ParsedItem::Impl(parsed) => {
+                let item = &mut parsed.item;
+                lowerer.visit_item_impl_mut(&mut item.item);
+                lowerer.visit_groups(&mut item.dispatch_args);
+                for groups in item.method_dispatch_args.values_mut() {
+                    lowerer.visit_groups(groups);
+                }
+            }
+            parse::ParsedItem::Type(item) => {
+                lowerer.visit_foreign_item_type_mut(&mut item.ty);
+                if let Some(ty) = &mut item.id {
+                    lowerer.visit_type_mut(ty);
+                }
+                if let Some(expr) = &mut item.id_value {
+                    lowerer.visit_expr_mut(expr);
+                }
+            }
+            parse::ParsedItem::Alias(alias) => {
+                alias.raw_root = lowerer.resolve(&alias.item.ty).is_some();
+                lowerer.visit_item_type_mut(&mut alias.item);
+            }
         }
     }
     lowerer.error.map_or(Ok(()), Err)
 }
 
 pub(crate) fn expand_companion(
-    failure_mode: FailureMode,
+    boundary: Boundary<'_>,
     item: &ItemFn,
-    callee: TokenStream,
+    mut callee: syn::ExprPath,
     impl_generics: Option<&syn::Generics>,
 ) -> Result<TokenStream> {
+    let contract = boundary.contract;
+    let failure_mode = boundary.failure_mode;
     let fn_by_val = item.attrs.iter().any(ffi_fn::is_by_val_attr);
     let abi = parse_quote!(extern "C");
     let mut raw_sig = ffi_fn::lower_abi_fn_signature(item.sig.clone(), failure_mode, fn_by_val);
     raw_sig.safety = syn::Safety::Unsafe(Default::default());
     raw_sig.abi = Some(abi);
     raw_sig.ident = ffi_fn::raw_definition_name(&item.sig.ident);
-    add_generic_companion_bounds(&mut raw_sig, &item.sig, impl_generics, fn_by_val);
+    add_generic_companion_bounds(contract, &mut raw_sig, &item.sig, impl_generics, fn_by_val);
     let generic_args = item
         .sig
         .generics
@@ -256,16 +249,19 @@ pub(crate) fn expand_companion(
             syn::GenericParam::Lifetime(_) => None,
         })
         .collect::<Vec<_>>();
-    let callee: syn::Expr = if generic_args.is_empty() {
-        syn::parse2(callee)?
-    } else {
-        syn::parse2(quote!(#callee::<#(#generic_args),*>))?
-    };
+    if !generic_args.is_empty() {
+        callee
+            .path
+            .segments
+            .last_mut()
+            .expect("companion callee")
+            .arguments = syn::PathArguments::AngleBracketed(parse_quote!(::<#(#generic_args),*>));
+    }
+    let callee = syn::Expr::Path(callee);
     let signature_check = ffi_fn::gen_fn_signature_drift_check(item.sig.clone(), callee.clone());
-    let body =
-        ffi_fn::gen_definition_body(item.sig.clone(), quote!(#callee), fn_by_val, failure_mode);
+    let body = ffi_fn::gen_definition_body(boundary, item.sig.clone(), quote!(#callee), fn_by_val);
     Ok(emit_companion(
-        failure_mode,
+        boundary,
         &item.attrs,
         &item.vis,
         raw_sig,
@@ -276,7 +272,7 @@ pub(crate) fn expand_companion(
 }
 
 pub(crate) fn emit_companion(
-    failure_mode: FailureMode,
+    boundary: Boundary<'_>,
     attrs: &[syn::Attribute],
     vis: &syn::Visibility,
     sig: syn::Signature,
@@ -295,7 +291,7 @@ pub(crate) fn emit_companion(
         #[doc = "The caller must uphold the safety requirements of `co3::decode` or `co3::soft_decode` for each argument, as applicable."]
     };
     ffi_fn::emit_abi_function(
-        failure_mode,
+        boundary,
         attrs,
         quote!(#vis),
         &sig,
@@ -306,6 +302,7 @@ pub(crate) fn emit_companion(
 }
 
 fn add_generic_companion_bounds(
+    contract: &Conversion,
     raw_sig: &mut syn::Signature,
     source_sig: &syn::Signature,
     impl_generics: Option<&syn::Generics>,
@@ -345,49 +342,28 @@ fn add_generic_companion_bounds(
         let mut lifetimes = Lifetimes(Vec::new());
         lifetimes.visit_type(ty);
         let decode_lifetime = (lifetimes.0.len() == 1).then(|| lifetimes.0.remove(0));
-        if ffi_fn::ownership_mode_for_arg(&arg.attrs, ty) == crate::generate::OwnershipMode::ByValue
-        {
-            if let Some(lifetime) = decode_lifetime {
-                if soft_for_arg(&arg.attrs) {
-                    predicates.push(parse_quote!(#ty: co3::convert::Decode<#lifetime>));
-                } else {
-                    predicates.push(parse_quote!(
-                        #ty: co3::convert::Decode<#lifetime, Store: co3::convert::EmptyStore>
-                    ));
-                }
-            } else if soft_for_arg(&arg.attrs) {
-                predicates.push(parse_quote!(for<'__co3_d> #ty: co3::convert::Decode<'__co3_d>));
-            } else {
-                predicates.push(parse_quote!(
-                    for<'__co3_d> #ty: co3::convert::Decode<'__co3_d, Store: co3::convert::EmptyStore>
-                ));
-            }
-        } else {
-            let borrowed = quote!(#ty);
-            let store_bound =
-                (!soft_for_arg(&arg.attrs)).then(|| quote!(, Store: co3::convert::EmptyStore));
-            if let Some(lifetime) = decode_lifetime {
-                predicates
-                    .push(parse_quote!(#borrowed: co3::borrow::BorrowedDecode<#lifetime #store_bound> + #lifetime));
-            } else {
-                predicates.push(
-                    parse_quote!(for<'__co3_d> #borrowed: co3::borrow::BorrowedDecode<'__co3_d #store_bound>),
-                );
-            }
-        }
+        let carrier = Carrier::for_borrow(
+            ffi_fn::ownership_mode_for_arg(&arg.attrs, ty)
+                != crate::generate::OwnershipMode::ByValue,
+        );
+        let store = (!soft_for_arg(&arg.attrs)).then(|| contract.empty_store());
+        let fallback = parse_quote!('__co3_d);
+        let lt = decode_lifetime.as_ref().unwrap_or(&fallback);
+        let binder = decode_lifetime.is_none().then(|| quote!(for<#lt>));
+        let outlives = (matches!(carrier, Carrier::Borrowed) && decode_lifetime.is_some())
+            .then(|| quote!(+ #lt));
+        let path = contract.bound(carrier, Some(lt), quote!(#store));
+        predicates.push(parse_quote!(#binder #ty: #path #outlives));
     }
     if let syn::ReturnType::Type(_, ty) = &source_sig.output
         && detector.type_mentions_param(ty)
     {
-        if ffi_fn::ownership_mode(ty, fn_by_val) == crate::generate::OwnershipMode::ByValue {
-            predicates
-                .push(parse_quote!(#ty: co3::convert::Encode<Store: co3::convert::EmptyStore>));
-        } else {
-            predicates.push(parse_quote!(#ty: co3::borrow::BorrowedEncode<
-                    Store: co3::convert::EmptyStore,
-                    Owner: co3::convert::EmptyStore,
-                >));
-        }
+        let borrowed =
+            ffi_fn::ownership_mode(ty, fn_by_val) != crate::generate::OwnershipMode::ByValue;
+        let store = contract.empty_store();
+        let owner = borrowed.then(|| quote!(, Owner: co3::convert::EmptyStore));
+        let path = contract.bound(Carrier::for_borrow(borrowed), None, quote!(#store #owner));
+        predicates.push(parse_quote!(#ty: #path));
     }
     raw_sig
         .generics
@@ -430,21 +406,33 @@ pub(crate) fn lower_callback_fn_type(
         }
     }
     RenameLifetimes(replacements).visit_signature_mut(&mut type_sig);
-    let callback_lifetimes = type_sig
-        .generics
-        .lifetimes()
-        .map(|param| &param.lifetime)
-        .collect::<Vec<_>>();
-    let binder = (!callback_lifetimes.is_empty()).then(|| quote!(for<#(#callback_lifetimes),*>));
-    let inputs = type_sig.inputs.iter().map(|input| {
-        let syn::FnArg::Typed(arg) = input else {
-            unreachable!("normalized callback signature has typed arguments")
-        };
-        let cfg = cfg_attrs(&arg.attrs).collect::<Vec<_>>();
-        let ty = &arg.ty;
-        quote!(#(#cfg)* #ty)
+    let lifetimes = (!type_sig.generics.params.is_empty()).then(|| syn::BoundLifetimes {
+        lifetimes: type_sig.generics.params,
+        ..Default::default()
     });
-    let output = &type_sig.output;
-    let callback_type = syn::parse2(quote!(#binder unsafe #abi fn(#(#inputs),*) #output))?;
-    Ok(callback_type)
+    let inputs = type_sig
+        .inputs
+        .into_iter()
+        .map(|input| {
+            let syn::FnArg::Typed(arg) = input else {
+                unreachable!("normalized callback signature has typed arguments")
+            };
+            syn::NamedArg {
+                attrs: cfg_attrs(&arg.attrs).cloned().collect(),
+                name: None,
+                ty: *arg.ty,
+            }
+        })
+        .collect();
+    Ok(syn::Type::FnPtr(syn::TypeFnPtr {
+        attrs: Vec::new(),
+        lifetimes,
+        unsafety: Some(Default::default()),
+        abi: Some(abi.clone()),
+        fn_token: type_sig.fn_token,
+        paren_token: type_sig.paren_token,
+        inputs,
+        variadic: None,
+        output: type_sig.output,
+    }))
 }

@@ -118,7 +118,7 @@ error: an exported method receiver must be the first non-tag argument
    --> tests/ui_fail/export_restrictions.rs:173:31
     |
 173 |         fn method(value: u32, &self);
-    |                               ^
+    |                               ^^^^^
 
 error: parameterized exported types must not specify a tag value
    --> tests/ui_fail/export_restrictions.rs:180:23

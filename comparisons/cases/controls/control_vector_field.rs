@@ -1,7 +1,4 @@
-
-
-
-use co3::convert::{lang};
+use co3::convert::lang;
 
 include!("../support/mod.rs");
 
@@ -32,10 +29,7 @@ pub fn echo(node: Node) -> Node {
 #[cfg(feature = "diplomat")]
 #[diplomat::bridge]
 pub mod diplomat_case {
-use co3::convert::{lang};
-
-
-
+    use co3::convert::lang;
 
     #[repr(C)]
     pub struct Node {
@@ -64,11 +58,23 @@ use boltffi_function_20control_vector_field4echo as exported_echo;
 #[path = "../support/owned_echo.rs"]
 mod caller;
 
+#[cfg(any(feature = "co3", feature = "uniffi", feature = "boltffi"))]
 fn main() {
-    #[cfg(any(feature = "co3", feature = "uniffi", feature = "boltffi"))]
     {
-        let result = caller::echo(Node { weight: 7, children: vec![19, 23] });
+        let result = caller::echo(Node {
+            weight: 7,
+            children: vec![19, 23],
+        });
         assert_eq!(result.weight, 7);
         assert_eq!(result.children, [19, 23]);
     }
 }
+
+#[cfg(any(
+    feature = "diplomat",
+    feature = "interoptopus",
+    feature = "safer_ffi",
+    feature = "abi_stable",
+    feature = "stabby"
+))]
+fn main() {}

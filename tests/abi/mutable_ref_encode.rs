@@ -1,5 +1,5 @@
 use co3::{
-    ReprC,
+    ReprC, lang,
     marker::Native,
     option::{Option as StableOption, abi::Option as AbiOption},
     rust_spec::RustSpec,
@@ -24,35 +24,35 @@ fn mutable_non_robust_wrappers_validate_writeback() {
 
     let mut manual = ManuallyDrop::new(true);
     let mut store = Default::default();
-    let encoded = co3::soft_encode(&mut manual, &mut store);
+    let encoded = unsafe { co3::soft_encode::<_, lang::C>(&mut manual, &mut store) };
     unsafe { **encoded.as_ptr() = co3::primitive::abi::bool(2) };
     assert_eq!(co3::convert::Store::sync(store), None);
     assert!(*manual);
 
     let mut manual_string = ManuallyDrop::new(String::from("held"));
     let mut store = Default::default();
-    let _encoded = co3::soft_encode(&mut manual_string, &mut store);
+    let _encoded = unsafe { co3::soft_encode::<_, lang::C>(&mut manual_string, &mut store) };
     assert_eq!(co3::convert::Store::sync(store), Some(()));
     assert_eq!(&*manual_string, "held");
     drop(ManuallyDrop::into_inner(manual_string));
 
     let mut cell = Cell::new(true);
     let mut store = Default::default();
-    let encoded = co3::soft_encode(&mut cell, &mut store);
+    let encoded = unsafe { co3::soft_encode::<_, lang::C>(&mut cell, &mut store) };
     unsafe { (*encoded.as_ptr()).set(co3::primitive::abi::bool::FALSE) };
     assert_eq!(co3::convert::Store::sync(store), Some(()));
     assert!(!cell.get());
 
     let mut nonzero_cell = Cell::new(core::num::NonZeroU8::new(3).unwrap());
     let mut store = Default::default();
-    let encoded = co3::soft_encode(&mut nonzero_cell, &mut store);
+    let encoded = unsafe { co3::soft_encode::<_, lang::C>(&mut nonzero_cell, &mut store) };
     unsafe { (*encoded.as_ptr()).set(co3::marker::NonZero(0)) };
     assert_eq!(co3::convert::Store::sync(store), None);
     assert_eq!(nonzero_cell.get().get(), 3);
 
     let mut unsafe_cell = UnsafeCell::new(true);
     let mut store = Default::default();
-    let encoded = co3::soft_encode(&mut unsafe_cell, &mut store);
+    let encoded = unsafe { co3::soft_encode::<_, lang::C>(&mut unsafe_cell, &mut store) };
     unsafe { *(*encoded.as_ptr()).get() = co3::primitive::abi::bool(2) };
     assert_eq!(co3::convert::Store::sync(store), None);
     assert!(unsafe { *unsafe_cell.get() });
@@ -62,13 +62,13 @@ fn mutable_non_robust_wrappers_validate_writeback() {
 fn mutable_function_pointer_rejects_null_writeback() {
     let mut callback: extern "C" fn() -> u8 = first_callback;
     let mut store = Default::default();
-    let encoded = co3::soft_encode(&mut callback, &mut store);
+    let encoded = unsafe { co3::soft_encode::<_, lang::C>(&mut callback, &mut store) };
     unsafe { *encoded.as_ptr() = None };
     assert_eq!(co3::convert::Store::sync(store), None);
     assert_eq!(callback(), 1);
 
     let mut store = Default::default();
-    let encoded = co3::soft_encode(&mut callback, &mut store);
+    let encoded = unsafe { co3::soft_encode::<_, lang::C>(&mut callback, &mut store) };
     unsafe { *encoded.as_ptr() = Some(second_callback) };
     assert_eq!(co3::convert::Store::sync(store), Some(()));
     assert_eq!(callback(), 2);
@@ -78,7 +78,7 @@ fn mutable_function_pointer_rejects_null_writeback() {
 fn mutable_repr_c_option_writes_back() {
     let mut value = StableOption::Some(7_u32);
     let mut store = Default::default();
-    let encoded = co3::soft_encode(&mut value, &mut store);
+    let encoded = unsafe { co3::soft_encode::<_, lang::C>(&mut value, &mut store) };
     let output = unsafe { &mut *encoded.as_ptr() };
     *output = AbiOption::Some(11);
     assert_eq!(co3::convert::Store::sync(store), Some(()));
@@ -86,7 +86,7 @@ fn mutable_repr_c_option_writes_back() {
 
     let mut value = StableOption::<u32>::None;
     let mut store = Default::default();
-    let encoded = co3::soft_encode(&mut value, &mut store);
+    let encoded = unsafe { co3::soft_encode::<_, lang::C>(&mut value, &mut store) };
     unsafe { *encoded.as_ptr() = AbiOption::Some(13) };
     assert_eq!(co3::convert::Store::sync(store), Some(()));
     assert_eq!(value, StableOption::Some(13));
@@ -96,7 +96,7 @@ fn mutable_repr_c_option_writes_back() {
 fn mutable_copy_result_can_change_variant() {
     let mut value: Result<u32, bool> = Ok(7);
     let mut store = Default::default();
-    let encoded = co3::soft_encode(&mut value, &mut store);
+    let encoded = unsafe { co3::soft_encode::<_, lang::C>(&mut value, &mut store) };
     unsafe {
         *encoded.as_ptr() = Native(co3::result::abi::Result::Err(
             co3::primitive::abi::bool::TRUE,
@@ -107,7 +107,7 @@ fn mutable_copy_result_can_change_variant() {
 
     let mut value: co3::result::Result<u32, bool> = co3::result::Result::Ok(4);
     let mut store = Default::default();
-    let encoded = co3::soft_encode(&mut value, &mut store);
+    let encoded = unsafe { co3::soft_encode::<_, lang::C>(&mut value, &mut store) };
     unsafe { *encoded.as_ptr() = co3::result::abi::Result::Err(co3::primitive::abi::bool::TRUE) };
     assert_eq!(co3::convert::Store::sync(store), Some(()));
     assert_eq!(value, co3::result::Result::Err(true));
@@ -155,7 +155,7 @@ fn mutable_vec_of_boxes_reuses_nested_allocations() {
     let mut values = vec![Box::new(3_u32)];
     let old_pointee = &*values[0] as *const u32;
     let mut store = Default::default();
-    let encoded = co3::soft_encode(&mut values, &mut store);
+    let encoded = unsafe { co3::soft_encode::<_, lang::C>(&mut values, &mut store) };
     let header = unsafe { &mut *encoded.as_ptr() };
     let pointee = unsafe { (*header.as_ptr()).as_ptr() };
     assert_eq!(pointee.cast_const(), old_pointee);
@@ -168,7 +168,7 @@ fn mutable_vec_of_boxes_reuses_nested_allocations() {
 fn mutable_boxed_slice_converts_unstable_elements() {
     let mut values: Box<[(u32,)]> = Box::new([(3,), (5,)]);
     let mut store = Default::default();
-    let encoded = co3::soft_encode(&mut values, &mut store);
+    let encoded = unsafe { co3::soft_encode::<_, lang::C>(&mut values, &mut store) };
     let header = unsafe { &mut *encoded.as_ptr() };
     unsafe { (*header.as_ptr().add(1)).0.0 = 8 };
     assert_eq!(co3::convert::Store::sync(store), Some(()));
@@ -199,10 +199,10 @@ fn mutable_boxed_slice_has_no_element_store_and_vec_writes_back() {
     fn empty_direct<
         'a,
         T: ReprC<CType: Sized>
-            + co3::convert::DecodeMove<'a, Store: co3::convert::EmptyStore + 'a>
+            + co3::convert::DecodeMoveUnchecked<'a, SoftStore: co3::convert::EmptyStore + 'a>
             + co3::convert::SoftEncodeMutUnchecked<
                 'a,
-                SoftStore = co3::sync::RefMutSizedEncodeStore<'a, T, ()>,
+                SoftStore = co3::sync::RefMutSizedEncodeStoreUnchecked<'a, T, ()>,
             >,
     >() {
     }
@@ -224,7 +224,7 @@ fn mutable_boxed_slice_has_no_element_store_and_vec_writes_back() {
 fn mutable_vec_rejects_header_length_changes() {
     let mut values = vec![1_u32, 2];
     let mut store = Default::default();
-    let encoded = co3::soft_encode(&mut values, &mut store);
+    let encoded = unsafe { co3::soft_encode::<_, lang::C>(&mut values, &mut store) };
     let header = unsafe { *encoded.as_ptr() };
     unsafe {
         *encoded.as_ptr() = Native(co3::vec::abi::Vec::from_raw_parts(
@@ -251,7 +251,7 @@ fn stable_mutable_vec_converts_non_clone_elements() {
     let mut values = Box::<[NoClone]>::from([NoClone(41)]).into_vec();
     let values_len = values.len();
     let mut store = Default::default();
-    let encoded = co3::soft_encode(&mut values, &mut store);
+    let encoded = unsafe { co3::soft_encode::<_, lang::C>(&mut values, &mut store) };
     let header = unsafe { &*encoded.as_ptr() };
     assert_eq!(header.len(), values_len);
     unsafe { *header.as_ptr() = <NoClone as ReprC>::CType::from_fields(42) };
@@ -263,7 +263,7 @@ fn stable_mutable_vec_converts_non_clone_elements() {
 fn stable_identity_mutable_reference_needs_no_referent_encoder() {
     let mut value = 51_u32;
     let ptr = &mut value as *mut u32;
-    let encoded = co3::soft_encode(&mut value, &mut Default::default());
+    let encoded = unsafe { co3::soft_encode::<_, lang::C>(&mut value, &mut Default::default()) };
     assert_eq!(encoded.as_ptr(), ptr);
     unsafe { *encoded.as_ptr() = 52 };
     assert_eq!(value, 52);
@@ -277,7 +277,7 @@ struct TransparentBuffer(Vec<u32>);
 fn transparent_mutable_wrapper_delegates_writeback() {
     let mut value = TransparentBuffer(vec![61]);
     let mut store = Default::default();
-    let encoded = co3::soft_encode(&mut value, &mut store);
+    let encoded = unsafe { co3::soft_encode::<_, lang::C>(&mut value, &mut store) };
     unsafe { (*encoded.as_ptr()).0.as_ptr().write(62) };
     assert_eq!(co3::convert::Store::sync(store), Some(()));
     assert_eq!(value.0, [62]);
@@ -287,7 +287,7 @@ fn transparent_mutable_wrapper_delegates_writeback() {
 fn mutable_non_robust_buffer_validates_writeback() {
     let mut value = vec![false];
     let mut store = Default::default();
-    let encoded = co3::soft_encode(&mut value, &mut store);
+    let encoded = unsafe { co3::soft_encode::<_, lang::C>(&mut value, &mut store) };
     unsafe { (*encoded.as_ptr()).as_ptr().cast::<u8>().write(2) };
     assert_eq!(co3::convert::Store::sync(store), None);
     assert_eq!(value, [false]);
@@ -297,19 +297,19 @@ fn mutable_non_robust_buffer_validates_writeback() {
 fn mutable_dst_store_commits_only_on_sync() {
     let mut value = [false, true];
     let mut store = Default::default();
-    let encoded = co3::soft_encode(&mut value[..], &mut store);
+    let encoded = unsafe { co3::soft_encode::<_, lang::C>(&mut value[..], &mut store) };
     unsafe { encoded.as_ptr().write(co3::primitive::abi::bool::TRUE) };
     drop(store);
     assert_eq!(value, [false, true]);
 
     let mut store = Default::default();
-    let encoded = co3::soft_encode(&mut value[..], &mut store);
+    let encoded = unsafe { co3::soft_encode::<_, lang::C>(&mut value[..], &mut store) };
     unsafe { encoded.as_ptr().write(co3::primitive::abi::bool::TRUE) };
     assert_eq!(co3::convert::Store::sync(store), Some(()));
     assert_eq!(value, [true, true]);
 
     let mut store = Default::default();
-    let encoded = co3::soft_encode(&mut value[..], &mut store);
+    let encoded = unsafe { co3::soft_encode::<_, lang::C>(&mut value[..], &mut store) };
     unsafe { encoded.as_ptr().write(co3::primitive::abi::bool(2)) };
     assert_eq!(co3::convert::Store::sync(store), None);
     assert_eq!(value, [true, true]);
@@ -319,7 +319,7 @@ fn mutable_dst_store_commits_only_on_sync() {
 fn mutable_string_writes_back() {
     let mut value = String::from("abc");
     let mut store = Default::default();
-    let encoded = co3::soft_encode(&mut value, &mut store);
+    let encoded = unsafe { co3::soft_encode::<_, lang::C>(&mut value, &mut store) };
     unsafe { (*encoded.as_ptr()).as_ptr().cast::<u8>().write(b'z') };
     assert_eq!(co3::convert::Store::sync(store), Some(()));
     assert_eq!(value, "zbc");
@@ -330,7 +330,7 @@ fn nested_mutable_reference_writes_back_to_original_vec() {
     let mut values = vec![1_u32, 2];
     let mut reference = &mut values;
     let mut store = Default::default();
-    let encoded = co3::soft_encode(&mut reference, &mut store);
+    let encoded = unsafe { co3::soft_encode::<_, lang::C>(&mut reference, &mut store) };
     unsafe { (*(*encoded.as_ptr()).as_ptr()).as_ptr().add(1).write(9) };
     assert_eq!(co3::convert::Store::sync(store), Some(()));
     assert_eq!(*reference, [1, 9]);
@@ -347,7 +347,7 @@ fn nested_mutable_reference_rejects_pointer_replacement() {
     let mut values = vec![1_u32, 2];
     let mut reference = &mut values;
     let mut store = Default::default();
-    let encoded = co3::soft_encode(&mut reference, &mut store);
+    let encoded = unsafe { co3::soft_encode::<_, lang::C>(&mut reference, &mut store) };
     unsafe { *encoded.as_ptr() = co3::reference::abi::SoftRefMut::null() };
     assert_eq!(co3::convert::Store::sync(store), None);
     assert_eq!(*reference, [1, 2]);
@@ -358,7 +358,7 @@ fn nested_mutable_reference_validates_pointee_and_retains_borrowed_elements() {
     let mut values = vec![true];
     let mut reference = &mut values;
     let mut store = Default::default();
-    let encoded = co3::soft_encode(&mut reference, &mut store);
+    let encoded = unsafe { co3::soft_encode::<_, lang::C>(&mut reference, &mut store) };
     unsafe { *(*(*encoded.as_ptr()).as_ptr()).as_ptr() = co3::primitive::abi::bool(2) };
     assert_eq!(co3::convert::Store::sync(store), None);
     // Rejected writeback preserves the original valid boolean.
@@ -368,7 +368,7 @@ fn nested_mutable_reference_validates_pointee_and_retains_borrowed_elements() {
     let mut values = vec![&value];
     let mut reference = &mut values;
     let mut store = Default::default();
-    let _encoded = co3::soft_encode(&mut reference, &mut store);
+    let _encoded = unsafe { co3::soft_encode::<_, lang::C>(&mut reference, &mut store) };
     assert_eq!(co3::convert::Store::sync(store), Some(()));
     assert_eq!(reference[0], &value);
 }

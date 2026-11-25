@@ -1,4 +1,5 @@
 //! C-compatible representations and conversions for [`core::cell`].
+
 use core::cell::{Cell, UnsafeCell};
 
 use rust_spec::RustSpec;
@@ -6,17 +7,24 @@ use rust_spec::RustSpec;
 use crate::{
     CFnArg, CFnReturn, CType, ReprC,
     convert::{
-        Decode, DecodeMove, EmptyStore, Encode, EncodeMove, EncodeMoveUnchecked, EncodeUnchecked,
+        Decode, DecodeMove, DecodeMoveUnchecked, DecodeUnchecked, EmptyStore, Encode, EncodeMove,
+        EncodeMoveUnchecked, EncodeUnchecked,
     },
+    lang::Language,
 };
 
 impl<R: ReprC + ?Sized> ReprC for UnsafeCell<R> {
     type CType = core::cell::UnsafeCell<R::CType>;
 }
 
-impl<R: Encode> Encode for UnsafeCell<R> where Self: EncodeMove {}
 impl<R: EncodeUnchecked> EncodeUnchecked for UnsafeCell<R> where Self: EncodeMoveUnchecked {}
-impl<'d, R: Decode<'d>> Decode<'d> for UnsafeCell<R> where Self: DecodeMove<'d> {}
+impl<L: Language, R: Encode<L>> Encode<L> for UnsafeCell<R> where Self: EncodeMove<L> {}
+impl<'d, R: DecodeUnchecked<'d>> DecodeUnchecked<'d> for UnsafeCell<R> where
+    Self: DecodeMoveUnchecked<'d>
+{
+}
+impl<'d, L: Language, R: Decode<'d, L>> Decode<'d, L> for UnsafeCell<R> where Self: DecodeMove<'d, L>
+{}
 
 unsafe impl<T: EmptyStore> EmptyStore for UnsafeCell<T> {}
 
@@ -31,9 +39,10 @@ impl<R: ReprC + ?Sized> ReprC for Cell<R> {
     type CType = core::cell::Cell<R::CType>;
 }
 
-impl<R: Encode> Encode for Cell<R> where Self: EncodeMove {}
 impl<R: EncodeUnchecked> EncodeUnchecked for Cell<R> where Self: EncodeMoveUnchecked {}
-impl<'d, R: Decode<'d>> Decode<'d> for Cell<R> where Self: DecodeMove<'d> {}
+impl<L: Language, R: Encode<L>> Encode<L> for Cell<R> where Self: EncodeMove<L> {}
+impl<'d, R: DecodeUnchecked<'d>> DecodeUnchecked<'d> for Cell<R> where Self: DecodeMoveUnchecked<'d> {}
+impl<'d, L: Language, R: Decode<'d, L>> Decode<'d, L> for Cell<R> where Self: DecodeMove<'d, L> {}
 
 unsafe impl<T: EmptyStore> EmptyStore for Cell<T> {}
 
@@ -56,6 +65,7 @@ mod tests {
     #[cfg(feature = "alloc")]
     use crate::{boxed::abi::Box as AbiBox, wide::abi::WideBox as AbiWideBox};
     use crate::{
+        lang,
         marker::{AbiCompatible, Native},
         niche::Niche,
         option::abi::Option as AbiOption,
@@ -66,16 +76,20 @@ mod tests {
         assert_impl_all!(Cell<bool>: ReprC<CType = core::cell::Cell<crate::primitive::abi::bool>>);
         assert_impl_all!(UnsafeCell<bool>: ReprC<CType = core::cell::UnsafeCell<crate::primitive::abi::bool>>);
 
-        let encoded = crate::encode(Cell::new(true));
-        assert_eq!(encoded.into_inner(), co3::primitive::abi::bool::TRUE);
+        let encoded = unsafe { crate::encode::<_, lang::C>(Cell::new(true)) };
+        assert_eq!(encoded.into_inner(), crate::primitive::abi::bool::TRUE);
         let decoded = unsafe {
-            crate::decode::<Cell<bool>>(core::cell::Cell::new(co3::primitive::abi::bool::TRUE))
+            crate::decode::<Cell<bool>, lang::C>(core::cell::Cell::new(
+                crate::primitive::abi::bool::TRUE,
+            ))
         }
         .unwrap();
         assert!(decoded.into_inner());
         assert!(
             unsafe {
-                crate::decode::<Cell<bool>>(core::cell::Cell::new(co3::primitive::abi::bool(2)))
+                crate::decode::<Cell<bool>, lang::C>(core::cell::Cell::new(
+                    crate::primitive::abi::bool(2),
+                ))
             }
             .is_none()
         );
@@ -152,14 +166,14 @@ mod tests {
     #[test]
     fn mutable_unsafe_cell_reference_round_trip() {
         let mut cell = UnsafeCell::new(7_u8);
-        let encoded = crate::encode(&mut cell);
+        let encoded = unsafe { crate::encode::<_, lang::C>(&mut cell) };
         unsafe { encoded.as_ptr().write(core::cell::UnsafeCell::new(9)) };
         assert_eq!(*cell.get_mut(), 9);
 
         let source = unsafe {
             crate::reference::abi::RefMut::from_raw(cell.get().cast::<core::cell::UnsafeCell<u8>>())
         };
-        let decoded = unsafe { crate::decode::<&mut UnsafeCell<u8>>(source) }.unwrap();
+        let decoded = unsafe { crate::decode::<&mut UnsafeCell<u8>, lang::C>(source) }.unwrap();
         *decoded.get_mut() = 11;
         assert_eq!(*cell.get_mut(), 11);
 
@@ -171,7 +185,8 @@ mod tests {
                     .cast::<core::cell::UnsafeCell<crate::marker::NonZero<u8>>>(),
             )
         };
-        let decoded = unsafe { crate::decode::<&mut UnsafeCell<NonZero<u8>>>(source) }.unwrap();
+        let decoded =
+            unsafe { crate::decode::<&mut UnsafeCell<NonZero<u8>>, lang::C>(source) }.unwrap();
         assert_eq!(decoded.get_mut().get(), 3);
 
         let invalid = UnsafeCell::new(0_u8);
@@ -182,62 +197,72 @@ mod tests {
                     .cast::<core::cell::UnsafeCell<crate::marker::NonZero<u8>>>(),
             )
         };
-        assert!(unsafe { crate::decode::<&mut UnsafeCell<NonZero<u8>>>(source) }.is_none());
+        assert!(
+            unsafe { crate::decode::<&mut UnsafeCell<NonZero<u8>>, lang::C>(source) }.is_none()
+        );
     }
 
     #[test]
     fn exclusive_slice_pointers_cover_cells_and_empty_slices() {
         let mut cells = [UnsafeCell::new(1_u8)];
-        let view = crate::encode(&mut cells[..]);
+        let view = unsafe { crate::encode::<_, lang::C>(&mut cells[..]) };
         unsafe { view.as_ptr().write(core::cell::UnsafeCell::new(2)) };
         assert_eq!(unsafe { *cells[0].get() }, 2);
 
         let mut cells = [Cell::new(3_u8)];
-        let view = crate::encode(&mut cells[..]);
+        let view = unsafe { crate::encode::<_, lang::C>(&mut cells[..]) };
         unsafe { view.as_ptr().write(core::cell::Cell::new(4)) };
         assert_eq!(cells[0].get(), 4);
 
         let mut empty_unsafe_cells: [UnsafeCell<u8>; 0] = [];
-        assert_eq!(crate::encode(&mut empty_unsafe_cells[..]).metadata(), 0);
+        assert_eq!(
+            unsafe { crate::encode::<_, lang::C>(&mut empty_unsafe_cells[..]) }.metadata(),
+            0
+        );
         let mut empty_cells: [Cell<u8>; 0] = [];
-        assert_eq!(crate::encode(&mut empty_cells[..]).metadata(), 0);
+        assert_eq!(
+            unsafe { crate::encode::<_, lang::C>(&mut empty_cells[..]) }.metadata(),
+            0
+        );
     }
 
     #[cfg(feature = "alloc")]
     #[test]
     fn interior_mutable_slice_carriers_round_trip() {
         let mut cells = [UnsafeCell::new(3_u8), UnsafeCell::new(4_u8)];
-        let view = crate::encode(&mut cells[..]);
+        let view = unsafe { crate::encode::<_, lang::C>(&mut cells[..]) };
         unsafe { view.as_ptr().write(core::cell::UnsafeCell::new(9)) };
         assert_eq!(unsafe { *cells[0].get() }, 9);
 
-        let boxed = crate::encode(alloc::vec![UnsafeCell::new(5_u8)].into_boxed_slice());
+        let boxed = unsafe {
+            crate::encode::<_, lang::C>(alloc::vec![UnsafeCell::new(5_u8)].into_boxed_slice())
+        };
         unsafe { boxed.as_ptr().write(core::cell::UnsafeCell::new(7)) };
-        let boxed = unsafe { crate::decode::<Box<[UnsafeCell<u8>]>>(boxed) }.unwrap();
+        let boxed = unsafe { crate::decode::<Box<[UnsafeCell<u8>]>, lang::C>(boxed) }.unwrap();
         assert_eq!(unsafe { *boxed[0].get() }, 7);
 
-        let vector = crate::encode(alloc::vec![UnsafeCell::new(6_u8)]);
-        let vector = unsafe { crate::decode::<Vec<UnsafeCell<u8>>>(vector) }.unwrap();
+        let vector = unsafe { crate::encode::<_, lang::C>(alloc::vec![UnsafeCell::new(6_u8)]) };
+        let vector = unsafe { crate::decode::<Vec<UnsafeCell<u8>>, lang::C>(vector) }.unwrap();
         assert_eq!(unsafe { *vector[0].get() }, 6);
     }
 
     #[cfg(feature = "alloc")]
     #[test]
     fn boxed_cell_borrow_and_round_trip() {
-        let encoded = crate::encode(Box::new(UnsafeCell::new(4u8)));
+        let encoded = unsafe { crate::encode::<_, lang::C>(Box::new(UnsafeCell::new(4u8))) };
         unsafe { encoded.as_ptr().write(core::cell::UnsafeCell::new(8)) };
-        let decoded = unsafe { crate::decode::<Box<UnsafeCell<u8>>>(encoded) }.unwrap();
+        let decoded = unsafe { crate::decode::<Box<UnsafeCell<u8>>, lang::C>(encoded) }.unwrap();
         assert_eq!((*decoded).into_inner(), 8);
 
-        let encoded = crate::encode(Box::new(Cell::new(4u8)));
+        let encoded = unsafe { crate::encode::<_, lang::C>(Box::new(Cell::new(4u8))) };
         unsafe { encoded.as_ptr().write(core::cell::Cell::new(6)) };
-        let decoded = unsafe { crate::decode::<Box<Cell<u8>>>(encoded) }.unwrap();
+        let decoded = unsafe { crate::decode::<Box<Cell<u8>>, lang::C>(encoded) }.unwrap();
         assert_eq!(decoded.get(), 6);
 
-        let none = crate::encode(None::<Box<UnsafeCell<u8>>>);
+        let none = unsafe { crate::encode::<_, lang::C>(None::<Box<UnsafeCell<u8>>>) };
         assert!(none.0.0.as_ptr().is_null());
         assert!(matches!(
-            unsafe { crate::decode::<Option<Box<UnsafeCell<u8>>>>(none) },
+            unsafe { crate::decode::<Option<Box<UnsafeCell<u8>>>, lang::C>(none) },
             Some(None)
         ));
     }
@@ -248,7 +273,7 @@ mod tests {
 
         let mut value = Cell::new(NonZero::new(3_u8).unwrap());
         let mut store = Default::default();
-        let encoded = crate::soft_encode(&mut value, &mut store);
+        let encoded = unsafe { crate::soft_encode::<_, lang::C>(&mut value, &mut store) };
         unsafe {
             encoded
                 .as_ptr()
@@ -275,7 +300,7 @@ mod tests {
 
         let mut store = Default::default();
         let checked: crate::reference::abi::SoftRefMut<<CellValue as crate::ReprC>::CType> =
-            crate::soft_encode(&mut value, &mut store);
+            unsafe { crate::soft_encode::<_, lang::C>(&mut value, &mut store) };
         assert_ne!(checked.as_ptr(), original);
         unsafe {
             checked
@@ -314,7 +339,8 @@ mod tests {
             let valid = AbiBox::from_box(Box::new(core::cell::UnsafeCell::new(
                 crate::marker::NonZero(7u8),
             )));
-            let decoded = unsafe { crate::decode::<Box<UnsafeCell<NonZero<u8>>>>(valid) }.unwrap();
+            let decoded =
+                unsafe { crate::decode::<Box<UnsafeCell<NonZero<u8>>>, lang::C>(valid) }.unwrap();
             assert_eq!((*decoded).into_inner().get(), 7);
 
             // SAFETY: this test constructs the carrier for an interior-mutable cell value.
@@ -322,11 +348,15 @@ mod tests {
                 crate::marker::NonZero(0u8),
             )));
             // Miri verifies that rejection also releases this owned allocation.
-            assert!(unsafe { crate::decode::<Box<UnsafeCell<NonZero<u8>>>>(invalid) }.is_none());
+            assert!(
+                unsafe { crate::decode::<Box<UnsafeCell<NonZero<u8>>>, lang::C>(invalid) }
+                    .is_none()
+            );
 
             // A null carrier is rejected without attempting to reclaim an allocation.
             assert!(
-                unsafe { crate::decode::<Box<UnsafeCell<NonZero<u8>>>>(AbiBox::null()) }.is_none()
+                unsafe { crate::decode::<Box<UnsafeCell<NonZero<u8>>>, lang::C>(AbiBox::null()) }
+                    .is_none()
             );
         }
         assert_impl_all!(&[UnsafeCell<NonZero<u8>>]:
@@ -355,14 +385,18 @@ mod tests {
                 crate::marker::NonZero(0_u8),
             )]);
             assert!(
-                unsafe { crate::decode::<Vec<UnsafeCell<NonZero<u8>>>>(Native(invalid)) }.is_none()
+                unsafe { crate::decode::<Vec<UnsafeCell<NonZero<u8>>>, lang::C>(Native(invalid)) }
+                    .is_none()
             );
 
             let invalid = AbiWideBox::from_box(
                 alloc::vec![core::cell::UnsafeCell::new(crate::marker::NonZero(0_u8))]
                     .into_boxed_slice(),
             );
-            assert!(unsafe { crate::decode::<Box<[UnsafeCell<NonZero<u8>>]>>(invalid) }.is_none());
+            assert!(
+                unsafe { crate::decode::<Box<[UnsafeCell<NonZero<u8>>]>, lang::C>(invalid) }
+                    .is_none()
+            );
         }
         assert_impl_all!([UnsafeCell<NonZero<u8>>; 2]:
             ReprC<CType = [core::cell::UnsafeCell<crate::marker::NonZero<u8>>; 2]>,

@@ -176,11 +176,10 @@ pub(crate) fn recognize_path(path: &TypePath) -> Option<KnownType<'_>> {
         ),
         _ if tuple_arity.is_some() => (
             Kind::Tuple,
-            syn::parse_str(&format!(
-                "co3::tuple::{name}<{}>",
-                vec!["()"; tuple_arity.unwrap()].join(", ")
-            ))
-            .expect("valid tuple family type"),
+            {
+                let units = std::iter::repeat_n(quote::quote!(()), tuple_arity.unwrap());
+                parse_quote!(co3::tuple::#ident<#(#units),*>)
+            },
             format!("co3::tuple::{name}"),
             tuple_arity.unwrap(),
         ),

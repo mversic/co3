@@ -10,6 +10,7 @@ use crate::{
     utils::{ParamUseDetector, push_error, speculative_marker},
 };
 
+mod aggregate;
 mod attr;
 pub(crate) mod borrow;
 mod ctype;
@@ -55,14 +56,6 @@ fn parse_repr_c_attrs(attrs: &[Attribute]) -> syn::Result<ReprCAttrs> {
                     return Err(meta.error("Duplicate `identity` within attribute"));
                 }
                 repr_c.is_identity = true;
-                return Ok(());
-            }
-
-            if meta.path.is_ident("__wide_data") {
-                if repr_c.is_wide_data {
-                    return Err(meta.error("Duplicate `__wide_data` within attribute"));
-                }
-                repr_c.is_wide_data = true;
                 return Ok(());
             }
 
@@ -231,16 +224,6 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
                 syn::Error::new_spanned(
                     &input.ident,
                     "`repr_c(identity)` cannot be combined with `NICHE`",
-                ),
-            );
-        }
-
-        if repr_c_attrs.is_wide_data {
-            push_error(
-                &mut errors,
-                syn::Error::new_spanned(
-                    &input.ident,
-                    "`repr_c(identity)` cannot be combined with `__wide_data`",
                 ),
             );
         }
@@ -433,8 +416,7 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
         return Err(errors);
     }
 
-    let type_checks =
-        (!repr_c_attrs.is_wide_data).then(|| crate::type_checks::TypeChecks::for_derive(input));
+    let type_checks = crate::type_checks::TypeChecks::for_derive(input);
 
     let recursion = inference::RecursiveFields::analyze(input, repr_attr, None);
     if let Some(ty) = recursion.wide_raw_pointer {
@@ -446,10 +428,7 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
     let tokens = match &input.data {
         syn::Data::Struct(_) => {
             let mut bounded;
-            let carrier_input = if repr_c_attrs.is_identity
-                || repr_c_attrs.is_wide_data
-                || recursion.tail_bounds.is_empty()
-            {
+            let carrier_input = if repr_c_attrs.is_identity || recursion.tail_bounds.is_empty() {
                 input
             } else {
                 bounded = input.clone();
@@ -468,18 +447,12 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
                 &[],
                 &recursion,
             );
-            let wide = (!repr_c_attrs.is_wide_data)
-                .then(|| {
-                    wide::expand(
-                        input,
-                        &repr,
-                        (!repr_c_attrs.is_identity && recursion.wide_header).then_some(&recursion),
-                    )
-                })
-                .transpose()?;
-            let nul_terminated = (!repr_c_attrs.is_wide_data)
-                .then(|| nul_terminated::expand(input, repr_attr))
-                .transpose()?;
+            let wide = wide::expand(
+                input,
+                &repr,
+                (!repr_c_attrs.is_identity && recursion.wide_header).then_some(&recursion),
+            )?;
+            let nul_terminated = nul_terminated::expand(input, repr_attr)?;
             quote! { #item #wide #nul_terminated }
         }
         syn::Data::Enum(data) if data.variants.is_empty() => {
@@ -531,37 +504,31 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
             #ctype_impl
         };
 
-        if repr_c_attrs.is_wide_data {
-            // The enclosing derive already supplies the anonymous scope. Its
-            // carrier's Wide impl also needs to name this header's companion.
-            Ok(body)
-        } else {
-            Ok(quote! {
-                const _: () = {
-                    #[allow(unused_imports, reason = "alias usage depends on the generated layout constraints")]
-                    use co3::{marker::Native as __Co3Native, rust_spec::Unspecified as __Co3Unstable};
+        Ok(quote! {
+            const _: () = {
+                #[allow(unused_imports, reason = "alias usage depends on the generated layout constraints")]
+                use co3::{marker::Native as __Co3Native, rust_spec::Unspecified as __Co3Unstable};
 
-                    co3::disjoint_impls! {
-                        trait __Co3CFnReturnLayout {}
+                co3::disjoint_impls! {
+                    trait __Co3CFnReturnLayout {}
 
-                        impl<T> __Co3CFnReturnLayout for T where
-                            T: co3::rust_spec::RustSpec<
-                                    Size = co3::rust_spec::size::Sized<co3::rust_spec::Gt<co3::rust_spec::Zero>>,
-                                >
-                        {
-                        }
-                        impl<T> __Co3CFnReturnLayout for T where
-                            T: co3::rust_spec::RustSpec<
-                                    Size = co3::rust_spec::size::Sized<co3::rust_spec::Zero>,
-                                    __Alignment = co3::rust_spec::One,
-                                >
-                        {
-                        }
+                    impl<T> __Co3CFnReturnLayout for T where
+                        T: co3::rust_spec::RustSpec<
+                                Size = co3::rust_spec::size::Sized<co3::rust_spec::Gt<co3::rust_spec::Zero>>,
+                            >
+                    {
                     }
-                    #body
-                };
-            })
-        }
+                    impl<T> __Co3CFnReturnLayout for T where
+                        T: co3::rust_spec::RustSpec<
+                                Size = co3::rust_spec::size::Sized<co3::rust_spec::Zero>,
+                                __Alignment = co3::rust_spec::One,
+                            >
+                    {
+                    }
+                }
+                #body
+            };
+        })
     }
 }
 

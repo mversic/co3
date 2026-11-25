@@ -16,7 +16,7 @@ concurrency:
 jobs:
   static-analysis:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
 
     steps:
     - uses: actions/checkout@v7
@@ -92,7 +92,7 @@ jobs:
 
   miri:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
 
     steps:
     - uses: actions/checkout@v7

@@ -15,7 +15,7 @@ help: the trait `Wide` is not implemented for `NonTransparentDst`
              Native<T>
              Tuple10<A, B, C, D, E, F, G, H, I, J>
              Tuple11<A, B, C, D, E, F, G, H, I, J, K>
-             Tuple12<A, B, C, D, E, F, G, H, I, J, K, L>
+             Tuple12<A, B, C, D, E, F, G, H, I, J, K, M>
              Tuple2<A, B>
              Tuple3<A, B, C>
            and $N others
@@ -42,7 +42,7 @@ help: the trait `Wide` is not implemented for `GenericNonTransparentDst<[u8]>`
              Native<T>
              Tuple10<A, B, C, D, E, F, G, H, I, J>
              Tuple11<A, B, C, D, E, F, G, H, I, J, K>
-             Tuple12<A, B, C, D, E, F, G, H, I, J, K, L>
+             Tuple12<A, B, C, D, E, F, G, H, I, J, K, M>
              Tuple2<A, B>
              Tuple3<A, B, C>
            and $N others

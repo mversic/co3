@@ -1,25 +1,25 @@
 //! Stable UTF-8 strings and their C-compatible representation.
 
 #[cfg(feature = "repr-rust")]
-use crate::{
-    borrow::ToOwned,
-    marker::Native,
-    wide::{self, Wide},
-};
-#[cfg(feature = "repr-rust")]
-use alloc::vec::Vec;
-
-#[cfg(feature = "repr-rust")]
-use alloc::boxed::Box;
+use alloc::{boxed::Box, vec::Vec};
 #[cfg(feature = "repr-rust")]
 use core::ptr::NonNull;
 
 use rust_spec::RustSpec;
 
+#[cfg(feature = "repr-rust")]
+use crate::marker::Native;
 use crate::{
     CFnArg, CFnReturn, CType, ReprC,
-    borrow::{BorrowedDecode, BorrowedEncode, BorrowedEncodeUnchecked, borrowed_decode_slice},
-    convert::{AbiCompatibleValidate, Decode, DecodeMove, Encode, EncodeMove, EncodeMoveUnchecked},
+    borrow::{
+        BorrowedDecode, BorrowedDecodeUnchecked, BorrowedEncode, BorrowedEncodeUnchecked,
+        borrowed_decode_slice,
+    },
+    convert::{
+        AbiValidate, Decode, DecodeMove, DecodeMoveUnchecked, DecodeUnchecked, Encode, EncodeMove,
+        EncodeMoveUnchecked,
+    },
+    lang::Language,
     marker::AbiCompatible,
     niche::Niche,
     primitive::primitive_derive,
@@ -69,7 +69,7 @@ impl From<alloc::string::String> for String {
 
 impl From<&str> for String {
     fn from(value: &str) -> Self {
-        Self(value.bytes().collect())
+        Self(value.as_bytes().to_vec().into())
     }
 }
 impl core::ops::Deref for String {
@@ -118,7 +118,7 @@ impl ReprC for String {
     type CType = abi::String;
 }
 unsafe impl AbiCompatible for String {}
-unsafe impl AbiCompatibleValidate for String {
+unsafe impl<L: Language> AbiValidate<L> for String {
     unsafe fn is_valid(value: &Self::CType) -> bool {
         if value.len() > value.capacity() {
             return false;
@@ -128,7 +128,7 @@ unsafe impl AbiCompatibleValidate for String {
         else {
             return false;
         };
-        core::str::from_utf8(bytes).is_ok()
+        crate::lang::checks::utf8::<L>(bytes)
     }
 }
 unsafe impl EncodeMoveUnchecked for String {
@@ -140,7 +140,7 @@ unsafe impl EncodeMoveUnchecked for String {
         abi::String::from_string(self.into())
     }
 }
-unsafe impl EncodeMove for String {
+unsafe impl<L: Language> EncodeMove<L> for String {
     type Store = ();
     fn soft_encode<'itm>(self, _: &'itm mut ()) -> Self::CType
     where
@@ -149,20 +149,26 @@ unsafe impl EncodeMove for String {
         abi::String::from_string(self.into())
     }
 }
-unsafe impl<'d> DecodeMove<'d> for String {
-    type Store = ();
-    unsafe fn soft_decode<'itm: 'd>(source: Self::CType, _: &'itm mut ()) -> Option<Self> {
-        let bytes = unsafe { source.0.into_vec()? };
-        alloc::string::String::from_utf8(bytes).ok().map(Self::from)
-    }
+unsafe impl<'d> DecodeMoveUnchecked<'d> for String {
+    type SoftStore = ();
+
     unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, _: &'itm mut ()) -> Self {
         let bytes = unsafe { source.0.into_vec().unwrap_unchecked() };
         unsafe { alloc::string::String::from_utf8_unchecked(bytes) }.into()
     }
 }
-impl Encode for String {}
+unsafe impl<'d, L: Language> DecodeMove<'d, L> for String {
+    type Store = ();
+    unsafe fn soft_decode<'itm: 'd>(source: Self::CType, _: &'itm mut ()) -> Option<Self> {
+        let bytes = unsafe { source.0.into_vec()? };
+        crate::lang::checks::utf8::<L>(&bytes)
+            .then(|| unsafe { alloc::string::String::from_utf8_unchecked(bytes) }.into())
+    }
+}
 impl crate::convert::EncodeUnchecked for String {}
-impl Decode<'_> for String {}
+impl<L: Language> Encode<L> for String {}
+impl DecodeUnchecked<'_> for String {}
+impl<L: Language> Decode<'_, L> for String {}
 impl Niche for String {
     const NICHE: Self::CType = abi::String::null();
     fn is_niche(value: &Self::CType) -> bool {
@@ -183,8 +189,8 @@ unsafe impl BorrowedEncodeUnchecked for String {
         abi::String(unsafe { BorrowedEncodeUnchecked::soft_encode_unchecked(self.0, store, owner) })
     }
 }
-unsafe impl BorrowedEncode for String {
-    type Store = <StableVec<u8> as BorrowedEncode>::Store;
+unsafe impl<L: Language> BorrowedEncode<L> for String {
+    type Store = <StableVec<u8> as BorrowedEncode<L>>::Store;
     fn soft_encode<'itm>(
         self,
         store: &'itm mut Self::Store,
@@ -193,21 +199,25 @@ unsafe impl BorrowedEncode for String {
     where
         Self: 'itm,
     {
-        abi::String(BorrowedEncode::soft_encode(self.0, store, owner))
+        abi::String(BorrowedEncode::<L>::soft_encode(self.0, store, owner))
     }
 }
-unsafe impl<'d> BorrowedDecode<'d> for String {
+unsafe impl<'d> BorrowedDecodeUnchecked<'d> for String {
+    type SoftStore = ();
+
+    unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, _: &'itm mut ()) -> Self {
+        let bytes = unsafe { core::slice::from_raw_parts(source.as_ptr(), source.len()) };
+        unsafe { core::str::from_utf8_unchecked(bytes) }.into()
+    }
+}
+unsafe impl<'d, L: Language> BorrowedDecode<'d, L> for String {
     type Store = ();
     unsafe fn soft_decode<'itm: 'd>(source: Self::CType, _: &'itm mut ()) -> Option<Self> {
         if source.len() > source.capacity() {
             return None;
         }
         let bytes = unsafe { borrowed_decode_slice(source.as_ptr(), source.len())? };
-        Some(core::str::from_utf8(bytes).ok()?.into())
-    }
-    unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, _: &'itm mut ()) -> Self {
-        let bytes = unsafe { core::slice::from_raw_parts(source.as_ptr(), source.len()) };
-        unsafe { core::str::from_utf8_unchecked(bytes) }.into()
+        Some(unsafe { crate::lang::checks::decode_utf8::<L>(bytes) }?.into())
     }
 }
 
@@ -224,7 +234,7 @@ impl ReprC for alloc::string::String {
 }
 
 #[cfg(feature = "repr-rust")]
-unsafe impl EncodeMove for alloc::string::String {
+unsafe impl<L: Language> EncodeMove<L> for alloc::string::String {
     type Store = ();
 
     fn soft_encode<'itm>(self, (): &mut ()) -> Self::CType
@@ -247,26 +257,32 @@ unsafe impl EncodeMoveUnchecked for alloc::string::String {
 }
 
 #[cfg(feature = "repr-rust")]
-unsafe impl<'d> DecodeMove<'d> for alloc::string::String {
-    type Store = ();
-
-    unsafe fn soft_decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
-        let bytes = unsafe { source.0.0.into_vec()? };
-        Self::from_utf8(bytes).ok()
-    }
+unsafe impl<'d> DecodeMoveUnchecked<'d> for alloc::string::String {
+    type SoftStore = ();
 
     unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, (): &mut ()) -> Self {
         let bytes = unsafe { source.0.0.into_vec().unwrap_unchecked() };
         unsafe { Self::from_utf8_unchecked(bytes) }
     }
 }
-
 #[cfg(feature = "repr-rust")]
-impl Encode for alloc::string::String {}
+unsafe impl<'d, L: Language> DecodeMove<'d, L> for alloc::string::String {
+    type Store = ();
+
+    unsafe fn soft_decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
+        let bytes = unsafe { source.0.0.into_vec()? };
+        crate::lang::checks::utf8::<L>(&bytes).then(|| unsafe { Self::from_utf8_unchecked(bytes) })
+    }
+}
+
 #[cfg(feature = "repr-rust")]
 impl crate::convert::EncodeUnchecked for alloc::string::String {}
 #[cfg(feature = "repr-rust")]
-impl Decode<'_> for alloc::string::String {}
+impl<L: Language> Encode<L> for alloc::string::String {}
+#[cfg(feature = "repr-rust")]
+impl DecodeUnchecked<'_> for alloc::string::String {}
+#[cfg(feature = "repr-rust")]
+impl<L: Language> Decode<'_, L> for alloc::string::String {}
 
 #[cfg(feature = "repr-rust")]
 impl Niche for alloc::string::String {
@@ -277,23 +293,26 @@ impl Niche for alloc::string::String {
     }
 }
 #[cfg(feature = "repr-rust")]
-unsafe impl<'d> BorrowedDecode<'d> for alloc::string::String {
-    type Store = ();
-
-    unsafe fn soft_decode<'itm: 'd>(source: Self::CType, _: &'itm mut Self::Store) -> Option<Self> {
-        if source.len() > source.capacity() {
-            return None;
-        }
-        let bytes = unsafe { borrowed_decode_slice(source.as_ptr(), source.len())? };
-        Some(core::str::from_utf8(bytes).ok()?.to_owned())
-    }
+unsafe impl<'d> BorrowedDecodeUnchecked<'d> for alloc::string::String {
+    type SoftStore = <String as BorrowedDecodeUnchecked<'d>>::SoftStore;
 
     unsafe fn soft_decode_unchecked<'itm: 'd>(
         source: Self::CType,
-        _: &'itm mut Self::Store,
+        store: &'itm mut Self::SoftStore,
     ) -> Self {
-        let bytes = unsafe { core::slice::from_raw_parts(source.as_ptr(), source.len()) };
-        unsafe { core::str::from_utf8_unchecked(bytes) }.to_owned()
+        unsafe { <String as BorrowedDecodeUnchecked<'d>>::soft_decode_unchecked(source.0, store) }
+            .into()
+    }
+}
+#[cfg(feature = "repr-rust")]
+unsafe impl<'d, L: Language> BorrowedDecode<'d, L> for alloc::string::String {
+    type Store = <String as BorrowedDecode<'d, L>>::Store;
+
+    unsafe fn soft_decode<'itm: 'd>(
+        source: Self::CType,
+        store: &'itm mut Self::Store,
+    ) -> Option<Self> {
+        unsafe { <String as BorrowedDecode<'d, L>>::soft_decode(source.0, store) }.map(Into::into)
     }
 }
 
@@ -322,8 +341,8 @@ unsafe impl BorrowedEncodeUnchecked for alloc::string::String {
 }
 
 #[cfg(feature = "repr-rust")]
-unsafe impl BorrowedEncode for alloc::string::String {
-    type Store = <Vec<u8> as BorrowedEncode>::Store;
+unsafe impl<L: Language> BorrowedEncode<L> for alloc::string::String {
+    type Store = <Vec<u8> as BorrowedEncode<L>>::Store;
 
     fn soft_encode<'itm>(
         self,
@@ -333,7 +352,7 @@ unsafe impl BorrowedEncode for alloc::string::String {
     where
         Self: 'itm,
     {
-        let carrier = <Vec<u8> as BorrowedEncode>::soft_encode(self.into_bytes(), store, owner);
+        let carrier = <Vec<u8> as BorrowedEncode<L>>::soft_encode(self.into_bytes(), store, owner);
         Native(crate::string::abi::String(carrier.0))
     }
 }
@@ -349,83 +368,18 @@ impl crate::convert::AssignFromOwned for str {
     }
 }
 
-#[cfg(feature = "repr-rust")]
-unsafe impl BorrowedEncodeUnchecked for Box<str> {
-    type Owner = Option<Self>;
-    type SoftStore = ();
-
-    unsafe fn soft_encode_unchecked<'itm>(
-        self,
-        store: &'itm mut Self::SoftStore,
-        owner: &'itm mut Self::Owner,
-    ) -> Self::CType
-    where
-        Self: 'itm,
-    {
-        let _ = store;
-        let value = owner.insert(self);
-        let ptr = core::ptr::from_mut(&mut **value);
-        let len = <str as Wide>::metadata(ptr);
-        let data = core::ptr::NonNull::new(<str as Wide>::as_mut_ptr(ptr))
-            .unwrap()
-            .cast();
-        unsafe { wide::abi::WideBox::from_raw_parts(data, len) }
-    }
-}
-
-#[cfg(feature = "repr-rust")]
-unsafe impl BorrowedEncode for Box<str> {
-    type Store = ();
-
-    fn soft_encode<'itm>(
-        self,
-        store: &'itm mut Self::Store,
-        owner: &'itm mut Self::Owner,
-    ) -> Self::CType
-    where
-        Self: 'itm,
-    {
-        let _ = store;
-        let value = owner.insert(self);
-        let ptr = core::ptr::from_mut(&mut **value);
-        let len = <str as Wide>::metadata(ptr);
-        let data = core::ptr::NonNull::new(<str as Wide>::as_mut_ptr(ptr))
-            .unwrap()
-            .cast();
-        unsafe { wide::abi::WideBox::from_raw_parts(data, len) }
-    }
-}
-
-#[cfg(feature = "repr-rust")]
-unsafe impl<'d> BorrowedDecode<'d> for Box<str> {
-    type Store = ();
-
-    unsafe fn soft_decode<'itm: 'd>(source: Self::CType, _: &'itm mut Self::Store) -> Option<Self> {
-        let bytes = unsafe { borrowed_decode_slice(source.as_ptr(), source.metadata())? };
-        Some(Box::from(core::str::from_utf8(bytes).ok()?))
-    }
-
-    unsafe fn soft_decode_unchecked<'itm: 'd>(
-        source: Self::CType,
-        _: &'itm mut Self::Store,
-    ) -> Self {
-        let bytes = unsafe { core::slice::from_raw_parts(source.as_ptr(), source.metadata()) };
-        Box::from(unsafe { core::str::from_utf8_unchecked(bytes) })
-    }
-}
-
 #[doc(hidden)]
 pub mod abi {
     use super::{
-        AbiCompatible, CFnArg, CFnReturn, CType, Decode, DecodeMove, Encode, EncodeMove,
-        EncodeMoveUnchecked, ReprC, RustSpec, primitive_derive, vec,
+        AbiCompatible, CFnArg, CFnReturn, CType, Decode, DecodeMove, DecodeMoveUnchecked,
+        DecodeUnchecked, Encode, EncodeMove, ReprC, RustSpec, primitive_derive, vec,
     };
     #[cfg(feature = "repr-rust")]
     use super::{Box, NonNull};
+    use crate::lang::Language;
     #[cfg(feature = "repr-rust")]
-    use crate::boxed::OwnedBoxCarrier;
-    #[cfg(feature = "repr-rust")]
-    use crate::{marker::Native, wide};
+    use crate::{boxed::OwnedBoxCarrier, marker::Native, wide};
+
     /// Owned UTF-8 string carrier, including the capacity of its allocation.
     ///
     /// The carrier permits any byte values. Decoding as a `String` checks UTF-8.
@@ -500,7 +454,7 @@ pub mod abi {
 #[cfg(all(test, feature = "derive"))]
 mod tests {
     use super::String;
-    use crate::convert::Store;
+    use crate::{convert::Store, lang};
 
     #[test]
     fn raw_mutable_string_writes_back_valid_utf8() {
@@ -510,7 +464,7 @@ mod tests {
         crate::raw! { fn append(#[soft] value: &mut String); }
         let mut value = String::from("hello");
         let mut store = Default::default();
-        let carrier = crate::soft_encode(&mut value, &mut store);
+        let carrier = unsafe { crate::soft_encode::<_, lang::C>(&mut value, &mut store) };
         unsafe { append_raw(crate::marker::Borrowed(carrier)) };
         store.sync().unwrap();
         assert_eq!(&*value, "hello🦀");

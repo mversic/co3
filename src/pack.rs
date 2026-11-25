@@ -365,7 +365,10 @@ mod tests {
     #[cfg(feature = "alloc")]
     use super::{Box, Pack2};
     use super::{NonZero, Unpack2};
-    use crate::wide::tests::{Custom, Metadata};
+    use crate::{
+        lang,
+        wide::tests::{Custom, Metadata},
+    };
 
     #[test]
     fn raw_wide_unpack_preserves_custom_metadata() {
@@ -384,12 +387,16 @@ mod tests {
         let (data, metadata) = <*mut Pointee as Unpack2<*mut u8, Metadata>>::unpack(ptr).unwrap();
         assert_eq!((data, metadata), (bytes.as_mut_ptr(), expected));
         let (data, metadata) =
-            <NonZero<*mut Pointee> as Unpack2<*const u8, Metadata>>::unpack(crate::encode(nonnull))
-                .unwrap();
+            <NonZero<*mut Pointee> as Unpack2<*const u8, Metadata>>::unpack(unsafe {
+                crate::encode::<_, lang::C>(nonnull)
+            })
+            .unwrap();
         assert_eq!((data, metadata), (bytes.as_ptr(), expected));
         let (data, metadata) =
-            <NonZero<*mut Pointee> as Unpack2<*mut u8, Metadata>>::unpack(crate::encode(nonnull))
-                .unwrap();
+            <NonZero<*mut Pointee> as Unpack2<*mut u8, Metadata>>::unpack(unsafe {
+                crate::encode::<_, lang::C>(nonnull)
+            })
+            .unwrap();
         assert_eq!((data, metadata), (bytes.as_mut_ptr(), expected));
     }
 
@@ -417,7 +424,7 @@ mod tests {
         let original: &mut UnsafeCell<[u8]> = &mut cell;
 
         let carrier: crate::wide::abi::WideRefMut<'_, <UnsafeCell<[u8]> as crate::ReprC>::CType> =
-            crate::encode(original);
+            unsafe { crate::encode::<_, lang::C>(original) };
         let (data, len) =
             <&mut UnsafeCell<[u8]> as Unpack2<*mut u8, usize>>::unpack(carrier).unwrap();
         assert_eq!(data, cell.get().cast());

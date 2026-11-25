@@ -44,7 +44,17 @@ co3::ffi! {
 #[path = "../support/async_caller.rs"]
 mod caller;
 
+#[cfg(any(
+    feature = "co3",
+    feature = "diplomat",
+    feature = "interoptopus",
+    feature = "safer_ffi",
+    feature = "abi_stable",
+    feature = "stabby"
+))]
+fn main() {}
+
+#[cfg(any(feature = "uniffi", feature = "boltffi"))]
 fn main() {
-    #[cfg(any(feature = "uniffi", feature = "boltffi"))]
     caller::check();
 }

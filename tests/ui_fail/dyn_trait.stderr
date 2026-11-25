@@ -60,9 +60,9 @@ error[E0277]: the trait bound `&(dyn Trait + '__co3_0): co3::_::ReprC0<_, _, _>`
    = help: the following other types implement trait `co3::_::ReprC0<_TŠČ0, _TŠČ1, _TŠČ2>`:
              `&'_lšč0 R` implements `co3::_::ReprC0<<R as ReprC>::CType, <R as RustSpec>::Layout, NulTerminated>`
              `&'_lšč0 R` implements `co3::_::ReprC0<<R as ReprC>::CType, Unspecified, _TŠČ0>`
-             `&'_lšč0 R` implements `co3::_::ReprC0<_TŠČ0, Unspecified, co3::rust_spec::size::MetaSized<SliceLike>>`
+             `&'_lšč0 R` implements `co3::_::ReprC0<<R as ReprC>::CType, Unspecified, co3::rust_spec::size::MetaSized<SliceLike>>`
              `&'a R` implements `co3::_::ReprC0<<R as ReprC>::CType, Specified, _TŠČ0>`
-             `&'a R` implements `co3::_::ReprC0<_TŠČ0, Specified, co3::rust_spec::size::MetaSized<SliceLike>>`
+             `&'a R` implements `co3::_::ReprC0<<R as ReprC>::CType, Specified, co3::rust_spec::size::MetaSized<SliceLike>>`
    = note: required for `&'__co3_0 (dyn Trait + '__co3_0)` to implement `ReprC`
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
@@ -93,30 +93,30 @@ error[E0277]: the trait bound `&dyn Trait: co3::stored::_::DecodeMove0<'_, _, _,
 13 | | }
    | |_^ the trait `co3::stored::_::DecodeMove0<'_, _, _, _, _>` is not implemented for `&dyn Trait`
    |
-help: the following other types implement trait `co3::stored::_::DecodeMove0<'d, _TŠČ1, _TŠČ2, _TŠČ3, _TŠČ4>`
+help: the following other types implement trait `co3::stored::_::DecodeMove0<'d, _TŠČ2, _TŠČ3, _TŠČ4, _TŠČ5, _TŠČ0>`
   --> src/stored.rs
    |
-   | /     unsafe impl<'d, 'r: 'd, R: AbiCompatibleValidate + ?Sized> DecodeMove<'d>
-   | |         for &'r R
+   | /     unsafe impl<'d, 'r: 'd, L: Language, R: AbiValidate<L> + ?Sized> DecodeMove<'d, L> for &'r R
    | |     where
-   | |         Self: RustSpec<Layout = Specified> + ReprC<CType: crate::CType + RefCarrier<Pointee = <R as ReprC>::CType>>,
+   | |         Self: RustSpec<Layout = Specified> + ReprC<CType: RefCarrier<Pointee = <R as ReprC>::CType>>,
    | |         R: RustSpec<Layout = Specified, Size: Thin>,
    | |         <R as RustSpec>::Mutability: InteriorTrap<Trap = Robust>,
-   | |_________________________________________________________________^ `&'r R` implements `co3::stored::_::DecodeMove0<'d, Specified, Specified, _TŠČ1, <R as RustSpec>::Mutability>`
+   | |_________________________________________________________________^ `&'r R` implements `co3::stored::_::DecodeMove0<'d, Specified, Specified, _TŠČ1, <R as RustSpec>::Mutability, L>`
 ...
    | /     unsafe impl<
    | |         'd,
    | |         'r: 'd,
-   | |         R: AbiCompatibleValidate<CType: crate::CType + Wide<Metadata = usize>> + ?Sized,
+   | |         L: Language,
 ...  |
    | |         R: Wide<Metadata = usize>,
    | |         <R as RustSpec>::Mutability: InteriorTrap<Trap = Robust>,
-   | |_________________________________________________________________^ `&'r R` implements `co3::stored::_::DecodeMove0<'d, Unspecified, Specified, co3::rust_spec::size::MetaSized<SliceLike>, <R as RustSpec>::Mutability>`
+   | |_________________________________________________________________^ `&'r R` implements `co3::stored::_::DecodeMove0<'d, Unspecified, Specified, co3::rust_spec::size::MetaSized<SliceLike>, <R as RustSpec>::Mutability, L>`
 ...
-   | /     unsafe impl<'d, R: SoftDecodeRef<'d> + ?Sized> DecodeMove<'d> for &'d R
+   | /     unsafe impl<'d, L: Language, R: SoftDecodeRef<'d, L> + ?Sized> DecodeMove<'d, L> for &'d R
    | |     where
    | |         R: RustSpec<Layout = Unspecified>,
-   | |         Self: RustSpec<Layout = Unspecified> + ReprC<CType: CType + Sized>,
-   | |___________________________________________________________________________^ `&'d R` implements `co3::stored::_::DecodeMove0<'d, Unspecified, Unspecified, <R as RustSpec>::Size, <R as RustSpec>::Mutability>`
+   | |         Self: RustSpec<Layout = Unspecified> + ReprC,
+   | |         <Self as ReprC>::CType: Sized,
+   | |______________________________________^ `&'d R` implements `co3::stored::_::DecodeMove0<'d, Unspecified, Unspecified, <R as RustSpec>::Size, <R as RustSpec>::Mutability, L>`
    = note: required for `&dyn Trait` to implement `DecodeMove<'_>`
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)

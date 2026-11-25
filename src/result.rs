@@ -1,20 +1,29 @@
 //! C-compatible representation of [`core::result::Result`].
+
 use core::{marker::PhantomData, mem::MaybeUninit, ops::Add};
 
+#[cfg(feature = "repr-rust")]
+use rust_spec::mutability::{Exclusive, ExclusiveKind};
 use rust_spec::{
     RustSpec,
     drop::{DropKind, NoDrop},
-    mutability::{Exclusive, ExclusiveKind},
     niche::WithoutNiche,
 };
 
 use crate::{
-    CFnArg, CFnReturn, CType, ReprC, Thin,
+    CFnArg, CFnReturn, CType, ReprC,
+    borrow::{BorrowedDecode, BorrowedDecodeUnchecked, BorrowedEncode, BorrowedEncodeUnchecked},
     convert::{
-        AbiCompatibleValidate, Decode, DecodeMove, EmptyStore, Encode, EncodeMove,
-        EncodeMoveUnchecked, EncodeUnchecked, SoftEncodeRef, SoftEncodeRefUnchecked,
+        AbiValidate, Decode, DecodeMove, DecodeMoveUnchecked, DecodeUnchecked, EmptyStore, Encode,
+        EncodeMove, EncodeMoveUnchecked, EncodeUnchecked,
     },
+    lang::Language,
     marker::{AbiCompatible, Native},
+};
+#[cfg(feature = "repr-rust")]
+use crate::{
+    Thin,
+    convert::{SoftEncodeRef, SoftEncodeRefUnchecked},
     reference::abi::RefCarrier,
     sync::RefSizedEncodeStore,
 };
@@ -40,61 +49,117 @@ impl<T: ReprC<CType: Copy>, E: ReprC<CType: Copy>> ReprC for Result<T, E> {
     type CType = abi::Result<T::CType, E::CType>;
 }
 
-macro_rules! result_codecs {
-    ($encode:ident, $unchecked:ident, $decode:ident) => {
-        unsafe impl<T: $unchecked<CType: Copy>, E: $unchecked<CType: Copy>> $unchecked
-            for Result<T, E>
+// Each slot holds state for the active variant. Prepare them in argument order.
+macro_rules! encode_tagged_result {
+    ($input:expr, $encode:path, $($slot:ident),+) => {
+        match $input {
+            Self::Ok(value) => {
+                $(let Ok($slot) = $slot.insert(Ok(Default::default())) else { unreachable!() };)+
+                abi::Result::Ok($encode(value, $($slot),+))
+            }
+            Self::Err(value) => {
+                $(let Err($slot) = $slot.insert(Err(Default::default())) else { unreachable!() };)+
+                abi::Result::Err($encode(value, $($slot),+))
+            }
+        }
+    };
+}
+
+unsafe impl<T: EncodeMoveUnchecked<CType: Copy>, E: EncodeMoveUnchecked<CType: Copy>>
+    EncodeMoveUnchecked for Result<T, E>
+{
+    type SoftStore = core::option::Option<core::result::Result<T::SoftStore, E::SoftStore>>;
+
+    unsafe fn soft_encode_unchecked<'itm>(self, store: &'itm mut Self::SoftStore) -> Self::CType
+    where
+        Self: 'itm,
+    {
+        unsafe { encode_tagged_result!(self, EncodeMoveUnchecked::soft_encode_unchecked, store) }
+    }
+}
+unsafe impl<L: Language, T: EncodeMove<L, CType: Copy>, E: EncodeMove<L, CType: Copy>> EncodeMove<L>
+    for Result<T, E>
+{
+    type Store = core::option::Option<core::result::Result<T::Store, E::Store>>;
+
+    fn soft_encode<'a>(self, store: &'a mut Self::Store) -> Self::CType
+    where
+        Self: 'a,
+    {
+        encode_tagged_result!(self, EncodeMove::<L>::soft_encode, store)
+    }
+}
+
+unsafe impl<T: BorrowedEncodeUnchecked<CType: Copy>, E: BorrowedEncodeUnchecked<CType: Copy>>
+    BorrowedEncodeUnchecked for Result<T, E>
+{
+    type Owner = core::option::Option<core::result::Result<T::Owner, E::Owner>>;
+    type SoftStore = core::option::Option<core::result::Result<T::SoftStore, E::SoftStore>>;
+
+    unsafe fn soft_encode_unchecked<'itm>(
+        self,
+        store: &'itm mut Self::SoftStore,
+        owner: &'itm mut Self::Owner,
+    ) -> Self::CType
+    where
+        Self: 'itm,
+    {
+        unsafe {
+            encode_tagged_result!(
+                self,
+                BorrowedEncodeUnchecked::soft_encode_unchecked,
+                store,
+                owner
+            )
+        }
+    }
+}
+unsafe impl<L: Language, T: BorrowedEncode<L, CType: Copy>, E: BorrowedEncode<L, CType: Copy>>
+    BorrowedEncode<L> for Result<T, E>
+{
+    type Store = core::option::Option<core::result::Result<T::Store, E::Store>>;
+
+    fn soft_encode<'a>(self, store: &'a mut Self::Store, owner: &'a mut Self::Owner) -> Self::CType
+    where
+        Self: 'a,
+    {
+        encode_tagged_result!(self, BorrowedEncode::<L>::soft_encode, store, owner)
+    }
+}
+
+macro_rules! impl_result_decode {
+    ($decode:ident, $unchecked:ident) => {
+        unsafe impl<'d, T: $unchecked<'d, CType: Copy>, E: $unchecked<'d, CType: Copy>>
+            $unchecked<'d> for Result<T, E>
         {
             type SoftStore = core::option::Option<core::result::Result<T::SoftStore, E::SoftStore>>;
 
-            unsafe fn soft_encode_unchecked<'itm>(
-                self,
-                store: &'itm mut Self::SoftStore,
-            ) -> Self::CType
-            where
-                Self: 'itm,
-            {
-                match self {
-                    Self::Ok(value) => {
+            unsafe fn soft_decode_unchecked<'a: 'd>(
+                source: Self::CType,
+                store: &'a mut Self::SoftStore,
+            ) -> Self {
+                match unsafe { source.into_result().unwrap_unchecked() } {
+                    Ok(value) => {
                         let Ok(inner) = store.insert(Ok(Default::default())) else {
                             unreachable!()
                         };
-                        abi::Result::Ok(unsafe { value.soft_encode_unchecked(inner) })
+                        Self::Ok(unsafe {
+                            <T as $unchecked<'d>>::soft_decode_unchecked(value, inner)
+                        })
                     }
-                    Self::Err(value) => {
+                    Err(value) => {
                         let Err(inner) = store.insert(Err(Default::default())) else {
                             unreachable!()
                         };
-                        abi::Result::Err(unsafe { value.soft_encode_unchecked(inner) })
+                        Self::Err(unsafe {
+                            <E as $unchecked<'d>>::soft_decode_unchecked(value, inner)
+                        })
                     }
                 }
             }
         }
-        unsafe impl<T: $encode<CType: Copy>, E: $encode<CType: Copy>> $encode for Result<T, E> {
-            type Store = core::option::Option<core::result::Result<T::Store, E::Store>>;
-
-            fn soft_encode<'a>(self, store: &'a mut Self::Store) -> Self::CType
-            where
-                Self: 'a,
-            {
-                match self {
-                    Self::Ok(value) => {
-                        let Ok(inner) = store.insert(Ok(Default::default())) else {
-                            unreachable!()
-                        };
-                        abi::Result::Ok($encode::soft_encode(value, inner))
-                    }
-                    Self::Err(value) => {
-                        let Err(inner) = store.insert(Err(Default::default())) else {
-                            unreachable!()
-                        };
-                        abi::Result::Err($encode::soft_encode(value, inner))
-                    }
-                }
-            }
-        }
-        unsafe impl<'d, T: $decode<'d, CType: Copy>, E: $decode<'d, CType: Copy>> $decode<'d>
-            for Result<T, E>
+        unsafe impl<'d, L: Language, T: $decode<'d, L, CType: Copy>, E: $decode<'d, L, CType: Copy>>
+            $decode<'d, L> for Result<T, E>
         {
             type Store = core::option::Option<core::result::Result<T::Store, E::Store>>;
 
@@ -107,160 +172,27 @@ macro_rules! result_codecs {
                         let Ok(inner) = store.insert(Ok(Default::default())) else {
                             unreachable!()
                         };
-                        Some(Self::Ok(unsafe { T::soft_decode(value, inner)? }))
+                        Some(Self::Ok(unsafe {
+                            <T as $decode<'d, L>>::soft_decode(value, inner)?
+                        }))
                     }
                     Err(value) => {
                         let Err(inner) = store.insert(Err(Default::default())) else {
                             unreachable!()
                         };
-                        Some(Self::Err(unsafe { E::soft_decode(value, inner)? }))
-                    }
-                }
-            }
-
-            unsafe fn soft_decode_unchecked<'a: 'd>(
-                source: Self::CType,
-                store: &'a mut Self::Store,
-            ) -> Self {
-                match unsafe { source.into_result().unwrap_unchecked() } {
-                    Ok(value) => {
-                        let Ok(inner) = store.insert(Ok(Default::default())) else {
-                            unreachable!()
-                        };
-                        Self::Ok(unsafe { T::soft_decode_unchecked(value, inner) })
-                    }
-                    Err(value) => {
-                        let Err(inner) = store.insert(Err(Default::default())) else {
-                            unreachable!()
-                        };
-                        Self::Err(unsafe { E::soft_decode_unchecked(value, inner) })
+                        Some(Self::Err(unsafe {
+                            <E as $decode<'d, L>>::soft_decode(value, inner)?
+                        }))
                     }
                 }
             }
         }
     };
 }
-result_codecs!(EncodeMove, EncodeMoveUnchecked, DecodeMove);
-const _: () = {
-    use crate::borrow::{BorrowedDecode, BorrowedEncode, BorrowedEncodeUnchecked};
-    unsafe impl<T: BorrowedEncodeUnchecked<CType: Copy>, E: BorrowedEncodeUnchecked<CType: Copy>>
-        BorrowedEncodeUnchecked for Result<T, E>
-    {
-        type Owner = core::option::Option<core::result::Result<T::Owner, E::Owner>>;
-        type SoftStore = core::option::Option<core::result::Result<T::SoftStore, E::SoftStore>>;
+impl_result_decode!(DecodeMove, DecodeMoveUnchecked);
+impl_result_decode!(BorrowedDecode, BorrowedDecodeUnchecked);
 
-        unsafe fn soft_encode_unchecked<'itm>(
-            self,
-            store: &'itm mut Self::SoftStore,
-            owner: &'itm mut Self::Owner,
-        ) -> Self::CType
-        where
-            Self: 'itm,
-        {
-            match self {
-                Self::Ok(value) => {
-                    let Ok(inner) = store.insert(Ok(Default::default())) else {
-                        unreachable!()
-                    };
-                    let Ok(inner_owner) = owner.insert(Ok(Default::default())) else {
-                        unreachable!()
-                    };
-                    abi::Result::Ok(unsafe { value.soft_encode_unchecked(inner, inner_owner) })
-                }
-                Self::Err(value) => {
-                    let Err(inner) = store.insert(Err(Default::default())) else {
-                        unreachable!()
-                    };
-                    let Err(inner_owner) = owner.insert(Err(Default::default())) else {
-                        unreachable!()
-                    };
-                    abi::Result::Err(unsafe { value.soft_encode_unchecked(inner, inner_owner) })
-                }
-            }
-        }
-    }
-    unsafe impl<T: BorrowedEncode<CType: Copy>, E: BorrowedEncode<CType: Copy>> BorrowedEncode
-        for Result<T, E>
-    {
-        type Store = core::option::Option<core::result::Result<T::Store, E::Store>>;
-
-        fn soft_encode<'a>(
-            self,
-            store: &'a mut Self::Store,
-            owner: &'a mut Self::Owner,
-        ) -> Self::CType
-        where
-            Self: 'a,
-        {
-            match self {
-                Self::Ok(value) => {
-                    let Ok(inner) = store.insert(Ok(Default::default())) else {
-                        unreachable!()
-                    };
-                    let Ok(inner_owner) = owner.insert(Ok(Default::default())) else {
-                        unreachable!()
-                    };
-                    abi::Result::Ok(BorrowedEncode::soft_encode(value, inner, inner_owner))
-                }
-                Self::Err(value) => {
-                    let Err(inner) = store.insert(Err(Default::default())) else {
-                        unreachable!()
-                    };
-                    let Err(inner_owner) = owner.insert(Err(Default::default())) else {
-                        unreachable!()
-                    };
-                    abi::Result::Err(BorrowedEncode::soft_encode(value, inner, inner_owner))
-                }
-            }
-        }
-    }
-    unsafe impl<'d, T: BorrowedDecode<'d, CType: Copy>, E: BorrowedDecode<'d, CType: Copy>>
-        BorrowedDecode<'d> for Result<T, E>
-    {
-        type Store = core::option::Option<core::result::Result<T::Store, E::Store>>;
-
-        unsafe fn soft_decode<'a: 'd>(
-            source: Self::CType,
-            store: &'a mut Self::Store,
-        ) -> Option<Self> {
-            match source.into_result()? {
-                Ok(value) => {
-                    let Ok(inner) = store.insert(Ok(Default::default())) else {
-                        unreachable!()
-                    };
-                    Some(Self::Ok(unsafe { T::soft_decode(value, inner)? }))
-                }
-                Err(value) => {
-                    let Err(inner) = store.insert(Err(Default::default())) else {
-                        unreachable!()
-                    };
-                    Some(Self::Err(unsafe { E::soft_decode(value, inner)? }))
-                }
-            }
-        }
-
-        unsafe fn soft_decode_unchecked<'a: 'd>(
-            source: Self::CType,
-            store: &'a mut Self::Store,
-        ) -> Self {
-            match unsafe { source.into_result().unwrap_unchecked() } {
-                Ok(value) => {
-                    let Ok(inner) = store.insert(Ok(Default::default())) else {
-                        unreachable!()
-                    };
-                    Self::Ok(unsafe { T::soft_decode_unchecked(value, inner) })
-                }
-                Err(value) => {
-                    let Err(inner) = store.insert(Err(Default::default())) else {
-                        unreachable!()
-                    };
-                    Self::Err(unsafe { E::soft_decode_unchecked(value, inner) })
-                }
-            }
-        }
-    }
-};
-
+#[cfg(feature = "repr-rust")]
 unsafe impl<'a, T: ReprC<CType: Copy> + 'a, E: ReprC<CType: Copy> + 'a, __Interior: ExclusiveKind>
     SoftEncodeRefUnchecked<'a> for Result<T, E>
 where
@@ -286,35 +218,30 @@ where
     where
         'a: 'itm,
     {
-        store.encode(|fields| match self {
-            Self::Ok(value) => {
-                let Ok(inner) = fields.insert(Ok(Default::default())) else {
-                    unreachable!()
-                };
-                abi::Result::Ok(unsafe { crate::stored::encode_ref_field_unchecked(value, inner) })
-            }
-            Self::Err(value) => {
-                let Err(inner) = fields.insert(Err(Default::default())) else {
-                    unreachable!()
-                };
-                abi::Result::Err(unsafe { crate::stored::encode_ref_field_unchecked(value, inner) })
-            }
+        store.encode(|fields| unsafe {
+            encode_tagged_result!(self, crate::stored::encode_ref_field_unchecked, fields)
         })
     }
 }
 
-unsafe impl<'a, T: ReprC<CType: Copy> + 'a, E: ReprC<CType: Copy> + 'a, __Interior: ExclusiveKind>
-    SoftEncodeRef<'a> for Result<T, E>
+#[cfg(feature = "repr-rust")]
+unsafe impl<
+    'a,
+    L: Language,
+    T: ReprC<CType: Copy> + 'a,
+    E: ReprC<CType: Copy> + 'a,
+    __Interior: ExclusiveKind,
+> SoftEncodeRef<'a, L> for Result<T, E>
 where
     &'a Self: crate::ReprC<CType = crate::reference::abi::SoftRef<<Self as ReprC>::CType>>,
     Self: RustSpec<Mutability = Exclusive<__Interior>, Size: Thin> + 'a,
-    &'a T: EncodeMove<CType: RefCarrier<Pointee = <T as ReprC>::CType>>,
-    &'a E: EncodeMove<CType: RefCarrier<Pointee = <E as ReprC>::CType>>,
+    &'a T: EncodeMove<L, CType: RefCarrier<Pointee = <T as ReprC>::CType>>,
+    &'a E: EncodeMove<L, CType: RefCarrier<Pointee = <E as ReprC>::CType>>,
 {
     type Store = RefSizedEncodeStore<
         Self,
         core::option::Option<
-            core::result::Result<<&'a T as EncodeMove>::Store, <&'a E as EncodeMove>::Store>,
+            core::result::Result<<&'a T as EncodeMove<L>>::Store, <&'a E as EncodeMove<L>>::Store>,
         >,
     >;
 
@@ -325,48 +252,48 @@ where
     where
         'a: 'itm,
     {
-        store.encode(|fields| match self {
-            Self::Ok(value) => {
-                let Ok(inner) = fields.insert(Ok(Default::default())) else {
-                    unreachable!()
-                };
-                abi::Result::Ok(crate::stored::encode_ref_field(value, inner))
-            }
-            Self::Err(value) => {
-                let Err(inner) = fields.insert(Err(Default::default())) else {
-                    unreachable!()
-                };
-                abi::Result::Err(crate::stored::encode_ref_field(value, inner))
-            }
+        store.encode(|fields| {
+            encode_tagged_result!(self, crate::stored::encode_ref_field::<_, L>, fields)
         })
     }
 }
 
-impl<T: Encode<CType: Copy>, E: Encode<CType: Copy>> Encode for Result<T, E> {}
 impl<T: EncodeUnchecked<CType: Copy>, E: EncodeUnchecked<CType: Copy>> EncodeUnchecked
     for Result<T, E>
 {
 }
-impl<'d, T: Decode<'d, CType: Copy>, E: Decode<'d, CType: Copy>> Decode<'d> for Result<T, E> {}
-
-unsafe impl<T: AbiCompatibleValidate<CType: Copy>, E: AbiCompatibleValidate<CType: Copy>>
-    AbiCompatibleValidate for Result<T, E>
-where
-    Self: crate::rust_spec::RustSpec<Layout = crate::rust_spec::Specified>,
+impl<L: Language, T: Encode<L, CType: Copy>, E: Encode<L, CType: Copy>> Encode<L> for Result<T, E> {}
+impl<'d, T: DecodeUnchecked<'d, CType: Copy>, E: DecodeUnchecked<'d, CType: Copy>>
+    DecodeUnchecked<'d> for Result<T, E>
 {
-    unsafe fn is_valid(target: &Self::CType) -> bool {
-        match target.tag() {
-            0 => unsafe { T::is_valid(target.ok.1.assume_init_ref()) },
-            1 => unsafe { E::is_valid(target.err.1.assume_init_ref()) },
-            _ => false,
-        }
-    }
 }
+impl<'d, L: Language, T: Decode<'d, L, CType: Copy>, E: Decode<'d, L, CType: Copy>> Decode<'d, L>
+    for Result<T, E>
+{
+}
+
 unsafe impl<T: AbiCompatible<CType: Copy>, E: AbiCompatible<CType: Copy>> AbiCompatible
     for Result<T, E>
 where
     Self: crate::rust_spec::RustSpec<Layout = crate::rust_spec::Specified>,
 {
+}
+unsafe impl<L: Language, T: AbiValidate<L, CType: Copy>, E: AbiValidate<L, CType: Copy>>
+    AbiValidate<L> for Result<T, E>
+where
+    Self: crate::rust_spec::RustSpec<Layout = crate::rust_spec::Specified>,
+{
+    unsafe fn is_valid(target: &Self::CType) -> bool {
+        match target.tag() {
+            0 => unsafe {
+                <T as crate::convert::AbiValidate<L>>::is_valid(target.ok.1.assume_init_ref())
+            },
+            1 => unsafe {
+                <E as crate::convert::AbiValidate<L>>::is_valid(target.err.1.assume_init_ref())
+            },
+            _ => false,
+        }
+    }
 }
 
 impl<T: ReprC<CType: Copy>, E: ReprC<CType: Copy>> crate::niche::Niche for Result<T, E> {
@@ -417,13 +344,24 @@ unsafe impl<T, E> CFnReturn for core::result::Result<T, E> where
 {
 }
 
-impl<R: Encode, E: Encode> Encode for core::result::Result<R, E> where Self: EncodeMove {}
 impl<R: EncodeUnchecked, E: EncodeUnchecked> EncodeUnchecked for core::result::Result<R, E> where
     Self: EncodeMoveUnchecked
 {
 }
-impl<'d, R: Decode<'d>, E: Decode<'d>> Decode<'d> for core::result::Result<R, E> where
-    Self: DecodeMove<'d>
+impl<L: Language, R: Encode<L>, E: Encode<L>> Encode<L> for core::result::Result<R, E> where
+    Self: EncodeMove<L>
+{
+}
+impl<'d, R: DecodeUnchecked<'d>, E: DecodeUnchecked<'d>> DecodeUnchecked<'d>
+    for core::result::Result<R, E>
+where
+    Self: DecodeMoveUnchecked<'d>,
+{
+}
+impl<'d, L: Language, R: Decode<'d, L>, E: Decode<'d, L>> Decode<'d, L>
+    for core::result::Result<R, E>
+where
+    Self: DecodeMove<'d, L>,
 {
 }
 
@@ -441,6 +379,8 @@ where
 
 #[doc(hidden)]
 pub mod abi {
+    use crate::lang::Language;
+
     macro_rules! niche_result_carrier {
     ($name:ident, $payload:ident, $other:ident, [$($generics:tt)*], $description:literal) => {
         #[doc = $description]
@@ -476,7 +416,7 @@ pub mod abi {
                 self
             }
         }
-        unsafe impl<$($generics)*> EncodeMove for $name<Ok, Err> {
+        unsafe impl<L: Language, $($generics)*> EncodeMove<L> for $name<Ok, Err> {
             type Store = ();
 
             fn soft_encode<'a>(self, _: &'a mut ()) -> Self::CType
@@ -486,28 +426,36 @@ pub mod abi {
                 self
             }
         }
-        unsafe impl<'d, $($generics)*> DecodeMove<'d> for $name<Ok, Err> {
+        unsafe impl<'d,  $($generics)*> DecodeMoveUnchecked<'d> for $name<Ok, Err> {
+            type SoftStore = ();
+
+            unsafe fn soft_decode_unchecked<'a: 'd>(source: Self::CType, _: &'a mut ()) -> Self { {
+                source
+            } }
+        }
+        unsafe impl<'d, L: Language, $($generics)*> DecodeMove<'d, L> for $name<Ok, Err> {
             type Store = ();
 
             unsafe fn soft_decode<'a: 'd>(source: Self::CType, _: &'a mut ()) -> Option<Self> {
                 Some(source)
             }
         }
-        impl<$($generics)*> Encode for $name<Ok, Err> {}
         impl<$($generics)*> EncodeUnchecked for $name<Ok, Err> {}
-        impl<'d, $($generics)*> Decode<'d> for $name<Ok, Err> {}
-        unsafe impl<$($generics)*> AbiCompatibleValidate for $name<Ok, Err>
-where
-    Self: $crate::rust_spec::RustSpec<Layout = $crate::rust_spec::Specified>,
-{
+        impl<L: Language, $($generics)*> Encode<L> for $name<Ok, Err> {}
+        impl<'d,  $($generics)*> DecodeUnchecked<'d> for $name<Ok, Err> {}
+        impl<'d, L: Language, $($generics)*> Decode<'d, L> for $name<Ok, Err> {}
+        unsafe impl<$($generics)*> AbiCompatible for $name<Ok, Err>
+        where
+            Self: $crate::rust_spec::RustSpec<Layout = $crate::rust_spec::Specified>,
+        {}
+        unsafe impl<L: $crate::lang::Language, $($generics)*> AbiValidate<L> for $name<Ok, Err>
+        where
+            Self: $crate::rust_spec::RustSpec<Layout = $crate::rust_spec::Specified>,
+        {
             unsafe fn is_valid(_: &Self::CType) -> bool {
                 true
             }
         }
-        unsafe impl<$($generics)*> AbiCompatible for $name<Ok, Err>
-where
-    Self: $crate::rust_spec::RustSpec<Layout = $crate::rust_spec::Specified>,
-{}
 
         impl<$($generics)*> Copy for $name<Ok, Err> where $payload: Copy {}
         impl<$($generics)*> Clone for $name<Ok, Err> where $payload: Clone {
@@ -720,6 +668,7 @@ where
         }
 
         /// Borrow only the active payload, rejecting invalid tags.
+        #[cfg(feature = "repr-rust")]
         pub(crate) const fn as_result(&self) -> core::option::Option<core::result::Result<&T, &E>> {
             match self.tag() {
                 0 => Some(Ok(unsafe { self.ok.1.assume_init_ref() })),

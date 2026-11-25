@@ -1,5 +1,6 @@
-use co3::{ReprC, rust_spec::RustSpec};
 use core::marker::PhantomData;
+
+use co3::{ReprC, lang, rust_spec::RustSpec};
 
 #[derive(RustSpec, ReprC, Debug, PartialEq)]
 struct Unit;
@@ -21,23 +22,26 @@ enum Singleton {
 
 #[test]
 fn named_zero_sized_values_round_trip() {
-    let encoded = co3::encode(Unit);
-    assert_eq!(unsafe { co3::decode::<Unit>(encoded) }, Some(Unit));
-    let encoded = co3::encode(Empty {});
-    assert_eq!(unsafe { co3::decode::<Empty>(encoded) }, Some(Empty {}));
-    let encoded = co3::encode(Marker::<bool>(PhantomData));
+    let encoded = unsafe { co3::encode::<_, lang::C>(Unit) };
+    assert_eq!(unsafe { co3::decode::<Unit, lang::C>(encoded) }, Some(Unit));
+    let encoded = unsafe { co3::encode::<_, lang::C>(Empty {}) };
     assert_eq!(
-        unsafe { co3::decode::<Marker<bool>>(encoded) },
+        unsafe { co3::decode::<Empty, lang::C>(encoded) },
+        Some(Empty {})
+    );
+    let encoded = unsafe { co3::encode::<_, lang::C>(Marker::<bool>(PhantomData)) };
+    assert_eq!(
+        unsafe { co3::decode::<Marker<bool>, lang::C>(encoded) },
         Some(Marker(PhantomData))
     );
-    let encoded = co3::encode(TransparentMarker::<[bool]>(PhantomData));
+    let encoded = unsafe { co3::encode::<_, lang::C>(TransparentMarker::<[bool]>(PhantomData)) };
     assert_eq!(
-        unsafe { co3::decode::<TransparentMarker<[bool]>>(encoded) },
+        unsafe { co3::decode::<TransparentMarker<[bool]>, lang::C>(encoded) },
         Some(TransparentMarker(PhantomData))
     );
-    let encoded = co3::encode(Singleton::Only);
+    let encoded = unsafe { co3::encode::<_, lang::C>(Singleton::Only) };
     assert_eq!(
-        unsafe { co3::decode::<Singleton>(encoded) },
+        unsafe { co3::decode::<Singleton, lang::C>(encoded) },
         Some(Singleton::Only)
     );
 }

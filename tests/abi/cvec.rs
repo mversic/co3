@@ -1,3 +1,5 @@
+use co3::lang;
+
 #[test]
 fn stable_vec_owns_and_preserves_the_allocation() {
     let mut source = Vec::with_capacity(16);
@@ -48,11 +50,14 @@ fn owned_encoding_preserves_capacity() {
     value.extend([1u32, 2, 3]);
     let cap = value.capacity();
     let mut encode_store = Default::default();
-    let carrier = co3::soft_encode(co3::vec::Vec::from(value), &mut encode_store);
+    let carrier =
+        unsafe { co3::soft_encode::<_, lang::C>(co3::vec::Vec::from(value), &mut encode_store) };
     assert_eq!(carrier.len(), 3);
     assert_eq!(carrier.capacity(), cap);
-    let value = unsafe { co3::soft_decode::<co3::vec::Vec<u32>>(carrier, &mut Default::default()) }
-        .unwrap();
+    let value = unsafe {
+        co3::soft_decode::<co3::vec::Vec<u32>, lang::C>(carrier, &mut Default::default())
+    }
+    .unwrap();
     assert_eq!(value.capacity(), cap);
     assert_eq!(&*value, &[1, 2, 3]);
     assert_eq!(co3::convert::Store::sync(encode_store), Some(()));
@@ -62,10 +67,11 @@ fn owned_encoding_preserves_capacity() {
 fn unstable_elements_and_value_traits() {
     let value: co3::vec::Vec<_> = vec![(1u32,), (2,)].into();
     let mut encode_store = Default::default();
-    let carrier = co3::soft_encode(value, &mut encode_store);
+    let carrier = unsafe { co3::soft_encode::<_, lang::C>(value, &mut encode_store) };
     let mut decode_store = Default::default();
     let decoded =
-        unsafe { co3::soft_decode::<co3::vec::Vec<(u32,)>>(carrier, &mut decode_store) }.unwrap();
+        unsafe { co3::soft_decode::<co3::vec::Vec<(u32,)>, lang::C>(carrier, &mut decode_store) }
+            .unwrap();
     assert_eq!(decoded, vec![(1u32,), (2,)].into());
     assert_eq!(co3::convert::Store::sync(decode_store), Some(()));
     assert_eq!(co3::convert::Store::sync(encode_store), Some(()));
@@ -81,10 +87,11 @@ fn standard_vec_preserves_spare_capacity() {
     value.extend([3u32, 4]);
     let cap = value.capacity();
     let mut encode_store = Default::default();
-    let carrier = co3::soft_encode(value, &mut encode_store);
+    let carrier = unsafe { co3::soft_encode::<_, lang::C>(value, &mut encode_store) };
     assert_eq!(carrier.len(), 2);
     assert_eq!(carrier.capacity(), cap);
-    let value = unsafe { co3::soft_decode::<Vec<u32>>(carrier, &mut Default::default()) }.unwrap();
+    let value =
+        unsafe { co3::soft_decode::<Vec<u32>, lang::C>(carrier, &mut Default::default()) }.unwrap();
     assert_eq!(value.capacity(), cap);
     assert_eq!(value, [3, 4]);
     assert_eq!(co3::convert::Store::sync(encode_store), Some(()));
@@ -99,10 +106,10 @@ fn boxed_unstable_elements_have_no_public_conversion() {
 fn mutable_slice_writeback_uses_an_explicit_slice_header() {
     let mut values = [false, true];
     let mut store = Default::default();
-    let carrier = co3::soft_encode(values.as_mut_slice(), &mut store);
+    let carrier = unsafe { co3::soft_encode::<_, lang::C>(values.as_mut_slice(), &mut store) };
     assert_eq!(carrier.metadata(), 2);
     unsafe {
-        carrier.as_ptr().write(co3::encode(true));
+        carrier.as_ptr().write(co3::encode::<_, lang::C>(true));
     }
     assert_eq!(co3::convert::Store::sync(store), Some(()));
     assert_eq!(values, [true, true]);

@@ -16,17 +16,17 @@ error: dispatch groups must contain at least one concrete target
 59 |         use<T> @ ();
    |             ^
 
-error: expected a tagged-dispatch type list such as `<Type>`
-  --> tests/ui_fail/dispatch_restrictions.rs:67:18
+error: enclose tagged-dispatch alternatives in parentheses, as in `(<T> | <U>)`
+  --> tests/ui_fail/dispatch_restrictions.rs:67:24
    |
 67 |         use<T> @ <u32> | <u64>,
-   |                  ^^^^^^^^^^^^^
+   |                        ^
 
-error: expected a tagged-dispatch type list such as `<Type>`
-  --> tests/ui_fail/dispatch_restrictions.rs:78:18
+error: enclose tagged-dispatch alternatives in parentheses, as in `(<T> | <U>)`
+  --> tests/ui_fail/dispatch_restrictions.rs:78:24
    |
 78 |         use<T> @ <u32> | <u64>,
-   |                  ^^^^^^^^^^^^^
+   |                        ^
 
 error: tagged-dispatch predicates must be last in a `where` clause
   --> tests/ui_fail/dispatch_restrictions.rs:90:9

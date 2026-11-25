@@ -171,8 +171,8 @@ fn gen_data_def(
         gen_fields_methods(&header.ident, &header.generics, &data.fields, false, false);
     let header_impl = gen_identity_header_impl(&header.ident, &header.generics);
     let derives = regular_derives(input);
-    let definition = if let Some(recursion) = recursive_header {
-        let mut header_input = header.clone();
+    let mut header_input = header.clone();
+    if let Some(recursion) = recursive_header {
         let predicates = &mut header_input.generics.make_where_clause().predicates;
         predicates.extend(recursion.tail_bounds.iter().cloned());
         predicates.extend(super::ctype::projected_field_bounds(
@@ -180,27 +180,28 @@ fn gen_data_def(
             &recursion.types(),
             &recursion.carriers,
         ));
-        let attrs = super::ReprCAttrs {
-            is_wide_data: true,
-            ..Default::default()
-        };
-        let impls = super::item::derive_item(
-            repr.kind.as_ref(),
-            repr.alignment.as_ref(),
-            &header_input,
-            &attrs,
-            &[],
-            &super::inference::RecursiveFields::analyze(
-                &header_input,
-                repr.kind.as_ref(),
-                Some(&recursion.carriers),
-            ),
-        );
-        quote!(#[derive(#(#derives, )* co3::rust_spec::RustSpec)] #header #impls)
-    } else {
-        quote!(#[derive(#(#derives, )* co3::rust_spec::RustSpec, co3::ReprC)] #[repr_c(__wide_data)] #header)
+    }
+    let recursion = super::inference::RecursiveFields::analyze(
+        &header_input,
+        repr.kind.as_ref(),
+        recursive_header.map(|r| r.carriers.as_slice()),
+    );
+    let attrs = super::ReprCAttrs {
+        is_wide_data: true,
+        ..Default::default()
     };
-    quote!(#definition #fields_methods #header_impl)
+    let impls = super::item::derive_item(
+        repr.kind.as_ref(),
+        repr.alignment.as_ref(),
+        &header_input,
+        &attrs,
+        &[],
+        &recursion,
+    );
+    quote! {
+        #[derive(#(#derives, )* co3::rust_spec::RustSpec)] #header
+        #impls #fields_methods #header_impl
+    }
 }
 
 pub(super) fn data_generics(fields: &syn::Fields, generics: &syn::Generics) -> syn::Generics {
@@ -213,7 +214,7 @@ pub(super) fn data_generics(fields: &syn::Fields, generics: &syn::Generics) -> s
     data_generics
         .make_where_clause()
         .predicates
-        .push(parse_quote!(#wide_predicate));
+        .push(wide_predicate);
     data_generics
 }
 
@@ -285,15 +286,21 @@ pub(super) fn data_bound_ty(ty: &syn::Type, is_last_field: bool) -> syn::Type {
     }
 }
 
-pub(super) fn wide_predicate(field_ty: &syn::Type, generics: &syn::Generics) -> TokenStream {
+pub(super) fn wide_predicate(
+    field_ty: &syn::Type,
+    generics: &syn::Generics,
+) -> syn::WherePredicate {
     let for_dummy = (!is_parametrized(field_ty, generics)).then(|| quote! { for<'__dummy> });
-    quote! { #for_dummy #field_ty: co3::wide::Wide }
+    parse_quote! { #for_dummy #field_ty: co3::wide::Wide }
 }
 
-pub(super) fn wide_usize_predicate(field_ty: &syn::Type, generics: &syn::Generics) -> TokenStream {
+pub(super) fn wide_usize_predicate(
+    field_ty: &syn::Type,
+    generics: &syn::Generics,
+) -> syn::WherePredicate {
     let for_dummy = (!is_parametrized(field_ty, generics)).then(|| quote! { for<'__dummy> });
 
-    quote! {
+    parse_quote! {
         #for_dummy #field_ty: co3::wide::Wide<Metadata = usize> + co3::rust_spec::RustSpec<
             Size = co3::rust_spec::size::MetaSized<co3::rust_spec::size::SliceLike>
         >
@@ -303,9 +310,9 @@ pub(super) fn wide_usize_predicate(field_ty: &syn::Type, generics: &syn::Generic
 pub(super) fn header_repr_c_predicate(
     field_ty: &syn::Type,
     generics: &syn::Generics,
-) -> TokenStream {
+) -> syn::WherePredicate {
     let for_dummy = (!is_parametrized(field_ty, generics)).then(|| quote! { for<'__dummy> });
-    quote! { #for_dummy #field_ty: co3::wide::Wide<Header: co3::ReprC<CType: Sized>> }
+    parse_quote! { #for_dummy #field_ty: co3::wide::Wide<Header: co3::ReprC<CType: Sized>> }
 }
 
 pub(super) fn gen_dst_methods(is_transparent: bool, field_ty: &syn::Type) -> TokenStream {

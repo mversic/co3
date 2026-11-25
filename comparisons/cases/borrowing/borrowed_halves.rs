@@ -32,8 +32,8 @@ mod caller {
     }
 }
 
+#[cfg(feature = "co3")]
 fn main() {
-    #[cfg(feature = "co3")]
     {
         let data = [11, 22, 33, 44, 55];
         let (left, right) = caller::halves(&data);
@@ -41,3 +41,14 @@ fn main() {
         assert!(std::ptr::eq(right, &data[2..]));
     }
 }
+
+#[cfg(any(
+    feature = "uniffi",
+    feature = "diplomat",
+    feature = "interoptopus",
+    feature = "safer_ffi",
+    feature = "boltffi",
+    feature = "abi_stable",
+    feature = "stabby"
+))]
+fn main() {}

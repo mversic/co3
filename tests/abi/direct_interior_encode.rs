@@ -71,14 +71,14 @@ fn non_robust_interior_references_are_direct_only() {
     assert_not_impl_any!(ManuallyDrop<Box<(u8,)>>: co3::convert::EncodeUnchecked, co3::convert::Encode, co3::convert::Decode<'static>);
 
     let value = UnsafeCell::new(NonZeroU8::new(7).unwrap());
-    let encoded = unsafe { co3::encode_unchecked(&value) };
+    let encoded = unsafe { co3::encode_unchecked::<_>(&value) };
     assert_eq!(encoded.as_ptr().cast::<UnsafeCell<NonZeroU8>>(), &value);
 
-    let _wrapped = unsafe { co3::encode_unchecked(Wrapped(&value)) };
-    let _optional = unsafe { co3::encode_unchecked(Some(&value)) };
-    let _result = unsafe { co3::encode_unchecked(Ok::<_, ()>(&value)) };
-    let _tuple = unsafe { co3::encode_unchecked((&value, 1_u8)) };
-    let _array = unsafe { co3::encode_unchecked([&value]) };
+    let _wrapped = unsafe { co3::encode_unchecked::<_>(Wrapped(&value)) };
+    let _optional = unsafe { co3::encode_unchecked::<_>(Some(&value)) };
+    let _result = unsafe { co3::encode_unchecked::<_>(Ok::<_, ()>(&value)) };
+    let _tuple = unsafe { co3::encode_unchecked::<_>((&value, 1_u8)) };
+    let _array = unsafe { co3::encode_unchecked::<_>([&value]) };
 
     let mut store = ();
     let encoded = unsafe { co3::soft_encode_unchecked(vec![UnsafeCell::new(7_u8)], &mut store) };
@@ -87,6 +87,6 @@ fn non_robust_interior_references_are_direct_only() {
     drop(unsafe { encoded.into_vec() }.unwrap());
 
     let values = [UnsafeCell::new(NonZeroU8::new(8).unwrap())];
-    let encoded = unsafe { co3::encode_unchecked(values.as_slice()) };
+    let encoded = unsafe { co3::encode_unchecked::<_>(values.as_slice()) };
     assert_eq!(encoded.metadata(), 1);
 }

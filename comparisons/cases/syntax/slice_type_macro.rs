@@ -41,7 +41,18 @@ abi_stable_signature!(fill: (&mut [byte!()]) -> ());
 #[path = "../support/byte_fill.rs"]
 mod caller;
 
+#[cfg(feature = "co3")]
 fn main() {
-    #[cfg(feature = "co3")]
     caller::check([42; 3]);
 }
+
+#[cfg(any(
+    feature = "uniffi",
+    feature = "diplomat",
+    feature = "interoptopus",
+    feature = "safer_ffi",
+    feature = "boltffi",
+    feature = "abi_stable",
+    feature = "stabby"
+))]
+fn main() {}

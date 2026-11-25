@@ -14,6 +14,7 @@ mod conversion {
         CType, ReprC,
         borrow::{BorrowedDecode, BorrowedEncode},
         convert::{Decode, EmptyStore, Encode, Store},
+        lang,
         marker::Borrowed,
     };
 
@@ -25,21 +26,21 @@ mod conversion {
             fn encode(value: T, store: &mut Self::Store, owner: &mut Self::Owner) -> Self;
         }
 
-        impl<C, T> EncodeFnArg<T> for C
+        impl<Carrier, T> EncodeFnArg<T> for Carrier
         where
-            T: ReprC<CType = C> + Encode,
+            T: ReprC<CType = Carrier> + Encode,
         {
             type Owner = ();
             type Store = T::Store;
 
             fn encode(value: T, store: &mut Self::Store, _: &mut Self::Owner) -> Self {
-                crate::soft_encode(value, store)
+                unsafe { crate::soft_encode::<_, lang::C>(value, store) }
             }
         }
 
-        impl<C: CType, T> EncodeFnArg<T> for Borrowed<C>
+        impl<Carrier: CType, T> EncodeFnArg<T> for Borrowed<Carrier>
         where
-            T: ReprC<CType = C> + BorrowedEncode,
+            T: ReprC<CType = Carrier> + BorrowedEncode,
         {
             type Owner = T::Owner;
             type Store = T::Store;
@@ -57,21 +58,21 @@ mod conversion {
             unsafe fn decode(self) -> Option<T>;
         }
 
-        impl<'d, C, T> DecodeFnReturn<'d, T> for C
+        impl<'d, Carrier, T> DecodeFnReturn<'d, T> for Carrier
         where
-            T: ReprC<CType = C> + Decode<'d, Store: EmptyStore> + 'd,
+            T: ReprC<CType = Carrier> + Decode<'d, Store: EmptyStore + 'd> + 'd,
         {
             unsafe fn decode(self) -> Option<T> {
-                unsafe { crate::decode(self) }
+                unsafe { crate::decode::<_, lang::C>(self) }
             }
         }
 
-        impl<'d, C: CType, T> DecodeFnReturn<'d, T> for Borrowed<C>
+        impl<'d, Carrier: CType, T> DecodeFnReturn<'d, T> for Borrowed<Carrier>
         where
-            T: ReprC<CType = C> + BorrowedDecode<'d, Store: EmptyStore + 'd> + 'd,
+            T: ReprC<CType = Carrier> + BorrowedDecode<'d, Store: EmptyStore + 'd> + 'd,
         {
             unsafe fn decode(self) -> Option<T> {
-                unsafe { crate::borrow::decode(self) }
+                unsafe { crate::borrow::decode::<_, lang::C>(self) }
             }
         }
     }

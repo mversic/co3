@@ -84,7 +84,11 @@ The types are lowered as follows:
 | `std::vec::Vec<u8>` | `Native<abi::Vec<u8>>` | `Borrowed<C(T)>` | `C(T)` |
 | `co3::vec::Vec<u8>` | `abi::Vec<u8>` | `Borrowed<C(T)>` | `C(T)` |
 | `ManuallyDrop<Vec<u8>>` | `ManuallyDrop<Native<abi::Vec<u8>>>` | `Borrowed<C(T)>` | `C(T)` |
+| `&'a mut Box<u32>` | `abi::SoftRefMut<abi::Box<u32>>` | `Borrowed<C(T)>` | `C(T)` |
+| `&'a UnsafeCell<Box<u32>>` | `abi::Ref<'a, UnsafeCell<abi::Box<u32>>>` | `Borrowed<C(T)>` | `C(T)` |
 | `u32` | `u32` | `C(T)` | `C(T)` |
+
+For mutable references holding an owned type, the foreign callee **MUST NOT swap out** the owned type.
 
 ## From an export to a C declaration
 

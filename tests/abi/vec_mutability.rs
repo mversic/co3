@@ -1,6 +1,6 @@
 use core::cell::Cell;
 
-use co3::marker::Native;
+use co3::{lang, marker::Native};
 
 #[test]
 fn stable_interior_vec_direct_encoding_transfers_allocation() {
@@ -10,7 +10,8 @@ fn stable_interior_vec_direct_encoding_transfers_allocation() {
     let encoded = unsafe { co3::soft_encode_unchecked(values, &mut encode_store) };
     assert_eq!(encoded.as_ptr().cast::<Cell<bool>>(), original.cast_mut());
     let mut store = ();
-    let decoded = unsafe { co3::soft_decode::<Vec<Cell<bool>>>(encoded, &mut store) }.unwrap();
+    let decoded =
+        unsafe { co3::soft_decode::<Vec<Cell<bool>>, lang::C>(encoded, &mut store) }.unwrap();
     assert_eq!(decoded.as_ptr(), original);
     assert_eq!(
         decoded.iter().map(Cell::get).collect::<Vec<_>>(),
@@ -22,10 +23,13 @@ fn stable_interior_vec_direct_encoding_transfers_allocation() {
 #[test]
 fn unstable_interior_vec_checked_round_trip() {
     let mut encode_store = Default::default();
-    let encoded = co3::soft_encode(vec![Cell::new((3_u8,)), Cell::new((7,))], &mut encode_store);
+    let encoded = unsafe {
+        co3::soft_encode::<_, lang::C>(vec![Cell::new((3_u8,)), Cell::new((7,))], &mut encode_store)
+    };
     let mut decode_store = Default::default();
     let decoded =
-        unsafe { co3::soft_decode::<Vec<Cell<(u8,)>>>(encoded, &mut decode_store) }.unwrap();
+        unsafe { co3::soft_decode::<Vec<Cell<(u8,)>>, lang::C>(encoded, &mut decode_store) }
+            .unwrap();
     assert_eq!(
         decoded.iter().map(Cell::get).collect::<Vec<_>>(),
         [(3,), (7,)]
@@ -53,7 +57,7 @@ fn robust_vec_checked_encoding_preserves_values_and_capacity() {
     values.extend([3, 7]);
     let capacity = values.capacity();
     let mut encode_store = Default::default();
-    let encoded = co3::soft_encode(values, &mut encode_store);
+    let encoded = unsafe { co3::soft_encode::<_, lang::C>(values, &mut encode_store) };
     assert_eq!(encoded.capacity(), capacity);
     let decoded = unsafe { encoded.into_vec() }.unwrap();
     assert_eq!(decoded.capacity(), capacity);
@@ -62,9 +66,10 @@ fn robust_vec_checked_encoding_preserves_values_and_capacity() {
 
     let values = Box::<[Cell<u8>]>::from([Cell::new(3), Cell::new(7)]).into_vec();
     let mut encode_store = Default::default();
-    let encoded = co3::soft_encode(values, &mut encode_store);
+    let encoded = unsafe { co3::soft_encode::<_, lang::C>(values, &mut encode_store) };
     let mut store = ();
-    let decoded = unsafe { co3::soft_decode::<Vec<Cell<u8>>>(encoded, &mut store) }.unwrap();
+    let decoded =
+        unsafe { co3::soft_decode::<Vec<Cell<u8>>, lang::C>(encoded, &mut store) }.unwrap();
     assert_eq!(decoded.iter().map(Cell::get).collect::<Vec<_>>(), [3, 7]);
     co3::convert::Store::sync(store).unwrap();
     co3::convert::Store::sync(encode_store).unwrap();
@@ -74,7 +79,9 @@ fn robust_vec_checked_encoding_preserves_values_and_capacity() {
 fn nonrobust_vec_keeps_element_writeback_stores() {
     let mut values = [false];
     let mut store = Default::default();
-    let encoded = co3::soft_encode(values.iter_mut().collect::<Vec<_>>(), &mut store);
+    let encoded = unsafe {
+        co3::soft_encode::<_, lang::C>(values.iter_mut().collect::<Vec<_>>(), &mut store)
+    };
     unsafe { *(*encoded.as_ptr()).as_ptr() = co3::primitive::abi::bool::TRUE };
     drop(unsafe { encoded.into_vec() }.unwrap());
     co3::convert::Store::sync(store).unwrap();
@@ -91,7 +98,8 @@ fn stable_vec_decode_checks_validity_before_reusing_allocation() {
     ]);
     let original = source.as_ptr().cast::<bool>();
     let mut store = ();
-    let decoded = unsafe { co3::soft_decode::<Vec<bool>>(Native(source), &mut store) }.unwrap();
+    let decoded =
+        unsafe { co3::soft_decode::<Vec<bool>, lang::C>(Native(source), &mut store) }.unwrap();
     assert_eq!(decoded.as_ptr(), original);
     assert_eq!(decoded, [true, false]);
 
@@ -100,12 +108,17 @@ fn stable_vec_decode_checks_validity_before_reusing_allocation() {
         co3::primitive::abi::bool(2),
     ]);
     assert!(
-        unsafe { co3::soft_decode::<Vec<bool>>(Native(invalid), &mut Default::default()) }
+        unsafe { co3::soft_decode::<Vec<bool>, lang::C>(Native(invalid), &mut Default::default()) }
             .is_none()
     );
     assert!(
-        unsafe { co3::soft_decode::<Vec<bool>>(Native(abi::Vec::null()), &mut Default::default()) }
-            .is_none()
+        unsafe {
+            co3::soft_decode::<Vec<bool>, lang::C>(
+                Native(abi::Vec::null()),
+                &mut Default::default(),
+            )
+        }
+        .is_none()
     );
 
     let source =

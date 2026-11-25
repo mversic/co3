@@ -1,6 +1,6 @@
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
-use syn::{parse_quote, visit::Visit};
+use syn::{parse_quote, punctuated::Punctuated, visit::Visit};
 
 use super::inference::RecursiveFields;
 use crate::{
@@ -112,31 +112,33 @@ pub(super) fn classify_tail(ty: &syn::Type, generics: &syn::Generics) -> TailCla
 pub(super) fn c_fn_last_field_bounds(
     fields: &[&syn::Type],
     generics: &syn::Generics,
-) -> (TokenStream, bool) {
+) -> (Punctuated<syn::WherePredicate, syn::Token![,]>, bool) {
+    let mut bounds = Punctuated::new();
     let Some(last) = fields.last() else {
-        return (quote! {}, false);
+        return (bounds, false);
     };
 
     match classify_tail(last, generics) {
-        TailClass::Sized => (quote! {}, false),
+        TailClass::Sized => (bounds, false),
         TailClass::Unsized(
             UnsizedTail::SliceLike | UnsizedTail::NulTerminated | UnsizedTail::DynTraitLike,
-        ) => (quote! {}, true),
+        ) => (bounds, true),
         TailClass::Unsized(UnsizedTail::Unknown) | TailClass::Unknown => {
-            let bound = super::fields::FieldType::new(last, generics).bound(quote!(Sized));
-            (quote!(#bound,), false)
+            bounds.push(FieldType::new(last, generics).bound(quote!(Sized)));
+            bounds.push_punct(Default::default());
+            (bounds, false)
         }
     }
 }
 
-fn lowered_field_ty(field_ty: &syn::Type) -> TokenStream {
+fn lowered_field_ty(field_ty: &syn::Type) -> syn::Type {
     if let Some(known) = crate::known_type::recognize(field_ty)
         .filter(|known| known.kind == crate::known_type::Kind::PhantomData)
     {
         let inner = known.inner.unwrap();
-        return quote!(core::marker::PhantomData<<#inner as co3::ReprC>::CType>);
+        return parse_quote!(core::marker::PhantomData<<#inner as co3::ReprC>::CType>);
     }
-    quote!(<#field_ty as co3::ReprC>::CType)
+    parse_quote!(<#field_ty as co3::ReprC>::CType)
 }
 
 /// Generates the wrapper carrier for a fieldless enum. Exhaustive enums
@@ -736,8 +738,16 @@ fn derive_ctype_struct(
         known_unsized_tail,
         carriers,
     );
-    let wide_impl = generate_wide
-        .then(|| gen_ctype_wide_impl(repr, &ctype_def, fields, generics, recursion.wide_header));
+    let wide_impl = generate_wide.then(|| {
+        gen_ctype_wide_impl(
+            repr,
+            name,
+            &ctype_def,
+            fields,
+            generics,
+            recursion.wide_header,
+        )
+    });
     let header_impl =
         (!generate_spec).then(|| gen_identity_header_impl(&ctype_def.ident, &ctype_def.generics));
 
@@ -771,33 +781,22 @@ pub(super) fn gen_fields_methods(
         })
         .collect::<Vec<_>>();
     let arg_names = args.iter().map(|(name, _)| name).collect::<Vec<_>>();
-    let arg_types = args.iter().map(|(_, ty)| ty).collect::<Vec<_>>();
-    let field_types = args.iter().map(|(_, ty)| *ty).collect::<Vec<_>>();
-    let (last_field_sized_bound, omit_methods) = c_fn_last_field_bounds(&field_types, generics);
+    let arg_types = args.iter().map(|(_, ty)| *ty).collect::<Vec<_>>();
+    let (last_field_sized_bound, omit_methods) = c_fn_last_field_bounds(&arg_types, generics);
     if known_unsized_tail || omit_methods {
         return quote! {};
     }
     let members = fields.members().collect::<Vec<_>>();
-    let values = arg_names
-        .iter()
-        .enumerate()
-        .map(|(index, name)| {
-            if wrap_payload && index > 0 {
-                quote!(core::mem::MaybeUninit::new(#name))
-            } else {
-                quote!(#name)
-            }
-        })
-        .collect::<Vec<_>>();
-    let named_values = arg_names.iter().zip(&values).map(|(name, value)| {
-        if syn::parse2::<syn::Ident>(value.clone()).is_ok_and(|ident| ident == **name) {
-            quote!(#name)
+    let values = arg_names.iter().enumerate().map(|(index, name)| {
+        if wrap_payload && index > 0 {
+            let label = matches!(fields, syn::Fields::Named(_)).then(|| quote!(#name:));
+            quote!(#label core::mem::MaybeUninit::new(#name))
         } else {
-            quote!(#name: #value)
+            quote!(#name)
         }
     });
     let body = match fields {
-        syn::Fields::Named(_) => quote!(Self { #(#named_values),* }),
+        syn::Fields::Named(_) => quote!(Self { #(#values),* }),
         syn::Fields::Unnamed(_) => quote!(Self(#(#values),*)),
         syn::Fields::Unit => quote!(Self),
     };
@@ -938,6 +937,7 @@ fn gen_recursive_carrier_checks(
 
 fn gen_ctype_wide_impl(
     repr: Option<&ReprKind>,
+    source_name: &syn::Ident,
     ctype: &syn::ItemStruct,
     source_fields: &syn::Fields,
     source_generics: &syn::Generics,
@@ -955,14 +955,10 @@ fn gen_ctype_wide_impl(
     let field_ty = &field.ty;
     let name = &ctype.ident;
 
-    let source_name = name.to_string();
-    let source_name = source_name.strip_suffix("CType").unwrap();
-    let source_name = syn::Ident::new(source_name, name.span());
-
     let (impl_generics, ty_generics, where_clause) = ctype.generics.split_for_impl();
     let predicates = where_clause.as_ref().map(|w| &w.predicates);
 
-    let data_name = gen_data_struct_name(&source_name);
+    let data_name = gen_data_struct_name(source_name);
 
     let ctype_wide_predicate = is_transparent.then(|| {
         let predicate = wide_predicate(field_ty, &ctype.generics);
@@ -1121,58 +1117,53 @@ fn gen_ctype_struct_item(
     fields: &syn::Fields,
     carriers: &[Option<syn::Type>],
 ) -> syn::ItemStruct {
-    let (impl_generics, _, where_clause) = generics.split_for_impl();
-    let predicates = where_clause.as_ref().map(|w| &w.predicates);
-
-    let ctype_name = gen_ctype_name(name);
-    let repr = gen_ctype_repr_attr(repr, alignment);
-
-    let field_types = fields.iter().map(|f| &f.ty).collect::<Vec<_>>();
-    let extern_c_bounds = projected_field_bounds(generics, &field_types, carriers);
-
-    let field_c_tys = field_types
-        .iter()
-        .enumerate()
-        .map(
-            |(index, ty)| match carriers.get(index).and_then(Option::as_ref) {
-                Some(carrier) => quote!(#carrier),
-                None => lowered_field_ty(ty),
-            },
-        )
-        .collect::<Vec<_>>();
-
-    let ctype = match fields {
-        syn::Fields::Named(_) | syn::Fields::Unit => {
-            let field_names = fields.iter().map(|field| {
-                field
-                    .ident
-                    .as_ref()
-                    .expect("named CType field must have an identifier")
-            });
-
-            quote! {
-                struct #ctype_name #impl_generics
-                where
-                    #(#extern_c_bounds,)*
-                    #predicates
-                {
-                    #(#field_names: #field_c_tys),*
-                }
-            }
-        }
-        syn::Fields::Unnamed(_) => quote! {
-            struct #ctype_name #impl_generics (#(#field_c_tys),*)
-            where
-                #(#extern_c_bounds,)*
-                #predicates;
-        },
+    let types = fields.iter().map(|f| &f.ty).collect::<Vec<_>>();
+    let bounds = projected_field_bounds(generics, &types, carriers);
+    let mut fields = match fields {
+        syn::Fields::Unit => syn::Fields::Named(syn::FieldsNamed {
+            brace_token: Default::default(),
+            named: Default::default(),
+        }),
+        fields => fields.clone(),
     };
-
-    parse_quote! {
-        #[doc(hidden)]
-        #repr
-        #vis #ctype
+    for (i, field) in fields.iter_mut().enumerate() {
+        field.vis = syn::Visibility::Inherited;
+        field.attrs.clear();
+        field.modifiers = Default::default();
+        field.ty = carriers
+            .get(i)
+            .and_then(Clone::clone)
+            .unwrap_or_else(|| lowered_field_ty(&field.ty));
     }
+    syn::ItemStruct {
+        attrs: vec![
+            parse_quote!(#[doc(hidden)]),
+            gen_ctype_repr_attr(repr, alignment),
+        ],
+        vis: vis.clone(),
+        struct_token: Default::default(),
+        ident: gen_ctype_name(name),
+        generics: carrier_generics(generics, bounds),
+        semi_token: matches!(fields, syn::Fields::Unnamed(_)).then(Default::default),
+        fields,
+    }
+}
+
+/// Carrier declarations use the impl parameters, which omit source defaults.
+fn carrier_generics(source: &syn::Generics, bounds: Vec<syn::WherePredicate>) -> syn::Generics {
+    let mut generics = source.clone();
+    for param in generics.type_params_mut() {
+        param.default = None;
+    }
+    for param in generics.const_params_mut() {
+        param.default = None;
+    }
+    let predicates = &mut generics.make_where_clause().predicates;
+    *predicates = bounds
+        .into_iter()
+        .chain(std::mem::take(predicates))
+        .collect();
+    generics
 }
 
 fn gen_data_enum_union(
@@ -1193,20 +1184,18 @@ fn gen_data_enum_union(
             gen_variant_struct(variant_tag.as_ref(), vis, enum_name, generics, variant)
         });
 
-    let (impl_generics, _, where_clause) = generics.split_for_impl();
-    let predicates = where_clause.as_ref().map(|w| &w.predicates);
-    let union_extern_c_bounds = gen_union_extern_c_bounds(enum_name, generics, variants);
-
-    let repr = gen_ctype_repr_attr(Some(&ReprKind::C(None)), alignment);
-    let union_def = parse_quote! {
-        #[expect(non_snake_case)]
-        #[doc(hidden)]
-        #repr
-        #vis union #union_name #impl_generics
-        where
-            #(#union_extern_c_bounds,)*
-            #predicates
-        #union_fields
+    let bounds = gen_union_extern_c_bounds(enum_name, generics, variants);
+    let union_def = syn::ItemUnion {
+        attrs: vec![
+            parse_quote!(#[expect(non_snake_case)]),
+            parse_quote!(#[doc(hidden)]),
+            gen_ctype_repr_attr(Some(&ReprKind::C(None)), alignment),
+        ],
+        vis: vis.clone(),
+        union_token: Default::default(),
+        ident: union_name.clone(),
+        generics: carrier_generics(generics, bounds),
+        fields: union_fields,
     };
 
     (union_def, variant_structs.collect())
@@ -1450,18 +1439,14 @@ fn gen_robust_impls(
         gen_c_fn_impls(ident, generics, fields)
     };
 
+    let validator = crate::codec::validator(ident, generics, quote!(true));
     quote! {
         unsafe impl #impl_generics #co3::CType for #ident #ty_generics #where_clause {}
 
         #c_fn_impls
 
-        unsafe impl #impl_generics #co3::convert::AbiCompatibleValidate for #ident #ty_generics #where_clause {
-            #[inline(always)]
-            unsafe fn is_valid(_: &Self::CType) -> bool {
-                true
-            }
-        }
         unsafe impl #impl_generics #co3::marker::AbiCompatible for #ident #ty_generics #where_clause {}
+        #validator
 
         #borrow_impls
         #codec_impls
@@ -1586,79 +1571,24 @@ fn gen_identity_codec_impls(
     needs_sized_bound: bool,
 ) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
-    let predicates = where_clause.as_ref().map(|w| &w.predicates);
-    let mut decode_generics = generics.clone();
-    decode_generics.params.insert(0, parse_quote!('d));
-    let (decode_impl_generics, _, _) = decode_generics.split_for_impl();
-
-    let sized_bound = needs_sized_bound.then(|| {
-        let speculative = speculative_marker(generics.params.is_empty());
-        quote!(#speculative Self: Sized,)
-    });
-
+    let mut g = generics.clone();
+    if needs_sized_bound {
+        let speculative = speculative_marker(g.params.is_empty());
+        g.make_where_clause()
+            .predicates
+            .push(parse_quote!(#speculative Self: Sized));
+    }
+    let values = crate::codec::stateless(
+        ident,
+        &g,
+        &g,
+        quote!(self),
+        quote!(Some(source)),
+        quote!(source),
+    );
     quote! {
-        impl #impl_generics co3::ReprC for #ident #ty_generics
-        where
-            #predicates
-        {
-            type CType = Self;
-        }
-
-        unsafe impl #impl_generics co3::convert::EncodeMove for #ident #ty_generics
-        where
-            #sized_bound
-            #predicates
-        {
-            type Store = ();
-
-            #[inline(always)]
-            fn soft_encode<'itm>(self, (): &mut ()) -> Self::CType
-            where
-                Self: 'itm,
-            {
-                use co3::convert::EncodeMoveUnchecked as _;
-                unsafe { co3::convert::EncodeMoveUnchecked::soft_encode_unchecked(self, &mut ()) }
-            }
-        }
-        unsafe impl #impl_generics co3::convert::EncodeMoveUnchecked for #ident #ty_generics
-        where
-            #sized_bound
-            #predicates
-        {
-            type SoftStore = ();
-
-            unsafe fn soft_encode_unchecked<'itm>(self, (): &'itm mut ()) -> Self::CType where Self: 'itm {
-                self
-            }
-        }
-        unsafe impl #decode_impl_generics co3::convert::DecodeMove<'d> for #ident #ty_generics
-        where
-            #sized_bound
-            #predicates
-        {
-            type Store = ();
-
-            #[inline(always)]
-            unsafe fn soft_decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
-                Some(source)
-            }
-        }
-
-        impl #impl_generics co3::convert::Encode for #ident #ty_generics
-        where
-            #sized_bound
-            #predicates
-        {}
-        impl #impl_generics co3::convert::EncodeUnchecked for #ident #ty_generics
-        where
-            #sized_bound
-            #predicates
-        {}
-        impl #impl_generics co3::convert::Decode<'_> for #ident #ty_generics
-        where
-            #sized_bound
-            #predicates
-        {}
+        impl #impl_generics co3::ReprC for #ident #ty_generics #where_clause { type CType = Self; }
+        #values
     }
 }
 
@@ -1671,35 +1601,29 @@ pub(super) fn gen_identity_repr_c_impls(
     let codec_impls = gen_identity_codec_impls(ident, generics, true);
     let c_fn_impls = gen_c_fn_impls(ident, generics, fields);
 
+    let validator = crate::codec::validator(ident, generics, quote!(true));
     quote! {
         unsafe impl #impl_generics co3::CType for #ident #ty_generics #where_clause {}
 
         #c_fn_impls
 
-        unsafe impl #impl_generics co3::convert::AbiCompatibleValidate for #ident #ty_generics
-        #where_clause
-        {
-            #[inline(always)]
-            unsafe fn is_valid(_: &Self::CType) -> bool {
-                true
-            }
-        }
         unsafe impl #impl_generics co3::marker::AbiCompatible for #ident #ty_generics
         #where_clause
         {}
+        #validator
 
         #codec_impls
     }
 }
 
-fn gen_ctype_repr_attr(repr: Option<&ReprKind>, alignment: Option<&syn::LitInt>) -> TokenStream {
+fn gen_ctype_repr_attr(repr: Option<&ReprKind>, alignment: Option<&syn::LitInt>) -> syn::Attribute {
     let kind = if repr == Some(&ReprKind::Transparent) {
         quote!(transparent)
     } else {
         quote!(C)
     };
     let alignment = alignment.map(|alignment| quote!(, align(#alignment)));
-    quote! { #[repr(#kind #alignment)] }
+    parse_quote! { #[repr(#kind #alignment)] }
 }
 
 fn gen_copy_impls(
@@ -1995,7 +1919,7 @@ fn gen_hrtb_projection_bounds(
             };
             let bounded_ty = &predicate.bounded_ty;
             let projected_ty = &qself.ty;
-            if quote!(#bounded_ty).to_string() != quote!(#projected_ty).to_string() {
+            if bounded_ty != projected_ty.as_ref() {
                 continue;
             }
 
@@ -2004,7 +1928,7 @@ fn gen_hrtb_projection_bounds(
                     continue;
                 };
                 let predicate_trait_path = &trait_bound.path;
-                if quote!(#predicate_trait_path).to_string() != quote!(#trait_path).to_string() {
+                if predicate_trait_path != &trait_path {
                     continue;
                 }
 

@@ -13,9 +13,10 @@ use crate::convert::Owned;
 use crate::{
     CFnArg, CFnReturn, CType, ReprC,
     convert::{
-        AbiCompatibleValidate, Decode, DecodeMove, EmptyStore, Encode, EncodeMove,
-        EncodeMoveUnchecked, EncodeUnchecked,
+        AbiValidate, Decode, DecodeMove, DecodeMoveUnchecked, DecodeUnchecked, EmptyStore, Encode,
+        EncodeMove, EncodeMoveUnchecked, EncodeUnchecked,
     },
+    lang::Language,
     marker::AbiCompatible,
     niche::Niche,
 };
@@ -25,7 +26,7 @@ crate::borrow::__impl_borrowed_identity!([]());
 impl ReprC for () {
     type CType = Self;
 }
-unsafe impl EncodeMove for () {
+unsafe impl<L: Language> EncodeMove<L> for () {
     type Store = ();
 
     #[inline(always)]
@@ -33,7 +34,7 @@ unsafe impl EncodeMove for () {
     where
         Self: 'itm,
     {
-        unsafe { self.soft_encode_unchecked(&mut ()) }
+        unsafe { crate::convert::EncodeMoveUnchecked::soft_encode_unchecked(self, &mut ()) }
     }
 }
 
@@ -47,7 +48,15 @@ unsafe impl EncodeMoveUnchecked for () {
         self
     }
 }
-unsafe impl<'d> DecodeMove<'d> for () {
+unsafe impl<'d> DecodeMoveUnchecked<'d> for () {
+    type SoftStore = ();
+
+    #[inline(always)]
+    unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, (): &mut ()) -> Self {
+        source
+    }
+}
+unsafe impl<'d, L: Language> DecodeMove<'d, L> for () {
     type Store = ();
 
     #[inline(always)]
@@ -56,17 +65,18 @@ unsafe impl<'d> DecodeMove<'d> for () {
     }
 }
 
-impl Decode<'_> for () {}
 impl EncodeUnchecked for () {}
-impl Encode for () {}
+impl<L: Language> Encode<L> for () {}
+impl DecodeUnchecked<'_> for () {}
+impl<L: Language> Decode<'_, L> for () {}
 
-unsafe impl AbiCompatibleValidate for () {
+unsafe impl AbiCompatible for () {}
+unsafe impl<L: Language> AbiValidate<L> for () {
     #[inline(always)]
     unsafe fn is_valid(_: &Self::CType) -> bool {
         true
     }
 }
-unsafe impl AbiCompatible for () {}
 
 unsafe impl CType for () {}
 crate::mutable::impl_direct_mut!([]());
@@ -79,7 +89,7 @@ impl Owned for str {
     type Owned = String;
 }
 impl ReprC for str {
-    type CType = co3::primitive::abi::str;
+    type CType = crate::primitive::abi::str;
 }
 
 impl TryFrom<abi::char> for char {
@@ -104,7 +114,7 @@ macro_rules! primitive_derive {
         impl ReprC for $primitive {
             type CType = Self;
         }
-        unsafe impl EncodeMove for $primitive {
+        unsafe impl <L: Language> EncodeMove<L> for $primitive {
             type Store = ();
 
             #[inline(always)]
@@ -112,10 +122,10 @@ macro_rules! primitive_derive {
             where
                 Self: 'itm,
             {
-                unsafe { self.soft_encode_unchecked(&mut ()) }
+                unsafe { crate::convert::EncodeMoveUnchecked::soft_encode_unchecked(self, &mut ()) }
             }
         }
-        unsafe impl $crate::convert::EncodeMoveUnchecked for $primitive {
+        unsafe impl  $crate::convert::EncodeMoveUnchecked for $primitive {
             type SoftStore = ();
 
             #[inline(always)]
@@ -126,7 +136,15 @@ macro_rules! primitive_derive {
                 self
             }
         }
-        unsafe impl<'d> DecodeMove<'d> for $primitive {
+        unsafe impl<'d, > DecodeMoveUnchecked<'d> for $primitive {
+            type SoftStore = ();
+
+            #[inline(always)]
+            unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, (): &mut ()) -> Self { {
+                source
+            } }
+        }
+        unsafe impl<'d, L: Language> DecodeMove<'d, L> for $primitive {
             type Store = ();
 
             #[inline(always)]
@@ -135,17 +153,18 @@ macro_rules! primitive_derive {
             }
         }
 
-        impl Encode for $primitive {}
         impl $crate::convert::EncodeUnchecked for $primitive {}
-        impl Decode<'_> for $primitive {}
+        impl <L: Language> Encode<L> for $primitive {}
+        impl<> DecodeUnchecked<'_> for $primitive {}
+        impl<L: Language> Decode<'_, L> for $primitive {}
 
-        unsafe impl $crate::convert::AbiCompatibleValidate for $primitive {
+        unsafe impl AbiCompatible for $primitive {}
+        unsafe impl<L: $crate::lang::Language> $crate::convert::AbiValidate<L> for $primitive {
             #[inline(always)]
             unsafe fn is_valid(_: &Self::CType) -> core::primitive::bool {
                 true
             }
         }
-        unsafe impl AbiCompatible for $primitive {}
 
         unsafe impl CType for $primitive {}
         unsafe impl CFnArg for $primitive {}
@@ -162,7 +181,7 @@ macro_rules! raw_pointer_derive {
         impl<R: ReprC + ?Sized> ReprC for *$mutability R {
             type CType = *$mutability R::CType;
         }
-        unsafe impl<R: AbiCompatible + ?Sized> EncodeMove for *$mutability R {
+        unsafe impl<L: Language, R: AbiCompatible + ?Sized> EncodeMove<L> for *$mutability R {
             type Store = ();
 
             #[inline(always)]
@@ -182,7 +201,15 @@ macro_rules! raw_pointer_derive {
                 unsafe { core::mem::transmute_copy(&self) }
             }
         }
-        unsafe impl<'d, R: AbiCompatible + ?Sized> DecodeMove<'d> for *$mutability R {
+        unsafe impl<'d,  R: AbiCompatible + ?Sized> DecodeMoveUnchecked<'d> for *$mutability R {
+            type SoftStore = ();
+
+            #[inline(always)]
+            unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, (): &mut ()) -> Self { {
+                unsafe { core::mem::transmute_copy(&source) }
+            } }
+        }
+        unsafe impl<'d, L: Language, R: AbiCompatible + ?Sized> DecodeMove<'d, L> for *$mutability R {
             type Store = ();
 
             #[inline(always)]
@@ -191,17 +218,18 @@ macro_rules! raw_pointer_derive {
             }
         }
 
-        impl<R: AbiCompatible + ?Sized> Encode for *$mutability R {}
-        impl<R: AbiCompatible + ?Sized> $crate::convert::EncodeUnchecked for *$mutability R {}
-        impl<R: AbiCompatible + ?Sized> Decode<'_> for *$mutability R {}
+        impl<R: AbiCompatible + ?Sized> EncodeUnchecked for *$mutability R {}
+        impl<L: Language, R: AbiCompatible + ?Sized> Encode<L> for *$mutability R {}
+        impl< R: AbiCompatible + ?Sized> DecodeUnchecked<'_> for *$mutability R {}
+        impl<L: Language, R: AbiCompatible + ?Sized> Decode<'_, L> for *$mutability R {}
 
-        unsafe impl<R: AbiCompatible + ?Sized> $crate::convert::AbiCompatibleValidate for *$mutability R {
+        unsafe impl<R: AbiCompatible + ?Sized> AbiCompatible for *$mutability R {}
+        unsafe impl<L: $crate::lang::Language, R: AbiCompatible + ?Sized> $crate::convert::AbiValidate<L> for *$mutability R {
             #[inline(always)]
             unsafe fn is_valid(_: &Self::CType) -> bool {
                 true
             }
         }
-unsafe impl<R: AbiCompatible + ?Sized> AbiCompatible for *$mutability R {}
 
         unsafe impl<R: CType + ?Sized> CType for *$mutability R {}
         unsafe impl<R: CType> CFnArg for *$mutability R {}
@@ -226,7 +254,7 @@ macro_rules! with_fn_types {
             (A, B, C, D, E, F, G, H, I),
             (A, B, C, D, E, F, G, H, I, J),
             (A, B, C, D, E, F, G, H, I, J, K),
-            (A, B, C, D, E, F, G, H, I, J, K, L),
+            (A, B, C, D, E, F, G, H, I, J, K, M),
         );
     };
     (@collect $callback:path, { $($context:tt)* }, [$($types:tt)*]; ($($arg:ident),*), $($rest:tt)*) => {
@@ -322,7 +350,7 @@ macro_rules! impl_fn_types {
         {
             type CType = Option<Self>;
         }
-        unsafe impl<$($arg,)* R> EncodeMove for $fn_type
+        unsafe impl<L: Language, $($arg,)* R> EncodeMove<L> for $fn_type
         where
             Self: ReprC<CType = Option<Self>>,
             Option<Self>: CType,
@@ -333,7 +361,7 @@ macro_rules! impl_fn_types {
             where
                 Self: 'itm,
             {
-                unsafe { self.soft_encode_unchecked(&mut ()) }
+                unsafe { crate::convert::EncodeMoveUnchecked::soft_encode_unchecked(self, &mut ()) }
             }
         }
         unsafe impl<$($arg,)* R> EncodeMoveUnchecked for $fn_type
@@ -350,7 +378,18 @@ macro_rules! impl_fn_types {
                 Some(self)
             }
         }
-        unsafe impl<'d, $($arg,)* R> DecodeMove<'d> for $fn_type
+        unsafe impl<'d,  $($arg,)* R> DecodeMoveUnchecked<'d> for $fn_type
+        where
+            Self: ReprC<CType = Option<Self>>,
+            Option<Self>: CType,
+        {
+            type SoftStore = ();
+
+            unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, (): &mut ()) -> Self {
+                unsafe { source.unwrap_unchecked() }
+            }
+        }
+        unsafe impl<'d, L: Language, $($arg,)* R> DecodeMove<'d, L> for $fn_type
         where
             Self: ReprC<CType = Option<Self>>,
             Option<Self>: CType,
@@ -358,27 +397,34 @@ macro_rules! impl_fn_types {
             type Store = ();
 
             unsafe fn soft_decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
-                source
+                if $crate::lang::checks::nonzero::<L>(source.is_none()) {
+                    Some(unsafe { source.unwrap_unchecked() })
+                } else {
+                    None
+                }
             }
 
-            unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, (): &mut ()) -> Self {
-                unsafe { source.unwrap_unchecked() }
-            }
         }
 
-        impl<$($arg,)* R> Encode for $fn_type
+        impl<$($arg,)* R> EncodeUnchecked for $fn_type
         where
             Self: ReprC<CType = Option<Self>>,
             Option<Self>: CType,
         {
         }
-        impl<$($arg,)* R> $crate::convert::EncodeUnchecked for $fn_type
+        impl<L: Language, $($arg,)* R> Encode<L> for $fn_type
         where
             Self: ReprC<CType = Option<Self>>,
             Option<Self>: CType,
         {
         }
-        impl<$($arg,)* R> Decode<'_> for $fn_type
+        impl< $($arg,)* R> DecodeUnchecked<'_> for $fn_type
+        where
+            Self: ReprC<CType = Option<Self>>,
+            Option<Self>: CType,
+        {
+        }
+        impl<L: Language, $($arg,)* R> Decode<'_, L> for $fn_type
         where
             Self: ReprC<CType = Option<Self>>,
             Option<Self>: CType,
@@ -396,34 +442,34 @@ macro_rules! impl_fn_types {
                 value.is_none()
             }
         }
-        unsafe impl<$($arg,)* R> $crate::convert::AbiCompatibleValidate for $fn_type
+        unsafe impl<$($arg,)* R> AbiCompatible for $fn_type
         where
+            Self: $crate::rust_spec::RustSpec<Layout = $crate::rust_spec::Specified>,
             Self: ReprC<CType = Option<Self>>,
             Option<Self>: CType,
-    Self: $crate::rust_spec::RustSpec<Layout = $crate::rust_spec::Specified>,
-{
+        {
+        }
+        unsafe impl<L: $crate::lang::Language, $($arg,)* R> $crate::convert::AbiValidate<L> for $fn_type
+        where
+            Self: $crate::rust_spec::RustSpec<Layout = $crate::rust_spec::Specified>,
+            Self: ReprC<CType = Option<Self>>,
+            Option<Self>: CType,
+        {
             unsafe fn is_valid(target: &Self::CType) -> bool {
-                target.is_some()
+                $crate::lang::checks::nonzero::<L>(target.is_none())
             }
         }
-unsafe impl<$($arg,)* R> AbiCompatible for $fn_type
-where
-    Self: ReprC<CType = Option<Self>>,
-    Option<Self>: CType,
-    Self: $crate::rust_spec::RustSpec<Layout = $crate::rust_spec::Specified>,
-{
-}
     };
 }
 
 macro_rules! fieldless_enum_derive {
-    ( $src:ty => $dst:ty: {$niche_val:expr}: $validity_fn:expr; $decode_fn:expr; $encode_fn:expr $(; $unchecked_fn:expr)? ) => {
+    ( $src:ty => $dst:ty: {$niche_val:expr}: $check:ident; $encode_fn:expr; $unchecked_fn:expr ) => {
         crate::borrow::__impl_borrowed_identity!([] $src);
 
         impl ReprC for $src {
             type CType = $dst;
         }
-        unsafe impl EncodeMove for $src {
+        unsafe impl <L: Language> EncodeMove<L> for $src {
             type Store = ();
 
             #[inline(always)]
@@ -431,10 +477,10 @@ macro_rules! fieldless_enum_derive {
             where
                 Self: 'itm,
             {
-                unsafe { self.soft_encode_unchecked(&mut ()) }
+                unsafe { crate::convert::EncodeMoveUnchecked::soft_encode_unchecked(self, &mut ()) }
             }
         }
-        unsafe impl EncodeMoveUnchecked for $src {
+        unsafe impl  EncodeMoveUnchecked for $src {
             type SoftStore = ();
 
             #[inline(always)]
@@ -445,31 +491,39 @@ macro_rules! fieldless_enum_derive {
                 $encode_fn(self)
             }
         }
-        unsafe impl<'d> DecodeMove<'d> for $src {
+        unsafe impl<'d, > DecodeMoveUnchecked<'d> for $src {
+            type SoftStore = ();
+
+            unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, (): &mut ()) -> Self {
+                ($unchecked_fn)(source)
+            }
+        }
+        unsafe impl<'d, L: Language> DecodeMove<'d, L> for $src {
             type Store = ();
 
             #[inline(always)]
             unsafe fn soft_decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
-                let source = unsafe { crate::convert::decode_move::<$dst>(source)? };
-                $decode_fn(source)
+                if $crate::lang::checks::$check::<L>(source.0) {
+                    Some(($unchecked_fn)(source))
+                } else {
+                    None
+                }
             }
 
-            $(unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, (): &mut ()) -> Self {
-                ($unchecked_fn)(source)
-            })?
         }
 
-        impl Encode for $src {}
         impl $crate::convert::EncodeUnchecked for $src {}
-        impl Decode<'_> for $src {}
+        impl <L: Language> Encode<L> for $src {}
+        impl<> DecodeUnchecked<'_> for $src {}
+        impl<L: Language> Decode<'_, L> for $src {}
 
-        unsafe impl $crate::convert::AbiCompatibleValidate for $src {
+        unsafe impl AbiCompatible for $src {}
+        unsafe impl<L: $crate::lang::Language> $crate::convert::AbiValidate<L> for $src {
             #[inline(always)]
             unsafe fn is_valid(target: &Self::CType) -> bool {
-                $validity_fn(target)
+                $crate::lang::checks::$check::<L>(target.0)
             }
         }
-unsafe impl AbiCompatible for $src {}
 
         impl Niche for $src {
             const NICHE: Self::CType = $niche_val;
@@ -529,20 +583,14 @@ crate::primitive::with_fn_types!(impl_fn_types, {});
 
 fieldless_enum_derive! {
     char => abi::char: {abi::char(0x110000)}:
-    |i: &abi::char| char::try_from(*i).is_ok();
-    |source: abi::char| char::try_from(source).ok();
+    unicode_scalar;
     |source: char| abi::char::from(source);
-    |source: abi::char| unsafe { char::try_from(source).unwrap_unchecked() }
+    |source: abi::char| unsafe { char::from_u32_unchecked(source.0) }
 }
 
 fieldless_enum_derive! {
     bool => abi::bool: {abi::bool(2)}:
-    |i: &abi::bool| i.0 == 0 || i.0 == 1;
-    |source: abi::bool| match source.0 {
-        0 => Some(false),
-        1 => Some(true),
-        _ => None,
-    };
+    boolean;
     |source: bool| abi::bool(source as u8);
     |source: abi::bool| unsafe { core::mem::transmute::<abi::bool, bool>(source) }
 }
@@ -554,9 +602,10 @@ pub mod abi {
     use rust_spec::RustSpec;
 
     use super::{
-        AbiCompatible, AbiCompatibleValidate, CFnArg, CFnReturn, CType, Decode, DecodeMove, Encode,
-        EncodeMove, EncodeMoveUnchecked, ReprC,
+        AbiCompatible, AbiValidate, CFnArg, CFnReturn, CType, Decode, DecodeMove,
+        DecodeMoveUnchecked, DecodeUnchecked, Encode, EncodeMove, ReprC,
     };
+    use crate::lang::Language;
 
     /// C-compatible byte region used as the representation of `str`.
     ///
@@ -588,12 +637,12 @@ pub mod abi {
         type CType = Self;
     }
 
-    unsafe impl AbiCompatibleValidate for str {
+    unsafe impl AbiCompatible for str {}
+    unsafe impl<L: Language> AbiValidate<L> for str {
         unsafe fn is_valid(_: &Self::CType) -> core::primitive::bool {
             true
         }
     }
-    unsafe impl AbiCompatible for str {}
 
     unsafe impl crate::wide::Wide for str {
         type Header = [u8; 0];
@@ -684,7 +733,7 @@ mod tests {
     #[cfg(feature = "alloc")]
     use crate::{boxed::abi::Box as AbiBox, wide::abi::WideBox as AbiWideBox};
     use crate::{
-        cmp::abi::Ordering as COrdering, convert::Encode, marker::Native,
+        cmp::abi::Ordering as COrdering, convert::Encode, lang, marker::Native,
         option::abi::Option as AbiOption, reference::abi::Ref,
     };
 
@@ -706,21 +755,21 @@ mod tests {
             assert_eq!(boolean.0, raw);
             assert_eq!(boolean == boolean, raw <= 1);
             assert_eq!(
-                unsafe { crate::decode::<abi::bool>(boolean) }.map(|v| v.0),
+                unsafe { crate::decode::<abi::bool, lang::C>(boolean) }.map(|v| v.0),
                 Some(raw)
             );
             assert_eq!(
-                unsafe { crate::decode::<bool>(boolean) }.is_some(),
+                unsafe { crate::decode::<bool, lang::C>(boolean) }.is_some(),
                 raw <= 1
             );
             let ordering = COrdering(raw as i8);
             assert_eq!(ordering.0, raw as i8);
             assert_eq!(
-                unsafe { crate::decode::<COrdering>(ordering) }.map(|v| v.0),
+                unsafe { crate::decode::<COrdering, lang::C>(ordering) }.map(|v| v.0),
                 Some(ordering.0)
             );
             assert_eq!(
-                unsafe { crate::decode::<Ordering>(ordering) }.is_some(),
+                unsafe { crate::decode::<Ordering, lang::C>(ordering) }.is_some(),
                 (-1..=1).contains(&ordering.0)
             );
         }
@@ -730,23 +779,29 @@ mod tests {
             assert_eq!(scalar.0, raw);
             assert_eq!(scalar == scalar, char::from_u32(raw).is_some());
             assert_eq!(
-                unsafe { crate::decode::<abi::char>(scalar) }.map(|value| value.0),
+                unsafe { crate::decode::<abi::char, lang::C>(scalar) }.map(|value| value.0),
                 Some(raw)
             );
             assert_eq!(
-                unsafe { crate::decode::<char>(scalar) },
+                unsafe { crate::decode::<char, lang::C>(scalar) },
                 char::from_u32(raw)
             );
         }
         for value in [Ordering::Less, Ordering::Equal, Ordering::Greater] {
             assert_eq!(
-                unsafe { crate::decode_unchecked::<Ordering>(crate::encode(value)) },
+                unsafe { crate::decode_unchecked::<Ordering>(crate::encode::<_, lang::C>(value)) },
                 value
             );
         }
-        assert!(bool::is_niche(&crate::encode(None::<bool>).0.0));
-        assert!(Ordering::is_niche(&crate::encode(None::<Ordering>).0.0));
-        assert!(char::is_niche(&crate::encode(None::<char>).0.0));
+        assert!(bool::is_niche(
+            &unsafe { crate::encode::<_, lang::C>(None::<bool>) }.0.0
+        ));
+        assert!(Ordering::is_niche(
+            &unsafe { crate::encode::<_, lang::C>(None::<Ordering>) }.0.0
+        ));
+        assert!(char::is_niche(
+            &unsafe { crate::encode::<_, lang::C>(None::<char>) }.0.0
+        ));
     }
 
     #[test]
@@ -763,12 +818,12 @@ mod tests {
         assert_impl_all!(Option<SystemCallback>: CFnArg);
 
         let encoded = increment as Callback;
-        let encoded = crate::encode(encoded);
-        let decoded = unsafe { crate::decode::<Callback>(encoded) }.unwrap();
+        let encoded = unsafe { crate::encode::<_, lang::C>(encoded) };
+        let decoded = unsafe { crate::decode::<Callback, lang::C>(encoded) }.unwrap();
         assert_eq!(decoded(41), 42);
-        assert!(unsafe { crate::decode::<Callback>(None) }.is_none());
+        assert!(unsafe { crate::decode::<Callback, lang::C>(None) }.is_none());
         assert!(
-            crate::soft_encode(Option::<Callback>::None, &mut None)
+            unsafe { crate::soft_encode::<_, lang::C>(Option::<Callback>::None, &mut None) }
                 .0
                 .0
                 .is_none()
@@ -864,15 +919,23 @@ mod tests {
         static_assertions::assert_impl_all!(char: ReprC<CType = abi::char>);
         static_assertions::assert_impl_all!(abi::char: From<char>);
         static_assertions::assert_not_impl_any!(abi::char: From<u32>, TryFrom<u32>);
-        assert_eq!(abi::char('🍃' as u32), crate::encode('🍃'));
-        assert_eq!(crate::encode('🍃').0, '🍃' as u32);
-        assert_eq!(unsafe { crate::decode::<char>(abi::char(0x110000)) }, None);
-        assert_eq!(unsafe { crate::decode::<char>(abi::char(0xd800)) }, None);
+        assert_eq!(abi::char('🍃' as u32), unsafe {
+            crate::encode::<_, lang::C>('🍃')
+        });
+        assert_eq!(unsafe { crate::encode::<_, lang::C>('🍃') }.0, '🍃' as u32);
+        assert_eq!(
+            unsafe { crate::decode::<char, lang::C>(abi::char(0x110000)) },
+            None
+        );
+        assert_eq!(
+            unsafe { crate::decode::<char, lang::C>(abi::char(0xd800)) },
+            None
+        );
     }
 
     #[test]
     fn str_is_supported() {
-        assert_impl_all!(str: ReprC<CType = co3::primitive::abi::str>);
+        assert_impl_all!(str: ReprC<CType = crate::primitive::abi::str>);
         #[cfg(feature = "alloc")]
         assert_impl_all!(String: ReprC<CType = Native<crate::string::abi::String>>);
 
@@ -903,7 +966,7 @@ mod tests {
 
         let source =
             unsafe { crate::wide::abi::WideRef::from_raw_parts(invalid.as_ptr(), invalid.len()) };
-        let decoded = unsafe { crate::decode::<&str>(source) };
+        let decoded = unsafe { crate::decode::<&str, lang::C>(source) };
         assert!(decoded.is_none());
 
         let mut invalid = [0xff];
@@ -913,7 +976,7 @@ mod tests {
                 invalid.len(),
             )
         };
-        let decoded = unsafe { crate::decode::<&mut str>(source) };
+        let decoded = unsafe { crate::decode::<&mut str, lang::C>(source) };
         assert!(decoded.is_none());
 
         #[cfg(feature = "alloc")]
@@ -922,7 +985,7 @@ mod tests {
             let source = unsafe {
                 AbiWideBox::<<str as crate::ReprC>::CType>::from_raw_parts(allocation, 1)
             };
-            let decoded = unsafe { crate::decode::<Box<str>>(source) };
+            let decoded = unsafe { crate::decode::<Box<str>, lang::C>(source) };
             assert!(decoded.is_none());
         }
     }
@@ -931,15 +994,15 @@ mod tests {
     #[test]
     fn owned_strings_round_trip_without_recursive_conversion() {
         let text = String::from("hello 🍃");
-        let encoded = crate::encode(text.clone());
+        let encoded = unsafe { crate::encode::<_, lang::C>(text.clone()) };
         assert_eq!(
-            unsafe { crate::decode::<String>(encoded) },
+            unsafe { crate::decode::<String, lang::C>(encoded) },
             Some(text.clone())
         );
 
-        let encoded = crate::encode(text.clone().into_boxed_str());
+        let encoded = unsafe { crate::encode::<_, lang::C>(text.clone().into_boxed_str()) };
         assert_eq!(
-            unsafe { crate::decode::<Box<str>>(encoded) }.as_deref(),
+            unsafe { crate::decode::<Box<str>, lang::C>(encoded) }.as_deref(),
             Some(text.as_str())
         );
     }
@@ -951,18 +1014,18 @@ mod tests {
         text.push_str("hello 🍃");
         let pointer = text.as_ptr();
         let capacity = text.capacity();
-        let carrier = crate::encode(text);
+        let carrier = unsafe { crate::encode::<_, lang::C>(text) };
         assert_eq!(carrier.as_ptr(), pointer.cast_mut());
         assert_eq!(carrier.capacity(), capacity);
-        let decoded = unsafe { crate::decode::<String>(carrier) }.unwrap();
+        let decoded = unsafe { crate::decode::<String, lang::C>(carrier) }.unwrap();
         assert_eq!(decoded, "hello 🍃");
         assert_eq!(decoded.as_ptr(), pointer);
         assert_eq!(decoded.capacity(), capacity);
 
         let invalid = crate::string::abi::String(crate::vec::abi::Vec::from_vec(alloc::vec![0xff]));
-        assert!(unsafe { crate::decode::<String>(Native(invalid)) }.is_none());
+        assert!(unsafe { crate::decode::<String, lang::C>(Native(invalid)) }.is_none());
         assert!(
-            unsafe { crate::decode::<String>(Native(crate::string::abi::String::null())) }
+            unsafe { crate::decode::<String, lang::C>(Native(crate::string::abi::String::null())) }
                 .is_none()
         );
     }

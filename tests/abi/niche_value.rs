@@ -3,7 +3,7 @@ use std::{cmp::Ordering, ffi::CStr};
 use co3::{
     ReprC,
     cmp::abi::Ordering as Co3Ordering,
-    encode, ffi,
+    encode, ffi, lang,
     marker::Native,
     niche::Niche,
     option::abi,
@@ -39,7 +39,7 @@ fn custom_niche_must_be_reflexive() {
     should_panic(expected = "encoding produced NICHE value")
 )]
 fn custom_niche_must_not_overlap_an_encoded_value() {
-    let _ = encode(Some(OverlappingCustomNiche(1)));
+    let _ = unsafe { encode::<_, lang::C>(Some(OverlappingCustomNiche(1))) };
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, RustSpec)]
@@ -79,11 +79,15 @@ fn thin_extern_reference_niche() {
     // an accidental Sized bound on the pointer-backed reference Niche impls.
     static_assertions::assert_impl_all!(&CStr: Niche<CType = SoftRef<<CStr as co3::ReprC>::CType>>);
 
-    assert!(<&Extern>::is_niche(&encode(None::<&Extern>).payload()));
-    assert!(<&mut Extern>::is_niche(
-        &soft_encode(None::<&mut Extern>, &mut None).payload()
+    assert!(<&Extern>::is_niche(
+        &unsafe { encode::<_, lang::C>(None::<&Extern>) }.payload()
     ));
-    assert!(<&CStr>::is_niche(&encode(None::<&CStr>).payload()));
+    assert!(<&mut Extern>::is_niche(
+        &unsafe { soft_encode::<_, lang::C>(None::<&mut Extern>, &mut None) }.payload()
+    ));
+    assert!(<&CStr>::is_niche(
+        &unsafe { encode::<_, lang::C>(None::<&CStr>) }.payload()
+    ));
 }
 
 #[derive(Clone, Copy, RustSpec, ReprC)]
@@ -433,76 +437,116 @@ pub enum FieldlessLargeEnum {
 
 #[test]
 fn verify_enum_niche_value() {
-    assert!(bool::is_niche(&encode(None::<bool>).payload()));
-    assert!(Ordering::is_niche(&encode(None::<Ordering>).payload()));
+    assert!(bool::is_niche(
+        &unsafe { encode::<_, lang::C>(None::<bool>) }.payload()
+    ));
+    assert!(Ordering::is_niche(
+        &unsafe { encode::<_, lang::C>(None::<Ordering>) }.payload()
+    ));
 
-    assert_eq!(encode(None::<Opaque>), Native(abi::Option::None()));
+    assert_eq!(
+        unsafe { encode::<_, lang::C>(None::<Opaque>) },
+        Native(abi::Option::None())
+    );
     assert!(OwnedExtern::is_niche(
-        &encode(None::<OwnedExtern>).payload()
+        &unsafe { encode::<_, lang::C>(None::<OwnedExtern>) }.payload()
     ));
 
     let expected_niche_enum_discriminant_u = u8::MAX;
     let expected_niche_enum_discriminant_i = -1_i8;
 
     assert_eq!(
-        encode(Ok::<(), FieldlessThreeEnum>(())).payload().0,
+        unsafe { encode::<_, lang::C>(Ok::<(), FieldlessThreeEnum>(())) }
+            .payload()
+            .0,
         u8::MAX
     );
     assert_eq!(
-        encode(Ok::<(), FieldlessNoReprEnum>(())).payload().0,
+        unsafe { encode::<_, lang::C>(Ok::<(), FieldlessNoReprEnum>(())) }
+            .payload()
+            .0,
         u8::MAX
     );
 
     assert_eq!(
         expected_niche_enum_discriminant_u,
-        encode(None::<FieldlessUEnum>).payload().0
+        unsafe { encode::<_, lang::C>(None::<FieldlessUEnum>) }
+            .payload()
+            .0
     );
     assert_eq!(
         expected_niche_enum_discriminant_i,
-        encode(None::<FieldlessIEnum>).payload().0
+        unsafe { encode::<_, lang::C>(None::<FieldlessIEnum>) }
+            .payload()
+            .0
     );
     assert_eq!(
         expected_niche_enum_discriminant_u,
-        encode(None::<FieldlessNoReprEnum>).payload().0
+        unsafe { encode::<_, lang::C>(None::<FieldlessNoReprEnum>) }
+            .payload()
+            .0
     );
 
-    let encoded = soft_encode(None::<ReprCDataEnum<&u8>>, &mut Default::default()).payload();
+    let encoded =
+        unsafe { soft_encode::<_, lang::C>(None::<ReprCDataEnum<&u8>>, &mut Default::default()) }
+            .payload();
     assert_eq!(expected_niche_enum_discriminant_i, encoded.tag);
     assert!(<ReprCDataEnum<&u8> as Niche>::is_niche(&encoded));
     assert!(encoded != encoded);
 
-    let encoded = soft_encode(None::<DataEnum<&u8>>, &mut Default::default()).payload();
+    let encoded =
+        unsafe { soft_encode::<_, lang::C>(None::<DataEnum<&u8>>, &mut Default::default()) }
+            .payload();
     assert_eq!(expected_niche_enum_discriminant_i, unsafe { encoded.D.tag });
 
     let expected_fieldless_large_enum = u16::MAX;
 
     assert_eq!(
         expected_fieldless_large_enum,
-        encode(None::<FieldlessLargeEnum>).payload().0
+        unsafe { encode::<_, lang::C>(None::<FieldlessLargeEnum>) }
+            .payload()
+            .0
     );
 }
 
 #[test]
 fn fieldless_enum_explicit_discriminants_round_trip() {
-    assert_eq!(encode(FieldlessExplicitEnum::Negative).0, -2);
-    assert_eq!(encode(FieldlessExplicitEnum::Zero).0, 0);
-    assert_eq!(encode(FieldlessExplicitEnum::Five).0, 5);
-    assert_eq!(encode(FieldlessExplicitEnum::Six).0, 6);
+    assert_eq!(
+        unsafe { encode::<_, lang::C>(FieldlessExplicitEnum::Negative) }.0,
+        -2
+    );
+    assert_eq!(
+        unsafe { encode::<_, lang::C>(FieldlessExplicitEnum::Zero) }.0,
+        0
+    );
+    assert_eq!(
+        unsafe { encode::<_, lang::C>(FieldlessExplicitEnum::Five) }.0,
+        5
+    );
+    assert_eq!(
+        unsafe { encode::<_, lang::C>(FieldlessExplicitEnum::Six) }.0,
+        6
+    );
 
     assert_eq!(
-        unsafe { co3::decode(encode(FieldlessExplicitEnum::Five)) },
+        unsafe { co3::decode::<_, lang::C>(encode::<_, lang::C>(FieldlessExplicitEnum::Five)) },
         Some(FieldlessExplicitEnum::Five)
     );
     assert_eq!(
         unsafe {
-            co3::decode::<FieldlessExplicitEnum>(<FieldlessExplicitEnum as ReprC>::CType::from_i8(
-                1,
-            ))
+            co3::decode::<FieldlessExplicitEnum, lang::C>(
+                <FieldlessExplicitEnum as ReprC>::CType::from_i8(1),
+            )
         },
         None
     );
     // Zero is occupied, so the generated niche searches backward for an invalid tag.
-    assert_eq!(encode(None::<FieldlessExplicitEnum>).payload().0, -1);
+    assert_eq!(
+        unsafe { encode::<_, lang::C>(None::<FieldlessExplicitEnum>) }
+            .payload()
+            .0,
+        -1
+    );
 }
 
 #[test]
@@ -522,13 +566,27 @@ fn fieldless_enum_carrier_conversions() {
     assert_not_impl_any!(<FieldlessNoReprEnum as ReprC>::CType: From<FieldlessNoReprEnum>, TryFrom<FieldlessNoReprEnum>);
     assert_not_impl_any!(FieldlessNoReprEnum: From<<FieldlessNoReprEnum as ReprC>::CType>, TryFrom<<FieldlessNoReprEnum as ReprC>::CType>);
 
-    assert_eq!(co3::primitive::abi::bool::TRUE, encode(true));
-    assert_eq!(co3::primitive::abi::bool::FALSE, encode(false));
-    assert_eq!(co3::primitive::abi::bool(1), encode(true));
-    assert_eq!(Co3Ordering::LESS, encode(Ordering::Less));
-    assert_eq!(Co3Ordering::EQUAL, encode(Ordering::Equal));
-    assert_eq!(Co3Ordering::GREATER, encode(Ordering::Greater));
-    assert_eq!(Co3Ordering(-1), encode(Ordering::Less));
+    assert_eq!(co3::primitive::abi::bool::TRUE, unsafe {
+        encode::<_, lang::C>(true)
+    });
+    assert_eq!(co3::primitive::abi::bool::FALSE, unsafe {
+        encode::<_, lang::C>(false)
+    });
+    assert_eq!(co3::primitive::abi::bool(1), unsafe {
+        encode::<_, lang::C>(true)
+    });
+    assert_eq!(Co3Ordering::LESS, unsafe {
+        encode::<_, lang::C>(Ordering::Less)
+    });
+    assert_eq!(Co3Ordering::EQUAL, unsafe {
+        encode::<_, lang::C>(Ordering::Equal)
+    });
+    assert_eq!(Co3Ordering::GREATER, unsafe {
+        encode::<_, lang::C>(Ordering::Greater)
+    });
+    assert_eq!(Co3Ordering(-1), unsafe {
+        encode::<_, lang::C>(Ordering::Less)
+    });
     assert_eq!(
         <FieldlessExplicitEnum as ReprC>::CType::Negative().tag(),
         -2
@@ -545,29 +603,31 @@ fn fieldless_enum_carrier_conversions() {
     assert_eq!(<FieldlessNoReprEnum as ReprC>::CType::B().tag(), 1);
     assert_eq!(<FieldlessNoReprEnum as ReprC>::CType::C().tag(), 2);
     assert_eq!(<FieldlessNoReprEnum as ReprC>::CType::D().tag(), 3);
-    let explicit = encode(FieldlessExplicitEnum::Five);
+    let explicit = unsafe { encode::<_, lang::C>(FieldlessExplicitEnum::Five) };
     assert_eq!(explicit.0, 5);
     assert_eq!(
-        unsafe { co3::decode::<FieldlessExplicitEnum>(explicit) },
+        unsafe { co3::decode::<FieldlessExplicitEnum, lang::C>(explicit) },
         Some(FieldlessExplicitEnum::Five)
     );
     assert_eq!(
         unsafe {
-            co3::decode::<FieldlessExplicitEnum>(<FieldlessExplicitEnum as ReprC>::CType::from_i8(
-                1,
-            ))
+            co3::decode::<FieldlessExplicitEnum, lang::C>(
+                <FieldlessExplicitEnum as ReprC>::CType::from_i8(1),
+            )
         },
         None
     );
 
-    let inferred = encode(FieldlessNoReprEnum::C);
+    let inferred = unsafe { encode::<_, lang::C>(FieldlessNoReprEnum::C) };
     assert_eq!(
-        unsafe { co3::decode::<FieldlessNoReprEnum>(inferred) },
+        unsafe { co3::decode::<FieldlessNoReprEnum, lang::C>(inferred) },
         Some(FieldlessNoReprEnum::C)
     );
     assert_eq!(
         unsafe {
-            co3::decode::<FieldlessNoReprEnum>(<FieldlessNoReprEnum as ReprC>::CType::from_u8(4))
+            co3::decode::<FieldlessNoReprEnum, lang::C>(
+                <FieldlessNoReprEnum as ReprC>::CType::from_u8(4),
+            )
         },
         None
     );
@@ -580,26 +640,32 @@ fn usize_repr_enums_round_trip() {
             == core::mem::size_of::<usize>()
     );
 
-    assert_eq!(encode(FieldlessUsizeEnum::Zero).0, 0usize);
-    assert_eq!(encode(FieldlessUsizeEnum::Five).0, 5usize);
     assert_eq!(
-        unsafe { co3::decode(encode(FieldlessUsizeEnum::Five)) },
+        unsafe { encode::<_, lang::C>(FieldlessUsizeEnum::Zero) }.0,
+        0usize
+    );
+    assert_eq!(
+        unsafe { encode::<_, lang::C>(FieldlessUsizeEnum::Five) }.0,
+        5usize
+    );
+    assert_eq!(
+        unsafe { co3::decode::<_, lang::C>(encode::<_, lang::C>(FieldlessUsizeEnum::Five)) },
         Some(FieldlessUsizeEnum::Five)
     );
 
     let mut encode_store = Default::default();
-    let encoded = soft_encode(DataUsizeEnum::A(7), &mut encode_store);
+    let encoded = unsafe { soft_encode::<_, lang::C>(DataUsizeEnum::A(7), &mut encode_store) };
     let mut decode_store = Default::default();
     assert_eq!(
-        unsafe { soft_decode(encoded, &mut decode_store) },
+        unsafe { soft_decode::<_, lang::C>(encoded, &mut decode_store) },
         Some(DataUsizeEnum::A(7))
     );
 
     let mut encode_store = Default::default();
-    let encoded = soft_encode(DataUsizeEnum::B, &mut encode_store);
+    let encoded = unsafe { soft_encode::<_, lang::C>(DataUsizeEnum::B, &mut encode_store) };
     let mut decode_store = Default::default();
     assert_eq!(
-        unsafe { soft_decode(encoded, &mut decode_store) },
+        unsafe { soft_decode::<_, lang::C>(encoded, &mut decode_store) },
         Some(DataUsizeEnum::B)
     );
 }

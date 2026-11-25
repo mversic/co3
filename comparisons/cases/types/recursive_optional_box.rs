@@ -1,7 +1,4 @@
-
-
-
-use co3::convert::{lang};
+use co3::convert::lang;
 
 include!("../support/mod.rs");
 
@@ -32,10 +29,7 @@ pub fn echo(node: Node) -> Node {
 #[cfg(feature = "diplomat")]
 #[diplomat::bridge]
 pub mod diplomat_case {
-use co3::convert::{lang};
-
-
-
+    use co3::convert::lang;
 
     #[repr(C)]
     pub struct Node {
@@ -61,13 +55,29 @@ abi_stable_signature!(echo: (Node) -> Node);
 #[path = "../support/owned_echo.rs"]
 mod caller;
 
+#[cfg(any(feature = "co3", feature = "uniffi"))]
 fn main() {
-    #[cfg(any(feature = "co3", feature = "uniffi"))]
     {
-        let result = caller::echo(Node { weight: 7, next: Some(Box::new(Node { weight: 19, next: None })) });
+        let result = caller::echo(Node {
+            weight: 7,
+            next: Some(Box::new(Node {
+                weight: 19,
+                next: None,
+            })),
+        });
         assert_eq!(result.weight, 7);
         let child = result.next.unwrap();
         assert_eq!(child.weight, 19);
         assert!(child.next.is_none());
     }
 }
+
+#[cfg(any(
+    feature = "diplomat",
+    feature = "interoptopus",
+    feature = "safer_ffi",
+    feature = "boltffi",
+    feature = "abi_stable",
+    feature = "stabby"
+))]
+fn main() {}

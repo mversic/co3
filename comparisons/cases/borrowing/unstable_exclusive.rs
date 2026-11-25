@@ -38,32 +38,88 @@ co3::ffi! {
 #[cfg(feature = "abi_stable")]
 abi_stable_signature!(update: (&mut Point) -> ());
 
-#[cfg(not(feature = "uniffi"))]
+#[cfg(feature = "co3")]
 fn main() {
-    #[cfg(any(feature = "co3", feature = "diplomat", feature = "interoptopus"))]
     use CallerPoint as Point;
 
     let mut point = Point { x: 7, y: 1024 };
     for expected in [(8, 1031), (9, 1039)] {
-        #[cfg(any(feature = "co3", feature = "diplomat", feature = "interoptopus"))]
         {
             unsafe extern "C" {
-                #[cfg_attr(feature = "co3", link_name = "unstable_exclusive__update")]
-                #[cfg_attr(feature = "diplomat", link_name = "diplomat_external_update")]
-                #[cfg_attr(feature = "interoptopus", link_name = "update")]
+                #[link_name = "unstable_exclusive__update"]
                 fn exported_update(point: &mut Point);
             }
             unsafe { exported_update(&mut point) };
         }
-        #[cfg(any(feature = "abi_stable", feature = "stabby"))]
+
+        assert_eq!((point.x, point.y), expected);
+    }
+}
+
+#[cfg(feature = "diplomat")]
+fn main() {
+    use CallerPoint as Point;
+
+    let mut point = Point { x: 7, y: 1024 };
+    for expected in [(8, 1031), (9, 1039)] {
+        {
+            unsafe extern "C" {
+                #[link_name = "diplomat_external_update"]
+                fn exported_update(point: &mut Point);
+            }
+            unsafe { exported_update(&mut point) };
+        }
+
+        assert_eq!((point.x, point.y), expected);
+    }
+}
+
+#[cfg(feature = "interoptopus")]
+fn main() {
+    use CallerPoint as Point;
+
+    let mut point = Point { x: 7, y: 1024 };
+    for expected in [(8, 1031), (9, 1039)] {
+        {
+            unsafe extern "C" {
+                #[link_name = "update"]
+                fn exported_update(point: &mut Point);
+            }
+            unsafe { exported_update(&mut point) };
+        }
+
+        assert_eq!((point.x, point.y), expected);
+    }
+}
+
+#[cfg(feature = "safer_ffi")]
+fn main() {
+    let mut point = Point { x: 7, y: 1024 };
+    for expected in [(8, 1031), (9, 1039)] {
+        update(&mut point);
+
+        assert_eq!((point.x, point.y), expected);
+    }
+}
+
+#[cfg(feature = "boltffi")]
+fn main() {
+    let mut point = Point { x: 7, y: 1024 };
+    for expected in [(8, 1031), (9, 1039)] {
+        assert!(unsafe { boltffi_function_18unstable_exclusive6update(&mut point) }.is_ok());
+        assert_eq!((point.x, point.y), expected);
+    }
+}
+
+#[cfg(any(feature = "abi_stable", feature = "stabby"))]
+fn main() {
+    let mut point = Point { x: 7, y: 1024 };
+    for expected in [(8, 1031), (9, 1039)] {
         {
             let exported_update: extern "C" fn(&mut Point) = update;
             exported_update(&mut point);
         }
-        #[cfg(feature = "safer_ffi")]
-        update(&mut point);
-        #[cfg(feature = "boltffi")]
-        assert!(unsafe { boltffi_function_18unstable_exclusive6update(&mut point) }.is_ok());
+
         assert_eq!((point.x, point.y), expected);
     }
 }

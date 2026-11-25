@@ -10,6 +10,7 @@ use syn::{
 use crate::{
     Co3Fn, Co3Impl, DispatchGroups,
     argument::{self, Argument, Unpack},
+    codec::Boundary,
     ffi_fn::{
         self, emit_extern_definition, gen_definition_body, gen_failure_panic,
         gen_static_fn_signature_drift_check, gen_unknown_tag_error, item_fn_output_type,
@@ -68,8 +69,8 @@ impl<'a> DispatchReceiver<'a> {
 }
 
 pub(crate) fn gen_dispatch_fn_export(
+    boundary: Boundary<'_>,
     abi: &syn::Abi,
-    failure_mode: FailureMode,
     Co3Fn {
         item,
         dispatch_args,
@@ -80,8 +81,8 @@ pub(crate) fn gen_dispatch_fn_export(
     let generics = item.sig.generics.clone();
 
     let definition = synthesize_dispatch_export_fn(
+        boundary,
         abi,
-        failure_mode,
         &generics,
         &[],
         DispatchReceiver::None,
@@ -108,17 +109,14 @@ enum DispatchEmission<'a> {
 }
 
 pub(crate) fn gen_raw_dispatch_companion(
-    failure_mode: FailureMode,
+    boundary: Boundary<'_>,
     raw_decl: &crate::parse::RawFnDecl,
 ) -> TokenStream {
     let attrs = &raw_decl.attrs;
     let vis = &raw_decl.vis;
     let mut sig = raw_decl.sig.clone();
     let owner = raw_decl.owner.as_ref();
-    let callee: syn::Expr = match syn::parse2(raw_decl.callee.clone()) {
-        Ok(callee) => callee,
-        Err(error) => return error.to_compile_error(),
-    };
+    let callee = syn::Expr::Path(raw_decl.callee.clone());
     let method_params = sig
         .generics
         .type_params()
@@ -134,8 +132,8 @@ pub(crate) fn gen_raw_dispatch_companion(
     sig.ident = ffi_fn::raw_definition_name(&sig.ident);
     let abi: syn::Abi = parse_quote!(extern "C");
     synthesize_dispatch_export_fn(
+        boundary,
         &abi,
-        failure_mode,
         &generics,
         &method_params,
         owner_ty.map_or(DispatchReceiver::None, |ty| DispatchReceiver::Impl {
@@ -321,8 +319,8 @@ impl VisitMut for ErasedParamReplacer {
 }
 
 pub(crate) fn gen_dispatch_export(
+    boundary: Boundary<'_>,
     abi: &syn::Abi,
-    failure_mode: FailureMode,
     Co3Impl {
         item: impl_,
         dispatch_args,
@@ -375,8 +373,8 @@ pub(crate) fn gen_dispatch_export(
         let callee = ffi_fn::impl_method_callee(self_ty, trait_, &item.sig.ident);
 
         let definition = synthesize_dispatch_export_fn(
+            boundary,
             abi,
-            failure_mode,
             &impl_.generics,
             &callee_type_params,
             receiver,
@@ -402,8 +400,8 @@ pub(crate) fn gen_dispatch_export(
 
 #[expect(clippy::too_many_arguments)]
 fn synthesize_dispatch_export_fn(
+    boundary: Boundary<'_>,
     abi: &syn::Abi,
-    failure_mode: FailureMode,
     generics: &syn::Generics,
     callee_type_params: &[syn::Ident],
     receiver: DispatchReceiver,
@@ -415,6 +413,7 @@ fn synthesize_dispatch_export_fn(
     declared_types: &std::collections::BTreeSet<syn::Ident>,
     emission: DispatchEmission<'_>,
 ) -> TokenStream {
+    let failure_mode = boundary.failure_mode;
     let layout_checks = gen_dispatch_erased_layout_checks(
         generics,
         &sig,
@@ -488,12 +487,13 @@ fn synthesize_dispatch_export_fn(
         .map(|(pat, id_ty)| parse_quote!(#pat: #id_ty))
         .collect::<Vec<_>>();
     let selectors = argument::analyze_with_plain_inputs(&selector_inputs, &selector_names);
-    let decode_selector_stmts = ffi_fn::gen_analyzed_input_decode_stmts(&selectors, failure_mode);
+    let decode_selector_stmts = ffi_fn::gen_analyzed_input_decode_stmts(boundary, &selectors);
     let sync_selector_stores = ffi_fn::gen_store_sync_stmts(selectors.len());
     let selector_sync_check =
         ffi_fn::gen_sync_check(sync_selector_stores, ffi_fn::gen_sync_error(failure_mode));
 
     let dispatch_arms = synthesize_dispatch_arms(
+        boundary,
         &arm_generics,
         callee_type_params,
         receiver,
@@ -501,7 +501,6 @@ fn synthesize_dispatch_export_fn(
         fn_by_val,
         callee,
         dispatch_args,
-        failure_mode,
         drop_impl,
         opaque_drop,
     );
@@ -545,21 +544,16 @@ fn synthesize_dispatch_export_fn(
         receiver.ty = parse_quote!(co3::boxed::abi::Box<core::ffi::c_void>);
     }
     let definition = match emission {
-        DispatchEmission::Export => emit_extern_definition(
-            abi,
-            attrs,
-            failure_mode,
-            lowered_sig,
-            fn_body,
-            borrow_output,
-        ),
+        DispatchEmission::Export => {
+            emit_extern_definition(boundary, abi, attrs, lowered_sig, fn_body, borrow_output)
+        }
         DispatchEmission::Companion(vis) => {
             let mut sig = lowered_sig;
             sig.safety = syn::Safety::Unsafe(Default::default());
             sig.abi = Some(abi.clone());
             let checks = ffi_fn::gen_abi_assertions(&sig);
             crate::callback::emit_companion(
-                failure_mode,
+                boundary,
                 attrs,
                 vis,
                 sig,
@@ -869,6 +863,7 @@ pub(crate) fn synthesize_dispatch_tag_ids(
 
 #[expect(clippy::too_many_arguments)]
 fn synthesize_dispatch_arms(
+    boundary: Boundary<'_>,
     generics: &syn::Generics,
     callee_type_params: &[syn::Ident],
     receiver: DispatchReceiver,
@@ -876,10 +871,11 @@ fn synthesize_dispatch_arms(
     fn_by_val: bool,
     callee: &syn::Expr,
     args: &DispatchGroups,
-    failure_mode: FailureMode,
     drop_impl: bool,
     opaque_drop: bool,
 ) -> Vec<TokenStream> {
+    let contract = boundary.contract;
+    let failure_mode = boundary.failure_mode;
     let derase_tag_stmts = gen_tag_retype_stmts(
         RetypeDirection::Derase,
         generics,
@@ -948,11 +944,11 @@ fn synthesize_dispatch_arms(
             quote!(let __co3_self = #retype;)
         });
         let arm_body = if drop_impl && opaque_drop {
-            ffi_fn::gen_opaque_drop_definition_body(&arm_sig, failure_mode)
+            ffi_fn::gen_opaque_drop_definition_body(boundary, &arm_sig)
         } else if drop_impl {
-            ffi_fn::gen_regular_drop_definition_body(&arm_sig, failure_mode)
+            ffi_fn::gen_regular_drop_definition_body(boundary, &arm_sig)
         } else {
-            gen_definition_body(arm_sig, quote!(#check_callee), fn_by_val, failure_mode)
+            gen_definition_body(boundary, arm_sig, quote!(#check_callee), fn_by_val)
         };
         let mut arm_body: syn::Block = if let ReturnType::Type(_, output_ty) = &retype_sig.output {
             let mut concrete_output = output_ty.as_ref().clone();
@@ -974,6 +970,7 @@ fn synthesize_dispatch_arms(
                         quote!(__co3_arm_err)
                     } else {
                         ffi_fn::gen_abi_return_encode(
+                            contract,
                             quote!(__co3_arm_err),
                             ffi_fn::ownership_mode(&concrete_output, fn_by_val)
                                 == crate::generate::OwnershipMode::Borrow,

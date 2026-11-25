@@ -1,12 +1,29 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use proc_macro_crate::{FoundCrate, crate_name};
-use proc_macro2::{Literal, TokenStream};
+use proc_macro2::{TokenStream, TokenTree};
 use quote::{ToTokens, format_ident, quote};
 use syn::{
     Attribute, Expr, GenericArgument, Type, TypePath, parse_quote, visit::Visit,
     visit_mut::VisitMut,
 };
+
+pub(crate) fn source_idents(source: TokenStream) -> BTreeSet<String> {
+    fn collect(source: TokenStream, names: &mut BTreeSet<String>) {
+        for token in source {
+            match token {
+                TokenTree::Group(group) => collect(group.stream(), names),
+                TokenTree::Ident(ident) => {
+                    names.insert(ident.to_string().trim_start_matches("r#").to_owned());
+                }
+                _ => {}
+            }
+        }
+    }
+    let mut names = BTreeSet::new();
+    collect(source, &mut names);
+    names
+}
 
 pub(crate) fn peel_grouped_type(mut ty: &Type) -> &Type {
     loop {
@@ -32,8 +49,6 @@ impl VisitMut for ConcreteSelfType<'_> {
         }
     }
 }
-
-const MAX_TUPLE_ARITY: usize = 12;
 
 /// Match a bare built-in name, a supported full path, or a relative module suffix.
 pub(crate) fn builtin_path(path: &syn::Path, name: &str, modules: &[&str]) -> bool {
@@ -194,80 +209,6 @@ pub(crate) fn gen_store_name(arg_name: &syn::Ident) -> syn::Ident {
     format_ident!("__co3_{arg_name}_store")
 }
 
-/// Builds an order-preserving tuple tree whose nodes fit the tuple impls
-/// available in `co3`. Partial groups use their exact arity, and singleton
-/// remainders above the leaf level are promoted instead of wrapped again.
-pub fn build_extern_c_type_tuple(types: &[&Type]) -> (TokenStream, TokenStream, Vec<TokenStream>) {
-    if types.is_empty() {
-        return (quote!(()), quote!(()), Vec::new());
-    }
-
-    let mut nodes = types
-        .chunks(MAX_TUPLE_ARITY)
-        .map(|chunk| {
-            let accessors = (0..chunk.len())
-                .map(|index| {
-                    let index = Literal::usize_unsuffixed(index);
-                    quote!(#index)
-                })
-                .collect();
-            let c_tuple_ident = format_ident!("Tuple{}", chunk.len());
-
-            (
-                quote!((#(#chunk,)*)),
-                quote!(__Co3Native<co3::tuple::abi::#c_tuple_ident<#(<#chunk as co3::ReprC>::CType),*>>),
-                accessors,
-            )
-        })
-        .collect::<Vec<_>>();
-
-    // Repeatedly pack consecutive nodes into the largest supported tuple. A
-    // lone remainder is promoted unchanged, avoiding redundant unary tuple
-    // layers while preserving field order.
-    while nodes.len() > 1 {
-        let mut input = nodes.into_iter();
-        let mut next = Vec::new();
-
-        loop {
-            let chunk = input.by_ref().take(MAX_TUPLE_ARITY).collect::<Vec<_>>();
-            if chunk.is_empty() {
-                break;
-            }
-            next.push(pack_tuple_nodes(chunk));
-        }
-
-        nodes = next;
-    }
-
-    nodes.pop().expect("non-empty input produces a tuple")
-}
-
-fn pack_tuple_nodes(
-    mut nodes: Vec<(TokenStream, TokenStream, Vec<TokenStream>)>,
-) -> (TokenStream, TokenStream, Vec<TokenStream>) {
-    if nodes.len() == 1 {
-        return nodes.pop().expect("singleton node");
-    }
-
-    let tuple_elems = nodes.iter().map(|(tuple, _, _)| tuple);
-    let c_tuple_elems = nodes.iter().map(|(_, c_tuple, _)| c_tuple);
-    let tuple = quote!((#(#tuple_elems,)*));
-    let c_tuple_ident = format_ident!("Tuple{}", nodes.len());
-    let c_tuple = quote!(__Co3Native<co3::tuple::abi::#c_tuple_ident<#(#c_tuple_elems),*>>);
-    let accessors = nodes
-        .into_iter()
-        .enumerate()
-        .flat_map(|(index, (_, _, accessors))| {
-            let index = Literal::usize_unsuffixed(index);
-            accessors
-                .into_iter()
-                .map(move |accessor| quote!(#index.#accessor))
-        })
-        .collect();
-
-    (tuple, c_tuple, accessors)
-}
-
 pub(crate) struct DispatchMonomorphizer<'a> {
     subst: BTreeMap<&'a syn::Ident, &'a GenericArgument>,
 }
@@ -392,7 +333,7 @@ impl VisitMut for DispatchMonomorphizer<'_> {
             && let Some(GenericArgument::Type(subst)) = self.subst.get(&first.ident).cloned()
         {
             if path.segments.len() == 1 {
-                let mut replacement = parse_quote!(#subst);
+                let mut replacement = subst.clone();
                 self.visit_type_mut(&mut replacement);
                 *node = replacement;
                 return;

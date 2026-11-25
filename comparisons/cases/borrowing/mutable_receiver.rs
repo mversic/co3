@@ -1,8 +1,6 @@
 // Export increment(&mut self) on a record whose field is visible to the caller.
 
-
-
-use co3::convert::{lang};
+use co3::convert::lang;
 
 include!("../support/mod.rs");
 
@@ -30,10 +28,7 @@ impl Counter {
 #[cfg(feature = "diplomat")]
 #[diplomat::bridge]
 pub mod diplomat_case {
-use co3::convert::{lang};
-
-
-
+    use co3::convert::lang;
 
     #[diplomat::attr(auto, mut_struct_ref)]
     #[repr(C)]
@@ -60,23 +55,57 @@ co3::ffi! {
     }
 }
 
+#[cfg(feature = "co3")]
 fn main() {
-    #[cfg(any(feature = "co3", feature = "diplomat", feature = "boltffi"))]
     {
-        #[cfg(feature = "diplomat")]
-        use diplomat_case::Counter;
         let mut counter = Counter { input: 7 };
         for expected in [8, 9] {
-            #[cfg(any(feature = "co3", feature = "diplomat"))]
             {
                 unsafe extern "C" {
-                    #[cfg_attr(feature = "co3", link_name = "mutable_receiver__Counter__increment")]
-                    #[cfg_attr(feature = "diplomat", link_name = "Counter_increment")]
+                    #[link_name = "mutable_receiver__Counter__increment"]
                     fn exported_increment(counter: &mut Counter);
                 }
                 unsafe { exported_increment(&mut counter) };
             }
-            #[cfg(feature = "boltffi")]
+
+            assert_eq!(counter.input, expected);
+        }
+    }
+}
+
+#[cfg(any(
+    feature = "uniffi",
+    feature = "interoptopus",
+    feature = "safer_ffi",
+    feature = "abi_stable",
+    feature = "stabby"
+))]
+fn main() {}
+
+#[cfg(feature = "diplomat")]
+fn main() {
+    {
+        use diplomat_case::Counter;
+        let mut counter = Counter { input: 7 };
+        for expected in [8, 9] {
+            {
+                unsafe extern "C" {
+                    #[link_name = "Counter_increment"]
+                    fn exported_increment(counter: &mut Counter);
+                }
+                unsafe { exported_increment(&mut counter) };
+            }
+
+            assert_eq!(counter.input, expected);
+        }
+    }
+}
+
+#[cfg(feature = "boltffi")]
+fn main() {
+    {
+        let mut counter = Counter { input: 7 };
+        for expected in [8, 9] {
             {
                 // BoltFFI returns the updated record through a separate output pointer.
                 let status = unsafe {

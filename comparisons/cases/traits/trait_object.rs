@@ -85,7 +85,7 @@ co3::ffi! {
 }
 
 #[cfg(feature = "diplomat")]
-use diplomat_case::{read_source, Source};
+use diplomat_case::{Source, read_source};
 
 struct Number(u32);
 
@@ -103,25 +103,80 @@ impl Source for Number {
     }
 }
 
+#[cfg(feature = "co3")]
 fn main() {
     for expected in [7, 42] {
         let number = Number(expected);
-        #[cfg(any(feature = "uniffi", feature = "boltffi"))]
-        let actual = read_source(Box::new(number));
-        #[cfg(feature = "interoptopus")]
-        let actual = read_source(SourceValue::from_fn(move || number.0));
-        #[cfg(feature = "safer_ffi")]
-        let actual = read_source((&number).into());
-        #[cfg(feature = "diplomat")]
-        let actual = read_source(number);
-        #[cfg(feature = "co3")]
+
         let actual = read_source(&number);
-        #[cfg(feature = "abi_stable")]
+
+        assert_eq!(actual, expected);
+    }
+}
+
+#[cfg(any(feature = "uniffi", feature = "boltffi"))]
+fn main() {
+    for expected in [7, 42] {
+        let number = Number(expected);
+
+        let actual = read_source(Box::new(number));
+
+        assert_eq!(actual, expected);
+    }
+}
+
+#[cfg(feature = "diplomat")]
+fn main() {
+    for expected in [7, 42] {
+        let number = Number(expected);
+
+        let actual = read_source(number);
+
+        assert_eq!(actual, expected);
+    }
+}
+
+#[cfg(feature = "interoptopus")]
+fn main() {
+    for expected in [7, 42] {
+        let number = Number(expected);
+
+        let actual = read_source(SourceValue::from_fn(move || number.0));
+
+        assert_eq!(actual, expected);
+    }
+}
+
+#[cfg(feature = "safer_ffi")]
+fn main() {
+    for expected in [7, 42] {
+        let number = Number(expected);
+
+        let actual = read_source((&number).into());
+
+        assert_eq!(actual, expected);
+    }
+}
+
+#[cfg(feature = "abi_stable")]
+fn main() {
+    for expected in [7, 42] {
+        let number = Number(expected);
+
         let actual = read_source(Source_TO::from_const(
             &number,
             abi_stable::sabi_trait::TD_Opaque,
         ));
-        #[cfg(feature = "stabby")]
+
+        assert_eq!(actual, expected);
+    }
+}
+
+#[cfg(feature = "stabby")]
+fn main() {
+    for expected in [7, 42] {
+        let number = Number(expected);
+
         let actual = read_source((&number).into());
 
         assert_eq!(actual, expected);

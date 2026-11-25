@@ -65,28 +65,27 @@ error[E0277]: the trait bound `provider::OpaqueZst: Copy` is not satisfied
 103 |         extern "C" fn disallowed_opaque_args(arg1: OwnedOpaqueZst);
     |                                                    ^^^^^^^^^^^^^^ the trait `Copy` is not implemented for `provider::OpaqueZst`
     |
-help: the following other types implement trait `BorrowedDecode<'d>`
+help: the trait `BorrowedDecode<'_, _TŠČ0>` is conditionally implemented for `Box<_TŠČ1>`
    --> src/borrow.rs
     |
     | / disjoint_impls! {
-    | |     /// Decodes a borrowed carrier into the original Rust type.
+    | |     /// Decodes a borrowed carrier under the source language's validity rules.
     | |     ///
     | |     /// # Safety
 ...   |
     | | }
-    | |_^ `Box<_TŠČ0>`
-    |
-   ::: src/string.rs
-    |
-    |   unsafe impl<'d> BorrowedDecode<'d> for Box<str> {
-    |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Box<str>`
+    | | ^
+    | | |
+    | | unsatisfied requirement introduced here: `Box<provider::OpaqueZst>: co3::borrow::_::BorrowedDecode0<'_, <Box<provider::OpaqueZst> as ReprC>::CType>`
+    | |_unsatisfied requirement introduced here: `Box<provider::OpaqueZst>: co3::borrow::_::BorrowedDecode0<'_, <Box<provider::OpaqueZst> as ReprC>::CType>`
+    |   unsatisfied requirement introduced here: `Box<provider::OpaqueZst>: co3::borrow::_::BorrowedDecode0<'_, <Box<provider::OpaqueZst> as ReprC>::CType>`
     = note: required for `Box<provider::OpaqueZst>` to implement `co3::borrow::_::BorrowedDecode0<'_, co3::boxed::abi::Box<provider::OpaqueZst>>`
     = note: required for `Box<provider::OpaqueZst>` to implement `BorrowedDecode<'_>`
 note: required by a bound in `co3::borrow::decode`
    --> src/borrow.rs
     |
-    | pub unsafe fn decode<'d, T: BorrowedDecode<'d, Store: EmptyStore + 'd>>(
-    |                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `decode`
+    | pub unsafe fn decode<'d, T: BorrowedDecode<'d, L, Store: EmptyStore + 'd>, L: Language>(
+    |                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `decode`
     = note: this error originates in the macro `::disjoint_impls::disjoint_impls` (in Nightly builds, run with -Z macro-backtrace for more info)
 help: consider annotating `provider::OpaqueZst` with `#[derive(Copy)]`
     |
@@ -105,24 +104,24 @@ help: the trait `BorrowedDecode<'_>` is not implemented for `provider::OpaqueZst
     |
  34 |     struct OpaqueZst;
     |     ^^^^^^^^^^^^^^^^
-    = help: the following other types implement trait `BorrowedDecode<'d>`:
-              `&'a T` implements `BorrowedDecode<'d>`
-              `&'a mut T` implements `BorrowedDecode<'d>`
-              `()` implements `BorrowedDecode<'_co3_d>`
-              `(A, B)` implements `BorrowedDecode<'d>`
-              `(A, B, C)` implements `BorrowedDecode<'d>`
-              `(A, B, C, D)` implements `BorrowedDecode<'d>`
-              `(A, B, C, D, E)` implements `BorrowedDecode<'d>`
-              `(A, B, C, D, E, F)` implements `BorrowedDecode<'d>`
+    = help: the following other types implement trait `BorrowedDecode<'d, L>`:
+              `&'a T` implements `BorrowedDecode<'d, L>`
+              `&'a mut T` implements `BorrowedDecode<'d, L>`
+              `()` implements `BorrowedDecode<'_co3_d, L>`
+              `(A, B)` implements `BorrowedDecode<'d, L>`
+              `(A, B, C)` implements `BorrowedDecode<'d, L>`
+              `(A, B, C, D)` implements `BorrowedDecode<'d, L>`
+              `(A, B, C, D, E)` implements `BorrowedDecode<'d, L>`
+              `(A, B, C, D, E, F)` implements `BorrowedDecode<'d, L>`
             and $N others
-    = note: required for `Box<provider::OpaqueZst>` to implement `co3::borrow::_::BorrowedDecode00<'_, provider::OpaqueZst, rust_spec::size::Sized<Gt<rust_spec::Zero>>>`
+    = note: required for `Box<provider::OpaqueZst>` to implement `co3::borrow::_::BorrowedDecode00<'_, provider::OpaqueZst, rust_spec::size::Sized<Gt<rust_spec::Zero>>, Specified>`
     = note: required for `Box<provider::OpaqueZst>` to implement `co3::borrow::_::BorrowedDecode0<'_, co3::boxed::abi::Box<provider::OpaqueZst>>`
     = note: required for `Box<provider::OpaqueZst>` to implement `BorrowedDecode<'_>`
 note: required by a bound in `co3::borrow::decode`
    --> src/borrow.rs
     |
-    | pub unsafe fn decode<'d, T: BorrowedDecode<'d, Store: EmptyStore + 'd>>(
-    |                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `decode`
+    | pub unsafe fn decode<'d, T: BorrowedDecode<'d, L, Store: EmptyStore + 'd>, L: Language>(
+    |                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `decode`
 
 error[E0277]: the trait bound `provider::OpaqueZst: BorrowedDecode<'_>` is not satisfied
    --> tests/ui_fail/disallowed_types.rs:100:5
@@ -139,17 +138,17 @@ help: the trait `BorrowedDecode<'_>` is not implemented for `provider::OpaqueZst
     |
  34 |     struct OpaqueZst;
     |     ^^^^^^^^^^^^^^^^
-    = help: the following other types implement trait `BorrowedDecode<'d>`:
-              `&'a T` implements `BorrowedDecode<'d>`
-              `&'a mut T` implements `BorrowedDecode<'d>`
-              `()` implements `BorrowedDecode<'_co3_d>`
-              `(A, B)` implements `BorrowedDecode<'d>`
-              `(A, B, C)` implements `BorrowedDecode<'d>`
-              `(A, B, C, D)` implements `BorrowedDecode<'d>`
-              `(A, B, C, D, E)` implements `BorrowedDecode<'d>`
-              `(A, B, C, D, E, F)` implements `BorrowedDecode<'d>`
+    = help: the following other types implement trait `BorrowedDecode<'d, L>`:
+              `&'a T` implements `BorrowedDecode<'d, L>`
+              `&'a mut T` implements `BorrowedDecode<'d, L>`
+              `()` implements `BorrowedDecode<'_co3_d, L>`
+              `(A, B)` implements `BorrowedDecode<'d, L>`
+              `(A, B, C)` implements `BorrowedDecode<'d, L>`
+              `(A, B, C, D)` implements `BorrowedDecode<'d, L>`
+              `(A, B, C, D, E)` implements `BorrowedDecode<'d, L>`
+              `(A, B, C, D, E, F)` implements `BorrowedDecode<'d, L>`
             and $N others
-    = note: required for `Box<provider::OpaqueZst>` to implement `co3::borrow::_::BorrowedDecode00<'_, provider::OpaqueZst, rust_spec::size::Sized<Gt<rust_spec::Zero>>>`
+    = note: required for `Box<provider::OpaqueZst>` to implement `co3::borrow::_::BorrowedDecode00<'_, provider::OpaqueZst, rust_spec::size::Sized<Gt<rust_spec::Zero>>, Specified>`
     = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0080]: evaluation panicked: Mark the return type with `move` to transfer ownership
@@ -189,17 +188,17 @@ help: the trait `BorrowedEncode` is not implemented for `provider::OpaqueZst`
     |
  34 |     struct OpaqueZst;
     |     ^^^^^^^^^^^^^^^^
-    = help: the following other types implement trait `BorrowedEncode`:
-              &'_lšč0 _TŠČ0
-              &mut T
-              ()
-              (A, B)
-              (A, B, C)
-              (A, B, C, D)
-              (A, B, C, D, E)
-              (A, B, C, D, E, F)
+    = help: the following other types implement trait `BorrowedEncode<L>`:
+              `&'_lšč0 _TŠČ1` implements `BorrowedEncode<_TŠČ0>`
+              `&mut T` implements `BorrowedEncode<L>`
+              `()` implements `BorrowedEncode<L>`
+              `(A, B)` implements `BorrowedEncode<L>`
+              `(A, B, C)` implements `BorrowedEncode<L>`
+              `(A, B, C, D)` implements `BorrowedEncode<L>`
+              `(A, B, C, D, E)` implements `BorrowedEncode<L>`
+              `(A, B, C, D, E, F)` implements `BorrowedEncode<L>`
             and $N others
-    = note: required for `Box<provider::OpaqueZst>` to implement `co3::borrow::_::BorrowedEncode0<Specified, rust_spec::size::Sized<Gt<rust_spec::Zero>>, co3::boxed::abi::Box<provider::OpaqueZst>>`
+    = note: required for `Box<provider::OpaqueZst>` to implement `co3::borrow::_::BorrowedEncode0<co3::boxed::abi::Box<provider::OpaqueZst>, Specified, rust_spec::size::Sized<Gt<rust_spec::Zero>>, Robust>`
     = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0080]: evaluation panicked: ABI retype size mismatch
@@ -263,21 +262,21 @@ help: the trait `BorrowedEncode` is not implemented for `OwnedMyType`
 ...   |
 145 | | }
     | |_^
-    = help: the following other types implement trait `BorrowedEncode`:
-              &'_lšč0 _TŠČ0
-              &mut T
-              ()
-              (A, B)
-              (A, B, C)
-              (A, B, C, D)
-              (A, B, C, D, E)
-              (A, B, C, D, E, F)
+    = help: the following other types implement trait `BorrowedEncode<L>`:
+              `&'_lšč0 _TŠČ1` implements `BorrowedEncode<_TŠČ0>`
+              `&mut T` implements `BorrowedEncode<L>`
+              `()` implements `BorrowedEncode<L>`
+              `(A, B)` implements `BorrowedEncode<L>`
+              `(A, B, C)` implements `BorrowedEncode<L>`
+              `(A, B, C, D)` implements `BorrowedEncode<L>`
+              `(A, B, C, D, E)` implements `BorrowedEncode<L>`
+              `(A, B, C, D, E, F)` implements `BorrowedEncode<L>`
             and $N others
 note: required by a bound in `co3::borrow::encode`
    --> src/borrow.rs
     |
-    | pub fn encode<T: BorrowedEncode<Store: EmptyStore>>(
-    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `encode`
+    | pub unsafe fn encode<T: BorrowedEncode<L, Store: EmptyStore>, L: Language>(
+    |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `encode`
     = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: the trait bound `OwnedMyType: BorrowedEncodeUnchecked` is not satisfied
@@ -336,14 +335,10 @@ note: erroneous constant encountered
     = note: this note originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: the trait bound `OwnedMyType: BorrowedDecode<'_>` is not satisfied
-   --> tests/ui_fail/disallowed_types.rs:181:1
+   --> tests/ui_fail/disallowed_types.rs:184:53
     |
-181 | / ffi! {
-182 | |     #![unsafe(extern("C"))]
-183 | |
-184 | |     pub extern "C" fn disallowed_opaque_return() -> OwnedMyType;
-185 | | }
-    | |_^ unsatisfied trait bound
+184 |     pub extern "C" fn disallowed_opaque_return() -> OwnedMyType;
+    |                                                     ^^^^^^^^^^^ unsatisfied trait bound
     |
 help: the trait `BorrowedDecode<'_>` is not implemented for `OwnedMyType`
    --> tests/ui_fail/disallowed_types.rs:133:1
@@ -354,21 +349,21 @@ help: the trait `BorrowedDecode<'_>` is not implemented for `OwnedMyType`
 ...   |
 145 | | }
     | |_^
-    = help: the following other types implement trait `BorrowedDecode<'d>`:
-              `&'a T` implements `BorrowedDecode<'d>`
-              `&'a mut T` implements `BorrowedDecode<'d>`
-              `()` implements `BorrowedDecode<'_co3_d>`
-              `(A, B)` implements `BorrowedDecode<'d>`
-              `(A, B, C)` implements `BorrowedDecode<'d>`
-              `(A, B, C, D)` implements `BorrowedDecode<'d>`
-              `(A, B, C, D, E)` implements `BorrowedDecode<'d>`
-              `(A, B, C, D, E, F)` implements `BorrowedDecode<'d>`
+    = help: the following other types implement trait `BorrowedDecode<'d, L>`:
+              `&'a T` implements `BorrowedDecode<'d, L>`
+              `&'a mut T` implements `BorrowedDecode<'d, L>`
+              `()` implements `BorrowedDecode<'_co3_d, L>`
+              `(A, B)` implements `BorrowedDecode<'d, L>`
+              `(A, B, C)` implements `BorrowedDecode<'d, L>`
+              `(A, B, C, D)` implements `BorrowedDecode<'d, L>`
+              `(A, B, C, D, E)` implements `BorrowedDecode<'d, L>`
+              `(A, B, C, D, E, F)` implements `BorrowedDecode<'d, L>`
             and $N others
 note: required by a bound in `co3::borrow::decode`
    --> src/borrow.rs
     |
-    | pub unsafe fn decode<'d, T: BorrowedDecode<'d, Store: EmptyStore + 'd>>(
-    |                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `decode`
+    | pub unsafe fn decode<'d, T: BorrowedDecode<'d, L, Store: EmptyStore + 'd>, L: Language>(
+    |                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `decode`
     = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0080]: evaluation panicked: ABI retype size mismatch

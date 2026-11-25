@@ -5,7 +5,7 @@ use core::{
 };
 
 use co3::{
-    ReprC,
+    ReprC, lang,
     marker::AbiCompatible,
     rust_spec::{
         RustSpec,
@@ -108,13 +108,13 @@ fn maybe_uninit_cells_allow_shared_validation_without_inspecting_contents() {
         AbiCompatible, co3::convert::EncodeMove, co3::convert::DecodeMove<'static>);
 
     let value = UninitCell::zeroed();
-    let encoded = co3::encode(&value);
-    let decoded = unsafe { co3::decode::<&UninitCell>(encoded) }.unwrap();
+    let encoded = unsafe { co3::encode::<_, lang::C>(&value) };
+    let decoded = unsafe { co3::decode::<&UninitCell, lang::C>(encoded) }.unwrap();
     assert!(core::ptr::eq(decoded, &value));
 
     let boxed = Box::new(UninitCell::zeroed());
-    let encoded = co3::encode(&boxed);
-    let decoded = unsafe { co3::decode::<&Box<UninitCell>>(encoded) }.unwrap();
+    let encoded = unsafe { co3::encode::<_, lang::C>(&boxed) };
+    let decoded = unsafe { co3::decode::<&Box<UninitCell>, lang::C>(encoded) }.unwrap();
     assert!(core::ptr::eq(decoded, &boxed));
 
     // Zero is invalid for NonZeroU8, but valid as uninterpreted MaybeUninit bytes.
@@ -123,7 +123,7 @@ fn maybe_uninit_cells_allow_shared_validation_without_inspecting_contents() {
     );
     let encoded =
         unsafe { co3::reference::abi::Ref::from_raw(core::ptr::from_ref(&representation)) };
-    assert!(unsafe { co3::decode::<&UninitCell>(encoded) }.is_some());
+    assert!(unsafe { co3::decode::<&UninitCell, lang::C>(encoded) }.is_some());
 }
 
 #[test]
@@ -138,7 +138,7 @@ fn shared_vector_requires_robust_cells_not_robust_elements() {
         value: UnsafeCell::new(7_u8),
     }];
     let mut store = Default::default();
-    let encoded = co3::soft_encode(&values, &mut store);
+    let encoded = unsafe { co3::soft_encode::<_, lang::C>(&values, &mut store) };
     let header = unsafe { encoded.into_ref() }.unwrap();
     assert_eq!(
         header.as_ptr().cast_const().cast::<Element>(),
@@ -153,8 +153,8 @@ fn robust_cells_do_not_hide_other_invalid_fields() {
         flag: true,
         value: UnsafeCell::new(7_u8),
     };
-    let encoded = co3::encode(&source);
-    assert!(unsafe { co3::decode::<&Mixed<UnsafeCell<u8>>>(encoded) }.is_some());
+    let encoded = unsafe { co3::encode::<_, lang::C>(&source) };
+    assert!(unsafe { co3::decode::<&Mixed<UnsafeCell<u8>>, lang::C>(encoded) }.is_some());
 
     // The invalid boolean exists only in the robust C representation.
     let invalid = unsafe {
@@ -164,23 +164,23 @@ fn robust_cells_do_not_hide_other_invalid_fields() {
         )
     };
     let encoded = unsafe { co3::reference::abi::Ref::from_raw(core::ptr::from_ref(&invalid)) };
-    assert!(unsafe { co3::decode::<&Mixed<UnsafeCell<u8>>>(encoded) }.is_none());
+    assert!(unsafe { co3::decode::<&Mixed<UnsafeCell<u8>>, lang::C>(encoded) }.is_none());
     let encoded =
         unsafe { co3::wide::abi::WideRef::from_raw_parts(core::ptr::from_ref(&invalid), 1) };
-    assert!(unsafe { co3::decode::<&[Mixed<UnsafeCell<u8>>]>(encoded) }.is_none());
+    assert!(unsafe { co3::decode::<&[Mixed<UnsafeCell<u8>>], lang::C>(encoded) }.is_none());
 }
 
 #[test]
 fn shared_plain_data_and_exclusive_cells_still_decode() {
     let value = Box::new(7_u8);
-    let encoded = co3::encode(&value);
-    let decoded = unsafe { co3::decode::<&Box<u8>>(encoded) }.unwrap();
+    let encoded = unsafe { co3::encode::<_, lang::C>(&value) };
+    let decoded = unsafe { co3::decode::<&Box<u8>, lang::C>(encoded) }.unwrap();
     assert_eq!(**decoded, 7);
 
     let source = co3::boxed::abi::Box::from_box(Box::new(core::cell::UnsafeCell::new(
         co3::marker::NonZero(7_u8),
     )));
-    let decoded = unsafe { co3::decode::<Box<UnsafeCell<NonZeroU8>>>(source) }.unwrap();
+    let decoded = unsafe { co3::decode::<Box<UnsafeCell<NonZeroU8>>, lang::C>(source) }.unwrap();
     assert_eq!((*decoded).into_inner().get(), 7);
 }
 
@@ -191,7 +191,7 @@ fn box_shared_encoders_preserve_headers() {
             let value = $value;
             let expected = core::ptr::from_ref(&*value).cast::<()>();
             let mut store = Default::default();
-            let encoded = co3::soft_encode(&value, &mut store);
+            let encoded = unsafe { co3::soft_encode::<_, lang::C>(&value, &mut store) };
             // Every concrete Box carrier tested here is Copy; only its header is read.
             let header = unsafe { *encoded.as_ptr() };
             assert_eq!(header.as_ptr().cast::<()>().cast_const(), expected);
@@ -213,4 +213,94 @@ fn box_shared_encoders_preserve_headers() {
         len = 2
     );
     check!(std::ffi::CString::new("hello").unwrap().into_boxed_c_str());
+}
+
+#[test]
+fn shared_nonrobust_cell_round_trips_unchecked() {
+    let value = UnsafeCell::new(true);
+    let encoded = unsafe { co3::encode_unchecked(&value) };
+    let decoded = unsafe { co3::decode_unchecked::<&UnsafeCell<bool>>(encoded) };
+    assert!(core::ptr::eq(decoded, &value));
+    unsafe { *decoded.get() = false };
+    assert!(!value.into_inner());
+
+    let value = UnsafeCell::new(true);
+    let mut encode_store = ();
+    let mut decode_store = ();
+    let encoded = unsafe { co3::soft_encode_unchecked(&value, &mut encode_store) };
+    let decoded =
+        unsafe { co3::soft_decode_unchecked::<&UnsafeCell<bool>>(encoded, &mut decode_store) };
+    assert!(core::ptr::eq(decoded, &value));
+    unsafe { *decoded.get() = false };
+    assert!(!value.into_inner());
+}
+
+#[test]
+fn derived_shared_nonrobust_cell_round_trips_unchecked() {
+    let value = Record {
+        value: UnsafeCell::new(true),
+    };
+    let encoded = unsafe { co3::encode_unchecked(&value) };
+    let decoded = unsafe { co3::decode_unchecked::<&Record<UnsafeCell<bool>>>(encoded) };
+    assert!(core::ptr::eq(decoded, &value));
+    unsafe { *decoded.value.get() = false };
+    assert!(!value.value.into_inner());
+}
+
+#[test]
+fn unchecked_mutable_bool_borrows_the_original_storage() {
+    let mut value = true;
+    let original = core::ptr::from_mut(&mut value);
+    let encoded = unsafe { co3::encode_unchecked(&mut value) };
+    let decoded = unsafe { co3::decode_unchecked::<&mut bool>(encoded) };
+    assert!(core::ptr::eq(decoded, original));
+    *decoded = false;
+    assert!(!value);
+}
+
+mod rust_export {
+    use core::cell::Cell;
+
+    use co3::{ffi, rust_spec::RustSpec};
+
+    #[derive(RustSpec)]
+    #[rust_spec(opaque)]
+    struct Handle {
+        _value: Cell<bool>,
+    }
+
+    fn touch(_value: &Handle) {}
+
+    pub fn flip(value: &Cell<bool>) {
+        value.set(!value.get());
+    }
+
+    ffi! {
+        #![unsafe(export("C"))]
+        #![lang = "Rust"]
+        #![symbol_prefix = "unchecked_cell"]
+        type Handle;
+        fn touch(value: &Handle);
+        fn flip(value: &Cell<bool>);
+    }
+}
+
+mod rust_import {
+    use core::cell::Cell;
+
+    use co3::ffi;
+
+    ffi! {
+        #![unsafe(extern("C"))]
+        #![lang = "Rust"]
+        #![symbol_prefix = "unchecked_cell"]
+        pub fn flip(value: &Cell<bool>);
+    }
+}
+
+#[test]
+fn rust_boundary_uses_unchecked_shared_cell_conversion() {
+    let value = Cell::new(true);
+    rust_import::flip(&value);
+    assert!(!value.get());
 }

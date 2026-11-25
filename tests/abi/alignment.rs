@@ -1,4 +1,4 @@
-use co3::{ReprC, marker::AbiCompatible, niche::Niche, rust_spec::RustSpec};
+use co3::{ReprC, lang, marker::AbiCompatible, niche::Niche, rust_spec::RustSpec};
 use static_assertions::{assert_impl_all, assert_not_impl_any};
 
 #[derive(RustSpec, ReprC)]
@@ -119,10 +119,10 @@ fn data_enum_carriers_construct_variants_and_report_tags() {
 
     let niche = <MixedDataEnum as Niche>::NICHE;
     assert_eq!(niche.tag(), u8::MAX);
-    assert!(unsafe { co3::decode::<MixedDataEnum>(niche) }.is_none());
+    assert!(unsafe { co3::decode::<MixedDataEnum, lang::C>(niche) }.is_none());
 
     let carrier = unsafe { <AlignedStruct as ReprC>::CType::from_fields(3) };
-    let decoded: AlignedStruct = unsafe { co3::decode(carrier).unwrap() };
+    let decoded: AlignedStruct = unsafe { co3::decode::<_, lang::C>(carrier).unwrap() };
     assert_eq!(decoded.0, 3);
 
     let carrier = unsafe { <GenericCarrier<u32> as ReprC>::CType::from_fields(5) };
@@ -130,16 +130,18 @@ fn data_enum_carriers_construct_variants_and_report_tags() {
     assert_eq!(field, 5);
 
     let carrier = unsafe { <GenericCarrier<u32> as ReprC>::CType::from_fields(field) };
-    let decoded: GenericCarrier<u32> = unsafe { co3::decode(carrier).unwrap() };
+    let decoded: GenericCarrier<u32> = unsafe { co3::decode::<_, lang::C>(carrier).unwrap() };
     assert_eq!(decoded.0, 5);
 }
 
 #[test]
 fn generated_carrier_exposes_fields_methods() {
-    let carrier = co3::encode(ViewFields {
+    let fields = ViewFields {
         first: 3,
         second: 4,
-    });
+    };
+
+    let carrier = unsafe { co3::encode::<_, lang::C>(fields) };
     assert_eq!(carrier.into_fields(), (3, 4));
 }
 

@@ -3,6 +3,7 @@ use co3::{
     boxed::Box,
     ffi,
     ffi::{c_int, c_long},
+    lang,
     marker::Native,
     niche::Niche,
     raw,
@@ -98,13 +99,14 @@ fn identity_primitives_keep_their_abi_types() {
 
 #[test]
 fn c_alias_fields_use_distinct_carriers() {
-    let carrier_field = co3::encode(CarrierField(c_int::new(3)));
+    let carrier_field = unsafe { co3::encode::<_, lang::C>(CarrierField(c_int::new(3))) };
     let _: c_int = carrier_field.0;
-    let lowered = co3::encode(AliasFields(c_int::new(3), 4_u32, c_long::new(5)));
+    let lowered =
+        unsafe { co3::encode::<_, lang::C>(AliasFields(c_int::new(3), 4_u32, c_long::new(5))) };
     let _: c_int = lowered.0;
     let _: u32 = lowered.1;
     let _: c_long = lowered.2;
-    let decoded = unsafe { co3::decode::<AliasFields<u32>>(lowered) }.unwrap();
+    let decoded = unsafe { co3::decode::<AliasFields<u32>, lang::C>(lowered) }.unwrap();
     assert_eq!(
         (decoded.0, decoded.1, decoded.2),
         (c_int::new(3), 4, c_long::new(5))
@@ -113,8 +115,8 @@ fn c_alias_fields_use_distinct_carriers() {
 
 #[test]
 fn c_alias_enum_field_round_trips() {
-    let lowered = co3::encode(AliasEnum::Value(c_int::new(7)));
-    let decoded = unsafe { co3::decode::<AliasEnum>(lowered) }.unwrap();
+    let lowered = unsafe { co3::encode::<_, lang::C>(AliasEnum::Value(c_int::new(7))) };
+    let decoded = unsafe { co3::decode::<AliasEnum, lang::C>(lowered) }.unwrap();
     assert!(matches!(decoded, AliasEnum::Value(value) if value == c_int::new(7)));
 }
 
@@ -140,31 +142,31 @@ fn lowered_aggregates_use_codecs_without_conversion_traits() {
 
     for value in [None, Some(42_u8)] {
         assert_eq!(
-            unsafe { co3::decode::<Option<u8>>(co3::encode(value)) },
+            unsafe { co3::decode::<Option<u8>, lang::C>(co3::encode::<_, lang::C>(value)) },
             Some(value)
         );
     }
     let option = AbiOption::Some(42_u8);
     assert_eq!(
-        unsafe { co3::decode::<Option<u8>>(Native(option)) },
+        unsafe { co3::decode::<Option<u8>, lang::C>(Native(option)) },
         Some(Some(42))
     );
 
     for value in [Ok(42_u8), Err(7_u8)] {
         let mut store = Default::default();
-        let lowered = co3::soft_encode(value, &mut store);
+        let lowered = unsafe { co3::soft_encode::<_, lang::C>(value, &mut store) };
         assert_eq!(
-            unsafe { co3::decode::<Result<u8, u8>>(lowered) },
+            unsafe { co3::decode::<Result<u8, u8>, lang::C>(lowered) },
             Some(value)
         );
     }
     let result = AbiResult::<u8, u8>::Err(7_u8);
     assert_eq!(
-        unsafe { co3::decode::<Result<u8, u8>>(Native(result)) },
+        unsafe { co3::decode::<Result<u8, u8>, lang::C>(Native(result)) },
         Some(Err(7))
     );
     assert_eq!(
-        unsafe { co3::decode::<(u8, u8)>(co3::encode((42_u8, 7_u8))) },
+        unsafe { co3::decode::<(u8, u8), lang::C>(co3::encode::<_, lang::C>((42_u8, 7_u8))) },
         Some((42, 7))
     );
 }
@@ -183,40 +185,70 @@ fn safe_carrier_constructors_accept_lowered_storage() {
     let boxed = AbiBox::from_box(Box::new(9_u8));
     let borrowed = unsafe { SoftRef::<u8>::from_raw(boxed.as_ptr()) };
     assert_eq!(borrowed.as_ptr(), boxed.as_ptr());
-    assert_eq!(*unsafe { co3::decode::<Box<u8>>(boxed) }.unwrap(), 9);
+    assert_eq!(
+        *unsafe { co3::decode::<Box<u8>, lang::C>(boxed) }.unwrap(),
+        9
+    );
 
     let value = 8_u8;
-    assert_eq!(
-        co3::reference::abi::Ref::from_ref(&value),
-        co3::encode(&value)
+    assert_eq!(co3::reference::abi::Ref::from_ref(&value), unsafe {
+        co3::encode::<_, lang::C>(&value)
+    });
+    assert!(
+        unsafe { co3::encode::<_, lang::C>(None::<&u8>) }
+            .payload()
+            .as_ptr()
+            .is_null()
     );
-    assert!(co3::encode(None::<&u8>).payload().as_ptr().is_null());
 
     let raw = Box::into_raw(Box::new(10_u8));
     let boxed = unsafe { AbiBox::from_non_null(core::ptr::NonNull::new(raw).unwrap()) };
-    assert_eq!(*unsafe { co3::decode::<Box<u8>>(boxed) }.unwrap(), 10);
+    assert_eq!(
+        *unsafe { co3::decode::<Box<u8>, lang::C>(boxed) }.unwrap(),
+        10
+    );
 
     let boxed_slice = AbiWideBox::from_box(Box::<[u8]>::from([4_u8, 5]));
     assert_eq!(
-        &*unsafe { co3::decode::<Box<[u8]>>(boxed_slice) }.unwrap(),
+        &*unsafe { co3::decode::<Box<[u8]>, lang::C>(boxed_slice) }.unwrap(),
         &[4, 5]
     );
-    assert!(co3::encode(None::<Box<u8>>).payload().as_ptr().is_null());
-    assert!(co3::encode(None::<Box<[u8]>>).payload().as_ptr().is_null());
-    assert!(co3::encode(None::<&[u8]>).payload().as_ptr().is_null());
     assert!(
-        co3::soft_encode(None::<&mut u8>, &mut Default::default())
+        unsafe { co3::encode::<_, lang::C>(None::<Box<u8>>) }
+            .payload()
+            .as_ptr()
+            .is_null()
+    );
+    assert!(
+        unsafe { co3::encode::<_, lang::C>(None::<Box<[u8]>>) }
+            .payload()
+            .as_ptr()
+            .is_null()
+    );
+    assert!(
+        unsafe { co3::encode::<_, lang::C>(None::<&[u8]>) }
+            .payload()
+            .as_ptr()
+            .is_null()
+    );
+    assert!(
+        unsafe { co3::soft_encode::<_, lang::C>(None::<&mut u8>, &mut Default::default()) }
             .payload()
             .as_ptr()
             .is_null()
     );
     let _: AbiSoftWideRefMut<[u8]> = AbiSoftWideRefMut::null();
-    assert!(co3::encode(None::<String>).payload().as_ptr().is_null());
+    assert!(
+        unsafe { co3::encode::<_, lang::C>(None::<String>) }
+            .payload()
+            .as_ptr()
+            .is_null()
+    );
 
     let bytes: Box<[u8]> = Box::from("hello".as_bytes());
     let utf8 = co3::string::abi::String(co3::vec::abi::Vec::from_vec(bytes.into_vec()));
     assert_eq!(
-        unsafe { co3::decode::<String>(Native(utf8)) }.unwrap(),
+        unsafe { co3::decode::<String, lang::C>(Native(utf8)) }.unwrap(),
         "hello"
     );
 
@@ -225,7 +257,7 @@ fn safe_carrier_constructors_accept_lowered_storage() {
     let utf8 = co3::string::abi::String(co3::vec::abi::Vec::from_vec(bytes.into_vec()));
     assert_eq!(utf8.len(), len);
     assert_eq!(
-        unsafe { co3::decode::<String>(Native(utf8)) }.unwrap(),
+        unsafe { co3::decode::<String, lang::C>(Native(utf8)) }.unwrap(),
         "world"
     );
 
@@ -238,7 +270,7 @@ fn safe_carrier_constructors_accept_lowered_storage() {
                 "hello".len(),
             )
         },
-        co3::encode("hello")
+        unsafe { co3::encode::<_, lang::C>("hello") }
     );
     let mut bytes = [3_u8, 4];
     let _slice_mut = AbiSoftWideRefMut::<[u8]>::from_mut(&mut bytes[..]);
@@ -262,8 +294,8 @@ co3::raw! {
 
 #[test]
 fn raw_functions_distinguish_native_and_abi_boxes() {
-    let carrier = co3::encode(Box::new(true));
+    let carrier = unsafe { co3::encode::<_, lang::C>(Box::new(true)) };
     let carrier = unsafe { pass_abi_box_raw(carrier) };
     let carrier = unsafe { round_trip_native_box_raw(carrier) };
-    assert!(*unsafe { co3::decode::<Box<bool>>(carrier) }.unwrap());
+    assert!(*unsafe { co3::decode::<Box<bool>, lang::C>(carrier) }.unwrap());
 }

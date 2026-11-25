@@ -1,4 +1,4 @@
-use co3::{ReprC, rust_spec::RustSpec, wide::Wide};
+use co3::{ReprC, lang, rust_spec::RustSpec, wide::Wide};
 
 #[derive(Debug, PartialEq, RustSpec, ReprC)]
 #[repr(C)]
@@ -9,6 +9,8 @@ struct List<T> {
 
 #[expect(unused_parens)] // Exercise parenthesized recursive types, including generated code.
 mod parenthesized {
+    use co3::lang;
+
     use super::*;
 
     #[derive(Debug, PartialEq, RustSpec, ReprC)]
@@ -27,7 +29,10 @@ mod parenthesized {
                 next: None,
             })),
         };
-        assert_eq!(unsafe { co3::decode(co3::encode(list())) }, Some(list()));
+        assert_eq!(
+            unsafe { co3::decode::<_, lang::C>(co3::encode::<_, lang::C>(list())) },
+            Some(list())
+        );
     }
 }
 
@@ -47,19 +52,25 @@ impl<T> List<T> {
 fn owned_generic_lists() {
     let numbers = || List::pair(3u32, 8);
     assert_eq!(
-        unsafe { co3::decode(co3::encode(numbers())) },
+        unsafe { co3::decode::<_, lang::C>(co3::encode::<_, lang::C>(numbers())) },
         Some(numbers())
     );
     let flags = || List::pair(true, false);
-    assert_eq!(unsafe { co3::decode(co3::encode(flags())) }, Some(flags()));
+    assert_eq!(
+        unsafe { co3::decode::<_, lang::C>(co3::encode::<_, lang::C>(flags())) },
+        Some(flags())
+    );
 }
 
 #[test]
 fn borrowed_generic_list() {
     let flags = || List::pair(false, true);
     let mut owner = Default::default();
-    let carrier = co3::borrow::encode(flags(), &mut owner);
-    assert_eq!(unsafe { co3::borrow::decode(carrier) }, Some(flags()));
+    let carrier = unsafe { co3::borrow::encode::<_, lang::C>(flags(), &mut owner) };
+    assert_eq!(
+        unsafe { co3::borrow::decode::<_, lang::C>(carrier) },
+        Some(flags())
+    );
 }
 
 #[derive(Debug, PartialEq, RustSpec, ReprC)]
@@ -77,7 +88,10 @@ fn generic_vector_tree() {
             children: vec![],
         }],
     };
-    assert_eq!(unsafe { co3::decode(co3::encode(tree())) }, Some(tree()));
+    assert_eq!(
+        unsafe { co3::decode::<_, lang::C>(co3::encode::<_, lang::C>(tree())) },
+        Some(tree())
+    );
 }
 
 #[test]
@@ -97,7 +111,10 @@ fn repr_c_vector_tree_round_trips() {
             children: vec![],
         }],
     };
-    assert_eq!(unsafe { co3::decode(co3::encode(tree())) }, Some(tree()));
+    assert_eq!(
+        unsafe { co3::decode::<_, lang::C>(co3::encode::<_, lang::C>(tree())) },
+        Some(tree())
+    );
 }
 
 #[test]
@@ -136,7 +153,10 @@ fn repr_c_stable_vector_tree_is_abi_compatible() {
         }]
         .into(),
     };
-    assert_eq!(unsafe { co3::decode(co3::encode(tree())) }, Some(tree()));
+    assert_eq!(
+        unsafe { co3::decode::<_, lang::C>(co3::encode::<_, lang::C>(tree())) },
+        Some(tree())
+    );
 }
 
 #[derive(Debug, PartialEq, RustSpec, ReprC)]
@@ -160,7 +180,10 @@ fn recursive_optional_vector_preserves_none_and_empty() {
             },
         ]),
     };
-    assert_eq!(unsafe { co3::decode(co3::encode(tree())) }, Some(tree()));
+    assert_eq!(
+        unsafe { co3::decode::<_, lang::C>(co3::encode::<_, lang::C>(tree())) },
+        Some(tree())
+    );
 }
 
 #[derive(RustSpec, ReprC)]
@@ -180,7 +203,8 @@ fn recursive_raw_pointers_preserve_addresses_and_nulls() {
         previous: core::ptr::null_mut(),
         parent: None,
     };
-    let mut leaf = unsafe { co3::decode::<Links<u32>>(co3::encode(leaf)) }.unwrap();
+    let mut leaf =
+        unsafe { co3::decode::<Links<u32>, lang::C>(co3::encode::<_, lang::C>(leaf)) }.unwrap();
     assert!(leaf.next.is_null());
     assert!(leaf.previous.is_null());
     assert!(leaf.parent.is_none());
@@ -192,7 +216,8 @@ fn recursive_raw_pointers_preserve_addresses_and_nulls() {
         previous: address.as_ptr(),
         parent: Some(address),
     };
-    let decoded = unsafe { co3::decode::<Links<u32>>(co3::encode(links)) }.unwrap();
+    let decoded =
+        unsafe { co3::decode::<Links<u32>, lang::C>(co3::encode::<_, lang::C>(links)) }.unwrap();
     assert_eq!(decoded.next, address.as_ptr().cast_const());
     assert_eq!(decoded.previous, address.as_ptr());
     assert_eq!(decoded.parent, Some(address));
@@ -244,10 +269,14 @@ fn recursive_wide_box_headers_preserve_ownership_and_tail_length() {
 fn wide_indirections_to_compatible_recursive_elements_round_trip() {
     let items = vec![List::pair(3u32, 8), List::pair(5, 13)].into_boxed_slice();
     let ptr = std::ptr::from_ref(&*items);
-    let decoded = unsafe { co3::decode::<*const [List<u32>]>(co3::encode(ptr)) }.unwrap();
+    let decoded =
+        unsafe { co3::decode::<*const [List<u32>], lang::C>(co3::encode::<_, lang::C>(ptr)) }
+            .unwrap();
     assert!(std::ptr::eq(decoded, ptr));
 
-    let decoded = unsafe { co3::decode::<Box<[List<u32>]>>(co3::encode(items)) }.unwrap();
+    let decoded =
+        unsafe { co3::decode::<Box<[List<u32>]>, lang::C>(co3::encode::<_, lang::C>(items)) }
+            .unwrap();
     assert!(std::ptr::eq(std::ptr::from_ref(&*decoded), ptr));
     assert_eq!(&*decoded, &[List::pair(3, 8), List::pair(5, 13)]);
 }

@@ -1,4 +1,4 @@
-use co3::{ReprC, encode, ffi, pack::Unpack2, rust_spec::RustSpec};
+use co3::{ReprC, encode, ffi, lang, pack::Unpack2, rust_spec::RustSpec};
 
 #[derive(RustSpec, ReprC)]
 #[repr(transparent)]
@@ -11,7 +11,7 @@ struct Value(u16);
 impl Unpack2<u8, <Logical as ReprC>::CType> for Value {
     type Error = core::convert::Infallible;
     fn unpack(value: Self::CType) -> Result<(u8, <Logical as ReprC>::CType), Self::Error> {
-        Ok((0, encode(Logical(value.0))))
+        Ok((0, unsafe { encode::<_, lang::C>(Logical(value.0)) }))
     }
 }
 

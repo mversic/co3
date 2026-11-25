@@ -8,7 +8,7 @@ use crate::{
         enum_tag_type, enum_variant_tag_exprs, is_exhaustive_enum, is_parametrized,
         is_phantom_data, is_transparent_enum_repr,
     },
-    utils::{build_extern_c_type_tuple, speculative_marker},
+    utils::speculative_marker,
 };
 
 pub fn gen_niche_value_ir(
@@ -62,7 +62,8 @@ pub fn gen_struct_niche_ir(
         .collect::<Vec<_>>();
     let (last_field_sized, _) = super::ctype::c_fn_last_field_bounds(&types, generics);
     let extern_c_bounds = gen_copy_extern_c_bounds_for_ctype(generics, &types);
-    let (fields_tuple, c_fields_tuple, accessors) = build_extern_c_type_tuple(&types);
+    let tuple = FieldTuple::new(&types, fields.members());
+    let fields_tuple = &tuple.rust;
 
     let (niche_value, detector, inferred_niche_bounds, custom_niche_bounds) =
         if let Some(niche_value) = niche_value {
@@ -87,14 +88,12 @@ pub fn gen_struct_niche_ir(
                 custom_niche_bounds,
             )
         } else {
-            let niche_field_values = accessors.iter().map(|accessor| {
-                let mut value = quote!(<#fields_tuple as co3::niche::Niche>::NICHE);
-                for index in accessor.to_string().split('.') {
-                    let index = syn::Index::from(index.trim().parse::<usize>().unwrap());
-                    value = quote!(#value.0.#index);
-                }
-                value
-            });
+            let c_fields_tuple = &tuple.carrier;
+            let tuple_value = &tuple.value;
+            let niche_field_values = tuple
+                .paths
+                .iter()
+                .map(|path| quote!(<#fields_tuple as co3::niche::Niche>::NICHE #(.0.#path)*));
             let niche_value = match fields {
                 syn::Fields::Named(_) | syn::Fields::Unit => {
                     let field_names = fields.iter().map(|f| &f.ident);
@@ -104,30 +103,6 @@ pub fn gen_struct_niche_ir(
                     quote! { #ctype_name(#(#niche_field_values),*) }
                 }
             };
-            let members = fields
-                .iter()
-                .enumerate()
-                .map(|(i, field)| {
-                    let member = field
-                        .ident
-                        .clone()
-                        .map(syn::Member::Named)
-                        .unwrap_or_else(|| syn::Member::Unnamed(i.into()));
-                    quote!(value.#member)
-                })
-                .collect::<Vec<_>>();
-            let paths = accessors
-                .iter()
-                .map(|accessor| {
-                    accessor
-                        .to_string()
-                        .split('.')
-                        .map(|index| index.trim().parse::<usize>().unwrap())
-                        .collect::<Vec<_>>()
-                })
-                .zip(members)
-                .collect::<Vec<_>>();
-            let tuple_value = build_tuple_value(&paths, 0);
             (
                 niche_value,
                 quote!(<#fields_tuple as co3::niche::Niche>::is_niche(&#tuple_value)),
@@ -153,24 +128,73 @@ pub fn gen_struct_niche_ir(
     )
 }
 
-fn build_tuple_value(fields: &[(Vec<usize>, TokenStream)], depth: usize) -> TokenStream {
-    if fields.len() == 1 && fields[0].0.len() == depth {
-        return fields[0].1.clone();
+/// The Rust type, native carrier and value all follow the same tuple layout.
+/// Keep each leaf's indices so a niche can be projected back onto the record.
+struct FieldTuple {
+    rust: TokenStream,
+    carrier: TokenStream,
+    value: TokenStream,
+    paths: Vec<Vec<syn::Index>>,
+}
+
+impl FieldTuple {
+    fn new(types: &[&syn::Type], members: impl Iterator<Item = syn::Member>) -> Self {
+        const ARITY: usize = 12;
+        let mut fields = types.iter().zip(members).map(|(ty, member)| Self {
+            rust: quote!(#ty),
+            carrier: quote!(<#ty as co3::ReprC>::CType),
+            value: quote!(value.#member),
+            paths: vec![Vec::new()],
+        });
+        let mut level = Vec::new();
+        loop {
+            let group = fields.by_ref().take(ARITY).collect::<Vec<_>>();
+            if group.is_empty() {
+                break;
+            }
+            level.push(Self::pack(group));
+        }
+        while level.len() > 1 {
+            let mut nodes = level.into_iter();
+            level = Vec::new();
+            loop {
+                let mut group = nodes.by_ref().take(ARITY).collect::<Vec<_>>();
+                match group.len() {
+                    0 => break,
+                    1 => level.push(group.pop().unwrap()),
+                    _ => level.push(Self::pack(group)),
+                }
+            }
+        }
+        level.pop().unwrap_or_else(|| Self {
+            rust: quote!(()),
+            carrier: quote!(()),
+            value: quote!(()),
+            paths: Vec::new(),
+        })
     }
-    if fields.is_empty() {
-        return quote!(());
+
+    fn pack(children: Vec<Self>) -> Self {
+        let ident = format_ident!("Tuple{}", children.len());
+        let rust = children.iter().map(|child| &child.rust);
+        let carriers = children.iter().map(|child| &child.carrier);
+        let values = children.iter().map(|child| &child.value);
+        Self {
+            rust: quote!((#(#rust,)*)),
+            carrier: quote!(__Co3Native<co3::tuple::abi::#ident<#(#carriers),*>>),
+            value: quote!(__Co3Native(co3::tuple::abi::#ident(#(#values),*))),
+            paths: children
+                .into_iter()
+                .enumerate()
+                .flat_map(|(i, child)| {
+                    child
+                        .paths
+                        .into_iter()
+                        .map(move |path| std::iter::once(i.into()).chain(path).collect())
+                })
+                .collect(),
+        }
     }
-    let count = fields.last().unwrap().0[depth] + 1;
-    let ident = quote::format_ident!("Tuple{count}");
-    let members = (0..count).map(|index| {
-        let group = fields
-            .iter()
-            .filter(|(path, _)| path[depth] == index)
-            .cloned()
-            .collect::<Vec<_>>();
-        build_tuple_value(&group, depth + 1)
-    });
-    quote!(__Co3Native(co3::tuple::abi::#ident(#(#members),*)))
 }
 
 pub(super) fn gen_enum_niche_tag(
@@ -287,7 +311,7 @@ pub fn gen_enum_niche_ir(
 
 #[cfg(test)]
 mod tests {
-    use crate::utils::build_extern_c_type_tuple;
+    use super::FieldTuple;
 
     const MAX_TUPLE_ARITY: usize = 12;
 
@@ -344,20 +368,8 @@ mod tests {
     fn assert_tuple_layout(count: usize) {
         let types = make_types(count);
         let refs: Vec<_> = types.iter().collect();
-        let (rust_tuple, c_tuple, accessors) = build_extern_c_type_tuple(&refs);
-
-        eprintln!("{count} elements:");
-        eprintln!("  Rust tuple: {rust_tuple}");
-        eprintln!("  C tuple: {c_tuple}");
-        eprintln!(
-            "  Accessors: {}",
-            accessors
-                .iter()
-                .map(ToString::to_string)
-                .collect::<Vec<_>>()
-                .join(", ")
-        );
-
+        let tuple = FieldTuple::new(&refs, (0..count).map(|i| syn::Member::Unnamed(i.into())));
+        let (rust_tuple, c_tuple, accessors) = (tuple.rust, tuple.carrier, tuple.paths);
         let rust_tuple: syn::Type =
             syn::parse2(rust_tuple).expect("generated Rust tuple must be a type");
         let c_tuple: syn::Type = syn::parse2(c_tuple).expect("generated C tuple must be a type");
@@ -373,13 +385,13 @@ mod tests {
             accessors.iter().zip(expected_accessors).enumerate()
         {
             assert_eq!(position, index);
-            let mut expected = String::from("value");
-            for field in path {
-                expected.push_str(&format!(".{field}"));
-            }
-            let expected: syn::Expr = syn::parse_str(&expected).unwrap();
-
-            assert_eq!(expected, syn::parse_quote!(value.#accessor));
+            assert_eq!(
+                accessor
+                    .iter()
+                    .map(|i| i.index as usize)
+                    .collect::<Vec<_>>(),
+                path
+            );
         }
     }
 
@@ -482,9 +494,9 @@ mod tests {
     fn assert_accessor(count: usize, index: usize, expected: syn::Expr) {
         let types = make_types(count);
         let refs = types.iter().collect::<Vec<_>>();
-        let (_, _, accessors) = build_extern_c_type_tuple(&refs);
-        let accessor = &accessors[index];
-        assert_eq!(expected, syn::parse_quote!(value.#accessor));
+        let tuple = FieldTuple::new(&refs, (0..count).map(|i| syn::Member::Unnamed(i.into())));
+        let path = &tuple.paths[index];
+        assert_eq!(expected, syn::parse_quote!(value #(.#path)*));
     }
 
     #[test]

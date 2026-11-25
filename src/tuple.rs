@@ -18,9 +18,7 @@
 //! ```rust
 //! use core::mem::size_of;
 //!
-//! use co3::{
-//!     encode, niche::Niche, option::abi, ReprC,
-//! };
+//! use co3::{ReprC, encode, lang, niche::Niche, option::abi};
 //!
 //! type TupleWithNiche1<'a> = (u8, bool, &'a bool);
 //! type TupleWithNiche2<'a> = (u8, &'a bool, bool);
@@ -41,45 +39,51 @@
 //! );
 //!
 //! let none_value_1: Option<TupleWithNiche1> = None;
-//! let encoded_none_value_1 = encode(none_value_1);
+//! let encoded_none_value_1 = unsafe { encode::<_, lang::C>(none_value_1) };
 //! let payload_1 = &encoded_none_value_1.0.0.0;
 //! assert_eq!(payload_1.0, 0);
 //! assert!(bool::is_niche(&payload_1.1));
 //! assert!(payload_1.2.as_ptr().is_null());
 //!
 //! let none_value_2: Option<TupleWithNiche2> = None;
-//! let encoded_none_value_2 = encode(none_value_2);
+//! let encoded_none_value_2 = unsafe { encode::<_, lang::C>(none_value_2) };
 //! let payload_2 = &encoded_none_value_2.0.0.0;
 //! assert_eq!(payload_2.0, 0);
 //! assert!(payload_2.1.as_ptr().is_null());
 //! assert_eq!(payload_2.2, co3::primitive::abi::bool::FALSE);
 //!
 //! let none_value_3: Option<TupleWithoutNiche> = None;
-//! assert_eq!(encode(none_value_3).0, abi::Option::None());
+//! assert_eq!(
+//!     unsafe { encode::<_, lang::C>(none_value_3) }.0,
+//!     abi::Option::None()
+//! );
 //! ```
 
+use rust_spec::RustSpec;
 #[cfg(feature = "repr-rust")]
-use crate::{marker::Native, niche::Niche};
-
-use rust_spec::{
-    RustSpec,
-    mutability::{Exclusive, ExclusiveKind},
-};
+use rust_spec::mutability::{Exclusive, ExclusiveKind};
 
 use crate::{
     CFnArg, CFnReturn, CType, ReprC, Store,
     convert::{
-        AbiCompatibleValidate, Decode, DecodeMove, Encode, EncodeMove, EncodeMoveUnchecked,
-        SoftEncodeRef, SoftEncodeRefUnchecked,
+        AbiValidate, Decode, DecodeMove, DecodeMoveUnchecked, DecodeUnchecked, Encode, EncodeMove,
+        EncodeMoveUnchecked,
     },
+    lang::Language,
     marker::AbiCompatible,
+};
+#[cfg(feature = "repr-rust")]
+use crate::{
+    convert::{SoftEncodeRef, SoftEncodeRefUnchecked},
+    marker::Native,
+    niche::Niche,
     reference::abi::RefCarrier,
 };
 
 macro_rules! impl_tuple {
-    (@codecs [$($ty:ident:$idx:tt),+] -> $ffi_ty:ident, $carrier:ident, $encode:ident, $unchecked:ident, $decode:ident) => {
+    (@codecs [$($ty:ident:$idx:tt),+] -> $ffi_ty:ident, $carrier:ident, $encode:ident, $unchecked:ident, $decode:ident, $decode_unchecked:ident) => {
         #[cfg(feature = "repr-rust")]
-        unsafe impl<$($ty: $encode),*> $encode for ($($ty,)*) {
+        unsafe impl<L: Language, $($ty: $encode<L>),*> $encode<L> for ($($ty,)*) {
             type Store = ($( $ty::Store, )*);
 
             #[inline(always)]
@@ -93,7 +97,7 @@ macro_rules! impl_tuple {
             }
 
         }
-        unsafe impl<$($ty: $encode),*> $encode for $ffi_ty<$($ty),*> {
+        unsafe impl<L: Language, $($ty: $encode<L>),*> $encode<L> for $ffi_ty<$($ty),*> {
             type Store = ($( $ty::Store, )*);
 
             #[inline(always)]
@@ -102,16 +106,13 @@ macro_rules! impl_tuple {
             where
                 Self: 'itm,
             {
-                impl_tuple! {@decl_priv_store $($ty),*}
-
                 let $ffi_ty($($ty),*) = self;
-                let store: private_store::Store<$($ty::Store,)*> = store.into();
-                abi::$carrier($( $encode::soft_encode($ty, store.$ty) ),*)
+                abi::$carrier($( $encode::<L>::soft_encode($ty, &mut store.$idx) ),*)
             }
 
         }
         #[cfg(feature = "repr-rust")]
-        unsafe impl<$($ty: $unchecked),*> $unchecked for ($($ty,)*) {
+        unsafe impl<$($ty: $unchecked), *> $unchecked for ($($ty,)*) {
             type SoftStore = ($($ty::SoftStore,)*);
 
             #[expect(non_snake_case)]
@@ -120,62 +121,62 @@ macro_rules! impl_tuple {
                 Native(unsafe { $ffi_ty::<$($ty),*>($($ty),*).soft_encode_unchecked(store) })
             }
         }
-        unsafe impl<$($ty: $unchecked),*> $unchecked for $ffi_ty<$($ty),*> {
+        unsafe impl<$($ty: $unchecked), *> $unchecked for $ffi_ty<$($ty),*> {
             type SoftStore = ($($ty::SoftStore,)*);
 
             #[expect(non_snake_case)]
             unsafe fn soft_encode_unchecked<'itm>(self, store: &'itm mut Self::SoftStore) -> Self::CType where Self: 'itm {
-                impl_tuple! {@decl_priv_store $($ty),*}
-
                 let $ffi_ty($($ty),*) = self;
-                let store: private_store::Store<$($ty::SoftStore,)*> = store.into();
-                abi::$carrier($(unsafe { $ty.soft_encode_unchecked(store.$ty) }),*)
+                unsafe { abi::$carrier($($unchecked::soft_encode_unchecked($ty, &mut store.$idx)),*) }
             }
         }
         #[cfg(feature = "repr-rust")]
-        unsafe impl<'d, $($ty: $decode<'d>),*> $decode<'d> for ($($ty,)*) {
-            type Store = ($( $ty::Store, )*);
+        unsafe impl<'d,  $($ty: $decode_unchecked<'d>),*> $decode_unchecked<'d> for ($($ty,)*) {
+            type SoftStore = ($( $ty::SoftStore, )*);
 
             #[inline(always)]
             #[expect(non_snake_case)]
-            unsafe fn soft_decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Option<Self> {
+            unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, store: &'itm mut Self::SoftStore) -> Self {
                 let $ffi_ty($($ty),*) = unsafe {
-                    <$ffi_ty<$($ty),*> as $decode<'d>>::soft_decode(source.0, store)
-                }?;
-                Some(($($ty,)*))
-            }
-
-            #[inline(always)]
-            #[expect(non_snake_case)]
-            unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Self {
-                let $ffi_ty($($ty),*) = unsafe {
-                    <$ffi_ty<$($ty),*> as $decode<'d>>::soft_decode_unchecked(source.0, store)
+                    <$ffi_ty<$($ty),*> as $decode_unchecked<'d>>::soft_decode_unchecked(source.0, store)
                 };
                 ($($ty,)*)
             }
         }
-        unsafe impl<'d, $($ty: $decode<'d>),*> $decode<'d> for $ffi_ty<$($ty),*> {
+        #[cfg(feature = "repr-rust")]
+        unsafe impl<'d, L: Language, $($ty: $decode<'d, L>),*> $decode<'d, L> for ($($ty,)*) {
             type Store = ($( $ty::Store, )*);
 
             #[inline(always)]
             #[expect(non_snake_case)]
             unsafe fn soft_decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Option<Self> {
-                impl_tuple! {@decl_priv_store $($ty),*}
-
-                let abi::$carrier($($ty),*) = source;
-                let store: private_store::Store<$($ty::Store,)*> = store.into();
-                Some(unsafe { $ffi_ty($( $ty::soft_decode($ty, store.$ty)? ),*) })
+                let $ffi_ty($($ty),*) = unsafe {
+                    <$ffi_ty<$($ty),*> as $decode<'d, L>>::soft_decode(source.0, store)
+                }?;
+                Some(($($ty,)*))
             }
+
+        }
+        unsafe impl<'d,  $($ty: $decode_unchecked<'d>),*> $decode_unchecked<'d> for $ffi_ty<$($ty),*> {
+            type SoftStore = ($( $ty::SoftStore, )*);
 
             #[inline(always)]
             #[expect(non_snake_case)]
-            unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Self {
-                impl_tuple! {@decl_priv_store $($ty),*}
-
+            unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, store: &'itm mut Self::SoftStore) -> Self {
                 let abi::$carrier($($ty),*) = source;
-                let store: private_store::Store<$($ty::Store),*> = store.into();
-                unsafe { $ffi_ty($( $ty::soft_decode_unchecked($ty, store.$ty) ),*) }
+                unsafe { $ffi_ty($( $ty::soft_decode_unchecked($ty, &mut store.$idx) ),*) }
             }
+        }
+        unsafe impl<'d, L: Language, $($ty: $decode<'d, L>),*> $decode<'d, L> for $ffi_ty<$($ty),*> {
+            type Store = ($( $ty::Store, )*);
+
+            #[inline(always)]
+            #[expect(non_snake_case)]
+            unsafe fn soft_decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Option<Self> {
+                let abi::$carrier($($ty),*) = source;
+                Some(unsafe { $ffi_ty($( $ty::soft_decode($ty, &mut store.$idx)? ),*) })
+            }
+
         }
     };
 
@@ -184,11 +185,11 @@ macro_rules! impl_tuple {
     };
 
     (@main [$($ty:ident:$idx:tt),+] [$($head:ident:$head_idx:tt,)*] $last:ident:$last_idx:tt -> $ffi_ty:ident, $carrier:ident) => {
-        impl_tuple!(@codecs [$($ty:$idx),+] -> $ffi_ty, $carrier, EncodeMove, EncodeMoveUnchecked, DecodeMove);
+        impl_tuple!(@codecs [$($ty:$idx),+] -> $ffi_ty, $carrier, EncodeMove, EncodeMoveUnchecked, DecodeMove, DecodeMoveUnchecked);
         const _: () = {
-            use crate::borrow::{BorrowedEncode, BorrowedEncodeUnchecked, BorrowedDecode};
+            use crate::borrow::{BorrowedEncode, BorrowedEncodeUnchecked, BorrowedDecode, BorrowedDecodeUnchecked};
             #[cfg(feature = "repr-rust")]
-            unsafe impl<$($ty: BorrowedEncode),*> BorrowedEncode for ($($ty,)*) {
+            unsafe impl<L: Language, $($ty: BorrowedEncode<L>),*> BorrowedEncode<L> for ($($ty,)*) {
             type Store = ($( $ty::Store, )*);
 
             #[inline(always)]
@@ -202,7 +203,7 @@ macro_rules! impl_tuple {
             }
 
         }
-        unsafe impl<$($ty: BorrowedEncode),*> BorrowedEncode for $ffi_ty<$($ty),*> {
+        unsafe impl<L: Language, $($ty: BorrowedEncode<L>),*> BorrowedEncode<L> for $ffi_ty<$($ty),*> {
             type Store = ($( $ty::Store, )*);
 
             #[inline(always)]
@@ -211,17 +212,13 @@ macro_rules! impl_tuple {
             where
                 Self: 'itm,
             {
-                impl_tuple! {@decl_priv_store $($ty),*}
-
                 let $ffi_ty($($ty),*) = self;
-                let store: private_store::Store<$($ty::Store,)*> = store.into();
-                        let owner: private_store::Store<$($ty::Owner,)*> = owner.into();
-                abi::$carrier($( BorrowedEncode::soft_encode($ty, store.$ty, owner.$ty) ),*)
+                abi::$carrier($( BorrowedEncode::<L>::soft_encode($ty, &mut store.$idx, &mut owner.$idx) ),*)
             }
 
         }
         #[cfg(feature = "repr-rust")]
-        unsafe impl<$($ty: BorrowedEncodeUnchecked),*> BorrowedEncodeUnchecked for ($($ty,)*) {
+        unsafe impl<$($ty: BorrowedEncodeUnchecked), *> BorrowedEncodeUnchecked for ($($ty,)*) {
             type Owner = ($($ty::Owner,)*);
             type SoftStore = ($($ty::SoftStore,)*);
 
@@ -231,89 +228,76 @@ macro_rules! impl_tuple {
                 Native(unsafe { $ffi_ty::<$($ty),*>($($ty),*).soft_encode_unchecked(store, owner) })
             }
         }
-        unsafe impl<$($ty: BorrowedEncodeUnchecked),*> BorrowedEncodeUnchecked for $ffi_ty<$($ty),*> {
+        unsafe impl<$($ty: BorrowedEncodeUnchecked), *> BorrowedEncodeUnchecked for $ffi_ty<$($ty),*> {
             type Owner = ($($ty::Owner,)*);
             type SoftStore = ($($ty::SoftStore,)*);
 
             #[expect(non_snake_case)]
             unsafe fn soft_encode_unchecked<'itm>(self, store: &'itm mut Self::SoftStore, owner: &'itm mut Self::Owner) -> Self::CType where Self: 'itm {
-                impl_tuple! {@decl_priv_store $($ty),*}
-
                 let $ffi_ty($($ty),*) = self;
-                let store: private_store::Store<$($ty::SoftStore,)*> = store.into();
-                        let owner: private_store::Store<$($ty::Owner,)*> = owner.into();
-                abi::$carrier($(unsafe { $ty.soft_encode_unchecked(store.$ty, owner.$ty) }),*)
+                unsafe { abi::$carrier($(BorrowedEncodeUnchecked::soft_encode_unchecked($ty, &mut store.$idx, &mut owner.$idx)),*) }
             }
         }
         #[cfg(feature = "repr-rust")]
-        unsafe impl<'d, $($ty: BorrowedDecode<'d>),*> BorrowedDecode<'d> for ($($ty,)*) {
-            type Store = ($( $ty::Store, )*);
+        unsafe impl<'d,  $($ty: BorrowedDecodeUnchecked<'d>),*> BorrowedDecodeUnchecked<'d> for ($($ty,)*) {
+            type SoftStore = ($( $ty::SoftStore, )*);
 
             #[inline(always)]
             #[expect(non_snake_case)]
-            unsafe fn soft_decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Option<Self> {
+            unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, store: &'itm mut Self::SoftStore) -> Self {
                 let $ffi_ty($($ty),*) = unsafe {
-                    <$ffi_ty<$($ty),*> as BorrowedDecode<'d>>::soft_decode(source.0, store)
-                }?;
-                Some(($($ty,)*))
-            }
-
-            #[inline(always)]
-            #[expect(non_snake_case)]
-            unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Self {
-                let $ffi_ty($($ty),*) = unsafe {
-                    <$ffi_ty<$($ty),*> as BorrowedDecode<'d>>::soft_decode_unchecked(source.0, store)
+                    <$ffi_ty<$($ty),*> as BorrowedDecodeUnchecked<'d>>::soft_decode_unchecked(source.0, store)
                 };
                 ($($ty,)*)
             }
         }
-        unsafe impl<'d, $($ty: BorrowedDecode<'d>),*> BorrowedDecode<'d> for $ffi_ty<$($ty),*> {
+        #[cfg(feature = "repr-rust")]
+        unsafe impl<'d, L: Language, $($ty: BorrowedDecode<'d, L>),*> BorrowedDecode<'d, L> for ($($ty,)*) {
             type Store = ($( $ty::Store, )*);
 
             #[inline(always)]
             #[expect(non_snake_case)]
             unsafe fn soft_decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Option<Self> {
-                impl_tuple! {@decl_priv_store $($ty),*}
-
-                let abi::$carrier($($ty),*) = source;
-                let store: private_store::Store<$($ty::Store,)*> = store.into();
-                Some(unsafe { $ffi_ty($( $ty::soft_decode($ty, store.$ty)? ),*) })
+                let $ffi_ty($($ty),*) = unsafe {
+                    <$ffi_ty<$($ty),*> as BorrowedDecode<'d, L>>::soft_decode(source.0, store)
+                }?;
+                Some(($($ty,)*))
             }
+
+        }
+        unsafe impl<'d,  $($ty: BorrowedDecodeUnchecked<'d>),*> BorrowedDecodeUnchecked<'d> for $ffi_ty<$($ty),*> {
+            type SoftStore = ($( $ty::SoftStore, )*);
 
             #[inline(always)]
             #[expect(non_snake_case)]
-            unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Self {
-                impl_tuple! {@decl_priv_store $($ty),*}
-
+            unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, store: &'itm mut Self::SoftStore) -> Self {
                 let abi::$carrier($($ty),*) = source;
-                let store: private_store::Store<$($ty::Store),*> = store.into();
-                unsafe { $ffi_ty($( $ty::soft_decode_unchecked($ty, store.$ty) ),*) }
+                unsafe { $ffi_ty($( $ty::soft_decode_unchecked($ty, &mut store.$idx) ),*) }
             }
+        }
+        unsafe impl<'d, L: Language, $($ty: BorrowedDecode<'d, L>),*> BorrowedDecode<'d, L> for $ffi_ty<$($ty),*> {
+            type Store = ($( $ty::Store, )*);
+
+            #[inline(always)]
+            #[expect(non_snake_case)]
+            unsafe fn soft_decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Option<Self> {
+                let abi::$carrier($($ty),*) = source;
+                Some(unsafe { $ffi_ty($( $ty::soft_decode($ty, &mut store.$idx)? ),*) })
+            }
+
         }
         };
         #[cfg(feature = "repr-rust")]
-        unsafe impl<'d, $($ty: ReprC<CType: crate::CType + Sized> + RustSpec + 'd),+> crate::convert::SoftDecodeRef<'d> for ($($ty,)*)
+        unsafe impl<'d,  $($ty: ReprC<CType: crate::CType + Sized> + RustSpec + 'd),+> crate::convert::SoftDecodeRefUnchecked<'d> for ($($ty,)*)
         where
             Self: RustSpec + ReprC<CType = Native<abi::$carrier<$(<$ty as ReprC>::CType),*>>>,
             &'d Self: ReprC<CType = crate::reference::abi::SoftRef<<Self as ReprC>::CType>>,
-            $(&'d $ty: DecodeMove<'d> + ReprC<CType: RefCarrier<Pointee = <$ty as ReprC>::CType>>,)+
-            $(crate::sync::DecodedField<
-                'd, $ty, <&'d $ty as DecodeMove<'d>>::Store, <$ty as RustSpec>::Layout,
-            >: crate::sync::TakeDecoded<Value = $ty>,)+
+            $(&'d $ty: DecodeMoveUnchecked<'d> + ReprC<CType: RefCarrier<Pointee = <$ty as ReprC>::CType>>,)+
+            $(crate::sync::DecodedFieldUnchecked<'d, $ty, <&'d $ty as DecodeMoveUnchecked<'d>>::SoftStore, <$ty as RustSpec>::Layout>: crate::sync::TakeDecoded<Value = $ty>,)+
         {
-            type Store = crate::sync::RefSizedDecodeStore<Self, ($(<&'d $ty as DecodeMove<'d>>::Store,)*)>;
-            unsafe fn soft_decode_ref<'itm: 'd>(source: <&'d Self as ReprC>::CType, store: &'itm mut Self::Store) -> Option<&'d Self> {
-                let source = unsafe { source.into_ref()? };
-                store.decode(|fields| Some(($(
-                    unsafe {
-                        crate::decoded::decode_ref_field::<$ty>(
-                            RefCarrier::from_raw(&source.0.$idx),
-                            &mut fields.$idx,
-                        )
-                    }?,
-                )*)))
-            }
-            unsafe fn soft_decode_ref_unchecked<'itm: 'd>(source: <&'d Self as ReprC>::CType, store: &'itm mut Self::Store) -> &'d Self {
+            type SoftStore = crate::sync::RefSizedDecodeStore<Self, ($(<&'d $ty as DecodeMoveUnchecked<'d>>::SoftStore,)*)>;
+
+            unsafe fn soft_decode_ref_unchecked<'itm: 'd>(source: <&'d Self as ReprC>::CType, store: &'itm mut Self::SoftStore) -> &'d Self {
                 let source = unsafe { source.into_ref().unwrap_unchecked() };
                 store.decode(|fields| Some(($(
                     unsafe {
@@ -325,29 +309,40 @@ macro_rules! impl_tuple {
                 )*))).expect("unchecked decoding produces a value")
             }
         }
-
-        unsafe impl<'d, $($ty: ReprC<CType: crate::CType + Sized> + RustSpec + 'd),+> crate::convert::SoftDecodeRef<'d> for $ffi_ty<$($ty),*>
+        #[cfg(feature = "repr-rust")]
+        unsafe impl<'d, L: Language, $($ty: ReprC<CType: crate::CType + Sized> + RustSpec + 'd),+> crate::convert::SoftDecodeRef<'d, L> for ($($ty,)*)
         where
-            Self: RustSpec + ReprC<CType = abi::$carrier<$(<$ty as ReprC>::CType),*>>,
+            Self: RustSpec + ReprC<CType = Native<abi::$carrier<$(<$ty as ReprC>::CType),*>>>,
             &'d Self: ReprC<CType = crate::reference::abi::SoftRef<<Self as ReprC>::CType>>,
-            $(&'d $ty: DecodeMove<'d> + ReprC<CType: RefCarrier<Pointee = <$ty as ReprC>::CType>>,)+
-            $(crate::sync::DecodedField<
-                'd, $ty, <&'d $ty as DecodeMove<'d>>::Store, <$ty as RustSpec>::Layout,
-            >: crate::sync::TakeDecoded<Value = $ty>,)+
+            $(&'d $ty: DecodeMove<'d, L> + ReprC<CType: RefCarrier<Pointee = <$ty as ReprC>::CType>>,)+
+            $(crate::sync::DecodedField<'d, $ty, <&'d $ty as DecodeMove<'d, L>>::Store, <$ty as RustSpec>::Layout, L>: crate::sync::TakeDecoded<Value = $ty>,)+
         {
-            type Store = crate::sync::RefSizedDecodeStore<Self, ($(<&'d $ty as DecodeMove<'d>>::Store,)*)>;
+            type Store = crate::sync::RefSizedDecodeStore<Self, ($(<&'d $ty as DecodeMove<'d, L>>::Store,)*)>;
             unsafe fn soft_decode_ref<'itm: 'd>(source: <&'d Self as ReprC>::CType, store: &'itm mut Self::Store) -> Option<&'d Self> {
                 let source = unsafe { source.into_ref()? };
-                store.decode(|fields| Some($ffi_ty($(
+                store.decode(|fields| Some(($(
                     unsafe {
-                        crate::decoded::decode_ref_field::<$ty>(
-                            RefCarrier::from_raw(&source.$idx),
+                        crate::decoded::decode_ref_field::<$ty, L>(
+                            RefCarrier::from_raw(&source.0.$idx),
                             &mut fields.$idx,
                         )
                     }?,
                 )*)))
             }
-            unsafe fn soft_decode_ref_unchecked<'itm: 'd>(source: <&'d Self as ReprC>::CType, store: &'itm mut Self::Store) -> &'d Self {
+
+        }
+
+        #[cfg(feature = "repr-rust")]
+        unsafe impl<'d,  $($ty: ReprC<CType: crate::CType + Sized> + RustSpec + 'd),+> crate::convert::SoftDecodeRefUnchecked<'d> for $ffi_ty<$($ty),*>
+        where
+            Self: RustSpec + ReprC<CType = abi::$carrier<$(<$ty as ReprC>::CType),*>>,
+            &'d Self: ReprC<CType = crate::reference::abi::SoftRef<<Self as ReprC>::CType>>,
+            $(&'d $ty: DecodeMoveUnchecked<'d> + ReprC<CType: RefCarrier<Pointee = <$ty as ReprC>::CType>>,)+
+            $(crate::sync::DecodedFieldUnchecked<'d, $ty, <&'d $ty as DecodeMoveUnchecked<'d>>::SoftStore, <$ty as RustSpec>::Layout>: crate::sync::TakeDecoded<Value = $ty>,)+
+        {
+            type SoftStore = crate::sync::RefSizedDecodeStore<Self, ($(<&'d $ty as DecodeMoveUnchecked<'d>>::SoftStore,)*)>;
+
+            unsafe fn soft_decode_ref_unchecked<'itm: 'd>(source: <&'d Self as ReprC>::CType, store: &'itm mut Self::SoftStore) -> &'d Self {
                 let source = unsafe { source.into_ref().unwrap_unchecked() };
                 store.decode(|fields| Some($ffi_ty($(
                     unsafe {
@@ -360,21 +355,37 @@ macro_rules! impl_tuple {
             }
         }
         #[cfg(feature = "repr-rust")]
-        unsafe impl<'d, $($ty: ReprC<CType: crate::CType + Copy> + 'd),+> crate::convert::SoftDecodeMut<'d> for ($($ty,)*)
+        unsafe impl<'d, L: Language, $($ty: ReprC<CType: crate::CType + Sized> + RustSpec + 'd),+> crate::convert::SoftDecodeRef<'d, L> for $ffi_ty<$($ty),*>
         where
-            $($ty: crate::borrow::BorrowedDecode<'d>,)*
-            Self: EncodeMove<Store: crate::convert::EmptyStore> + RustSpec + ReprC<CType = Native<abi::$carrier<$(<$ty as ReprC>::CType),*>>>,
+            Self: RustSpec + ReprC<CType = abi::$carrier<$(<$ty as ReprC>::CType),*>>,
+            &'d Self: ReprC<CType = crate::reference::abi::SoftRef<<Self as ReprC>::CType>>,
+            $(&'d $ty: DecodeMove<'d, L> + ReprC<CType: RefCarrier<Pointee = <$ty as ReprC>::CType>>,)+
+            $(crate::sync::DecodedField<'d, $ty, <&'d $ty as DecodeMove<'d, L>>::Store, <$ty as RustSpec>::Layout, L>: crate::sync::TakeDecoded<Value = $ty>,)+
+        {
+            type Store = crate::sync::RefSizedDecodeStore<Self, ($(<&'d $ty as DecodeMove<'d, L>>::Store,)*)>;
+            unsafe fn soft_decode_ref<'itm: 'd>(source: <&'d Self as ReprC>::CType, store: &'itm mut Self::Store) -> Option<&'d Self> {
+                let source = unsafe { source.into_ref()? };
+                store.decode(|fields| Some($ffi_ty($(
+                    unsafe {
+                        crate::decoded::decode_ref_field::<$ty, L>(
+                            RefCarrier::from_raw(&source.$idx),
+                            &mut fields.$idx,
+                        )
+                    }?,
+                )*)))
+            }
+
+        }
+        #[cfg(feature = "repr-rust")]
+        unsafe impl<'d,  $($ty: ReprC<CType: crate::CType + Copy> + 'd),+> crate::convert::SoftDecodeMutUnchecked<'d> for ($($ty,)*)
+        where
+            $($ty: crate::borrow::BorrowedDecodeUnchecked<'d>,)*
+            Self: EncodeMoveUnchecked<SoftStore: crate::convert::EmptyStore> + RustSpec + ReprC<CType = Native<abi::$carrier<$(<$ty as ReprC>::CType),*>>>,
             &'d mut Self: ReprC<CType = crate::reference::abi::SoftRefMut<<Self as ReprC>::CType>>,
         {
-            type Store = crate::sync::RefMutSizedDecodeStore<Self, ($(<$ty as crate::borrow::BorrowedDecode<'d>>::Store,)*)>;
-            unsafe fn soft_decode_mut<'itm: 'd>(source: <&'d mut Self as ReprC>::CType, store: &'itm mut Self::Store) -> Option<&'d mut Self> {
-                let pointer = source.as_ptr();
-                let source = unsafe { pointer.as_ref()? };
-                unsafe { store.decode(pointer, |fields| Some(($(
-                    crate::decoded::decode_mut_field::<$ty>(source.0.$idx, &mut fields.$idx)?,
-                )*))) }
-            }
-            unsafe fn soft_decode_mut_unchecked<'itm: 'd>(source: <&'d mut Self as ReprC>::CType, store: &'itm mut Self::Store) -> &'d mut Self {
+            type SoftStore = crate::sync::RefMutSizedDecodeStoreUnchecked<Self, ($(<$ty as crate::borrow::BorrowedDecodeUnchecked<'d>>::SoftStore,)*)>;
+
+            unsafe fn soft_decode_mut_unchecked<'itm: 'd>(source: <&'d mut Self as ReprC>::CType, store: &'itm mut Self::SoftStore) -> &'d mut Self {
                 let pointer = source.as_ptr();
                 let source = unsafe { &*pointer };
                 unsafe { store.decode(pointer, |fields| Some(($(
@@ -382,28 +393,57 @@ macro_rules! impl_tuple {
                 )*))) }.expect("unchecked decoding produces a value")
             }
         }
-
-        unsafe impl<'d, $($ty: ReprC<CType: crate::CType + Copy> + 'd),+> crate::convert::SoftDecodeMut<'d> for $ffi_ty<$($ty),*>
+        #[cfg(feature = "repr-rust")]
+        unsafe impl<'d, L: Language, $($ty: ReprC<CType: crate::CType + Copy> + 'd),+> crate::convert::SoftDecodeMut<'d, L> for ($($ty,)*)
         where
-            $($ty: crate::borrow::BorrowedDecode<'d>,)*
-            Self: EncodeMove<Store: crate::convert::EmptyStore> + RustSpec + ReprC<CType = abi::$carrier<$(<$ty as ReprC>::CType),*>>,
+            $($ty: crate::borrow::BorrowedDecode<'d, L>,)*
+            Self: EncodeMove<Store: crate::convert::EmptyStore> + RustSpec + ReprC<CType = Native<abi::$carrier<$(<$ty as ReprC>::CType),*>>>,
             &'d mut Self: ReprC<CType = crate::reference::abi::SoftRefMut<<Self as ReprC>::CType>>,
         {
-            type Store = crate::sync::RefMutSizedDecodeStore<Self, ($(<$ty as crate::borrow::BorrowedDecode<'d>>::Store,)*)>;
+            type Store = crate::sync::RefMutSizedDecodeStore<Self, ($(<$ty as crate::borrow::BorrowedDecode<'d, L>>::Store,)*)>;
             unsafe fn soft_decode_mut<'itm: 'd>(source: <&'d mut Self as ReprC>::CType, store: &'itm mut Self::Store) -> Option<&'d mut Self> {
                 let pointer = source.as_ptr();
                 let source = unsafe { pointer.as_ref()? };
-                unsafe { store.decode(pointer, |fields| Some($ffi_ty($(
-                    crate::decoded::decode_mut_field::<$ty>(source.$idx, &mut fields.$idx)?,
+                unsafe { store.decode(pointer, |fields| Some(($(
+                    crate::decoded::decode_mut_field::<$ty, L>(source.0.$idx, &mut fields.$idx)?,
                 )*))) }
             }
-            unsafe fn soft_decode_mut_unchecked<'itm: 'd>(source: <&'d mut Self as ReprC>::CType, store: &'itm mut Self::Store) -> &'d mut Self {
+
+        }
+
+        #[cfg(feature = "repr-rust")]
+        unsafe impl<'d,  $($ty: ReprC<CType: crate::CType + Copy> + 'd),+> crate::convert::SoftDecodeMutUnchecked<'d> for $ffi_ty<$($ty),*>
+        where
+            $($ty: crate::borrow::BorrowedDecodeUnchecked<'d>,)*
+            Self: EncodeMoveUnchecked<SoftStore: crate::convert::EmptyStore> + RustSpec + ReprC<CType = abi::$carrier<$(<$ty as ReprC>::CType),*>>,
+            &'d mut Self: ReprC<CType = crate::reference::abi::SoftRefMut<<Self as ReprC>::CType>>,
+        {
+            type SoftStore = crate::sync::RefMutSizedDecodeStoreUnchecked<Self, ($(<$ty as crate::borrow::BorrowedDecodeUnchecked<'d>>::SoftStore,)*)>;
+
+            unsafe fn soft_decode_mut_unchecked<'itm: 'd>(source: <&'d mut Self as ReprC>::CType, store: &'itm mut Self::SoftStore) -> &'d mut Self {
                 let pointer = source.as_ptr();
                 let source = unsafe { &*pointer };
                 unsafe { store.decode(pointer, |fields| Some($ffi_ty($(
                     crate::decoded::decode_mut_field_unchecked::<$ty>(source.$idx, &mut fields.$idx),
                 )*))) }.expect("unchecked decoding produces a value")
             }
+        }
+        #[cfg(feature = "repr-rust")]
+        unsafe impl<'d, L: Language, $($ty: ReprC<CType: crate::CType + Copy> + 'd),+> crate::convert::SoftDecodeMut<'d, L> for $ffi_ty<$($ty),*>
+        where
+            $($ty: crate::borrow::BorrowedDecode<'d, L>,)*
+            Self: EncodeMove<Store: crate::convert::EmptyStore> + RustSpec + ReprC<CType = abi::$carrier<$(<$ty as ReprC>::CType),*>>,
+            &'d mut Self: ReprC<CType = crate::reference::abi::SoftRefMut<<Self as ReprC>::CType>>,
+        {
+            type Store = crate::sync::RefMutSizedDecodeStore<Self, ($(<$ty as crate::borrow::BorrowedDecode<'d, L>>::Store,)*)>;
+            unsafe fn soft_decode_mut<'itm: 'd>(source: <&'d mut Self as ReprC>::CType, store: &'itm mut Self::Store) -> Option<&'d mut Self> {
+                let pointer = source.as_ptr();
+                let source = unsafe { pointer.as_ref()? };
+                unsafe { store.decode(pointer, |fields| Some($ffi_ty($(
+                    crate::decoded::decode_mut_field::<$ty, L>(source.$idx, &mut fields.$idx)?,
+                )*))) }
+            }
+
         }
         impl<$($ty: Store),+> Store for ($($ty,)+) {
             #[expect(non_snake_case)]
@@ -414,89 +454,78 @@ macro_rules! impl_tuple {
         }
 
         #[cfg(feature = "repr-rust")]
-        unsafe impl<'a, $($ty: ReprC<CType: Copy> + 'a),*, __Interior: ExclusiveKind> SoftEncodeRef<'a> for ($($ty,)*)
+        unsafe impl<'a, L: Language,  $($ty: ReprC<CType: Copy> + 'a),*, __Interior: ExclusiveKind> SoftEncodeRef<'a,  L> for ($($ty,)*)
         where
         &'a Self: crate::ReprC<CType = crate::reference::abi::SoftRef<<Self as ReprC>::CType>>,
             Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin>,
-            $(&'a $ty: EncodeMove + ReprC<CType: RefCarrier<Pointee = <$ty as ReprC>::CType>>),*
+            $(&'a $ty: EncodeMove<L> + ReprC<CType: RefCarrier<Pointee = <$ty as ReprC>::CType>>),*
         {
-            type Store = crate::sync::RefSizedEncodeStore<Self, ($(<&'a $ty as EncodeMove>::Store,)*)>;
-            #[expect(non_snake_case)]
+            type Store = crate::sync::RefSizedEncodeStore<Self, ($(<&'a $ty as EncodeMove<L>>::Store,)*)>;
             fn soft_encode_ref<'itm>(&'a self, store: &'itm mut Self::Store) -> <&'a Self as crate::ReprC>::CType  where 'a: 'itm {
                 store.encode(|fields| {
-                    impl_tuple! {@decl_priv_store $($ty),*}
-                    let ($($ty,)*) = self;
-                    let fields: private_store::Store<$(<&'a $ty as EncodeMove>::Store,)*> = fields.into();
-                    Native(abi::$carrier($($crate::stored::encode_ref_field($ty, fields.$ty)),*))
-                })
-            }
-        }
-
-        unsafe impl<'a, $($ty: ReprC<CType: Copy> + 'a),*, __Interior: ExclusiveKind> SoftEncodeRef<'a> for $ffi_ty<$($ty),*>
-        where
-        &'a Self: crate::ReprC<CType = crate::reference::abi::SoftRef<<Self as ReprC>::CType>>,
-            Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin>,
-            $(&'a $ty: EncodeMove + ReprC<CType: RefCarrier<Pointee = <$ty as ReprC>::CType>>),*
-        {
-            type Store = crate::sync::RefSizedEncodeStore<Self, ($(<&'a $ty as EncodeMove>::Store,)*)>;
-            #[expect(non_snake_case)]
-            fn soft_encode_ref<'itm>(&'a self, store: &'itm mut Self::Store) -> <&'a Self as crate::ReprC>::CType  where 'a: 'itm {
-                store.encode(|fields| {
-                    impl_tuple! {@decl_priv_store $($ty),*}
-                    let $ffi_ty($($ty),*) = self;
-                    let fields: private_store::Store<$(<&'a $ty as EncodeMove>::Store,)*> = fields.into();
-                    abi::$carrier($($crate::stored::encode_ref_field($ty, fields.$ty)),*)
+                    Native(abi::$carrier($($crate::stored::encode_ref_field::<_, L>(&self.$idx, &mut fields.$idx)),*))
                 })
             }
         }
 
         #[cfg(feature = "repr-rust")]
-        unsafe impl<'a, $($ty: ReprC<CType: Copy> + 'a),*, __Interior: ExclusiveKind> SoftEncodeRefUnchecked<'a> for ($($ty,)*)
+        unsafe impl<'a, L: Language,  $($ty: ReprC<CType: Copy> + 'a),*, __Interior: ExclusiveKind> SoftEncodeRef<'a,  L> for $ffi_ty<$($ty),*>
+        where
+        &'a Self: crate::ReprC<CType = crate::reference::abi::SoftRef<<Self as ReprC>::CType>>,
+            Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin>,
+            $(&'a $ty: EncodeMove<L> + ReprC<CType: RefCarrier<Pointee = <$ty as ReprC>::CType>>),*
+        {
+            type Store = crate::sync::RefSizedEncodeStore<Self, ($(<&'a $ty as EncodeMove<L>>::Store,)*)>;
+            fn soft_encode_ref<'itm>(&'a self, store: &'itm mut Self::Store) -> <&'a Self as crate::ReprC>::CType  where 'a: 'itm {
+                store.encode(|fields| {
+                    abi::$carrier($($crate::stored::encode_ref_field::<_, L>(&self.$idx, &mut fields.$idx)),*)
+                })
+            }
+        }
+
+        #[cfg(feature = "repr-rust")]
+        unsafe impl<'a, $($ty: ReprC<CType: Copy> + 'a), *, __Interior: ExclusiveKind> SoftEncodeRefUnchecked<'a> for ($($ty,)*)
         where
         &'a Self: crate::ReprC<CType = crate::reference::abi::SoftRef<<Self as ReprC>::CType>>,
             Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin>,
             $(&'a $ty: EncodeMoveUnchecked + ReprC<CType: RefCarrier<Pointee = <$ty as ReprC>::CType>>),*
         {
             type SoftStore = crate::sync::RefSizedEncodeStore<Self, ($(<&'a $ty as EncodeMoveUnchecked>::SoftStore,)*)>;
-            #[expect(non_snake_case)]
             unsafe fn soft_encode_ref_unchecked<'itm>(&'a self, store: &'itm mut Self::SoftStore) -> <&'a Self as ReprC>::CType  where 'a: 'itm {
                 store.encode(|fields| {
-                    impl_tuple! {@decl_priv_store $($ty),*}
-                    let ($($ty,)*) = self;
-                    let fields: private_store::Store<$(<&'a $ty as EncodeMoveUnchecked>::SoftStore,)*> = fields.into();
-                    Native(abi::$carrier($(unsafe { $crate::stored::encode_ref_field_unchecked($ty, fields.$ty) }),*))
+                    Native(abi::$carrier($(unsafe { $crate::stored::encode_ref_field_unchecked::<_>(&self.$idx, &mut fields.$idx) }),*))
                 })
             }
         }
 
-        unsafe impl<'a, $($ty: ReprC<CType: Copy> + 'a),*, __Interior: ExclusiveKind> SoftEncodeRefUnchecked<'a> for $ffi_ty<$($ty),*>
+        #[cfg(feature = "repr-rust")]
+        unsafe impl<'a, $($ty: ReprC<CType: Copy> + 'a), *, __Interior: ExclusiveKind> SoftEncodeRefUnchecked<'a> for $ffi_ty<$($ty),*>
         where
         &'a Self: crate::ReprC<CType = crate::reference::abi::SoftRef<<Self as ReprC>::CType>>,
             Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin>,
             $(&'a $ty: EncodeMoveUnchecked + ReprC<CType: RefCarrier<Pointee = <$ty as ReprC>::CType>>),*
         {
             type SoftStore = crate::sync::RefSizedEncodeStore<Self, ($(<&'a $ty as EncodeMoveUnchecked>::SoftStore,)*)>;
-            #[expect(non_snake_case)]
             unsafe fn soft_encode_ref_unchecked<'itm>(&'a self, store: &'itm mut Self::SoftStore) -> <&'a Self as ReprC>::CType  where 'a: 'itm {
                 store.encode(|fields| {
-                    impl_tuple! {@decl_priv_store $($ty),*}
-                    let $ffi_ty($($ty),*) = self;
-                    let fields: private_store::Store<$(<&'a $ty as EncodeMoveUnchecked>::SoftStore,)*> = fields.into();
-                    abi::$carrier($(unsafe { $crate::stored::encode_ref_field_unchecked($ty, fields.$ty) }),*)
+                    abi::$carrier($(unsafe { $crate::stored::encode_ref_field_unchecked::<_>(&self.$idx, &mut fields.$idx) }),*)
                 })
             }
         }
 
         #[cfg(feature = "repr-rust")]
-        impl<$($ty: Encode),*> Encode for ($($ty,)*) {}
-        impl<$($ty: Encode),*> Encode for $ffi_ty<$($ty),*> {}
+        impl<$($ty: crate::convert::EncodeUnchecked), *> crate::convert::EncodeUnchecked for ($($ty,)*) {}
+        impl<$($ty: crate::convert::EncodeUnchecked), *> crate::convert::EncodeUnchecked for $ffi_ty<$($ty),*> {}
         #[cfg(feature = "repr-rust")]
-        impl<$($ty: crate::convert::EncodeUnchecked),*> crate::convert::EncodeUnchecked for ($($ty,)*) {}
-        impl<$($ty: crate::convert::EncodeUnchecked),*> crate::convert::EncodeUnchecked for $ffi_ty<$($ty),*> {}
+        impl<L: Language, $($ty: Encode<L>),*> Encode<L> for ($($ty,)*) {}
+        impl<L: Language, $($ty: Encode<L>),*> Encode<L> for $ffi_ty<$($ty),*> {}
 
         #[cfg(feature = "repr-rust")]
-        impl<'d, $($ty: Decode<'d>),*> Decode<'d> for ($($ty,)*) {}
-        impl<'d, $($ty: Decode<'d>),*> Decode<'d> for $ffi_ty<$($ty),*> {}
+        impl<'d,  $($ty: DecodeUnchecked<'d>),*> DecodeUnchecked<'d> for ($($ty,)*) {}
+        #[cfg(feature = "repr-rust")]
+        impl<'d, L: Language, $($ty: Decode<'d, L>),*> Decode<'d, L> for ($($ty,)*) {}
+        impl<'d,  $($ty: DecodeUnchecked<'d>),*> DecodeUnchecked<'d> for $ffi_ty<$($ty),*> {}
+        impl<'d, L: Language, $($ty: Decode<'d, L>),*> Decode<'d, L> for $ffi_ty<$($ty),*> {}
 
         unsafe impl<$($ty: CType),*> CFnArg for $ffi_ty<$($ty),*>
         where
@@ -541,10 +570,14 @@ macro_rules! impl_tuple {
             type CType = abi::$carrier<$($head::CType,)* $last::CType>;
         }
 
-        unsafe impl<$($head: AbiCompatibleValidate<CType: Copy>,)* $last: AbiCompatibleValidate + ?Sized> AbiCompatibleValidate for $ffi_ty<$($head,)* $last>
-where
-    Self: $crate::rust_spec::RustSpec<Layout = $crate::rust_spec::Specified>,
-{
+        unsafe impl<$($head: AbiCompatible<CType: Copy>,)* $last: AbiCompatible + ?Sized> AbiCompatible for $ffi_ty<$($head,)* $last>
+        where
+            Self: $crate::rust_spec::RustSpec<Layout = $crate::rust_spec::Specified>,
+        {}
+        unsafe impl<L: $crate::lang::Language, $($head: AbiValidate<L, CType: Copy>,)* $last: AbiValidate<L> + ?Sized> AbiValidate<L> for $ffi_ty<$($head,)* $last>
+        where
+            Self: $crate::rust_spec::RustSpec<Layout = $crate::rust_spec::Specified>,
+        {
             #[inline(always)]
             #[expect(non_snake_case)]
             unsafe fn is_valid(target: &Self::CType) -> bool {
@@ -552,10 +585,6 @@ where
                 true $(&& unsafe { $head::is_valid($head) })* && unsafe { $last::is_valid($last) }
             }
         }
-        unsafe impl<$($head: AbiCompatible<CType: Copy>,)* $last: AbiCompatible + ?Sized> AbiCompatible for $ffi_ty<$($head,)* $last>
-where
-    Self: $crate::rust_spec::RustSpec<Layout = $crate::rust_spec::Specified>,
-{}
 
         unsafe impl<$($head: CType,)* $last: CType + ?Sized> CType for $ffi_ty<$($head,)* $last> {}
 
@@ -622,23 +651,7 @@ where
         }
     };
 
-    // NOTE: This is a trick to index tuples
-    ( @decl_priv_store $( $ty:ident ),+) => {
-        // Field names mirror type parameters so the macro can address tuple stores.
-        mod private_store {
-            #[expect(non_snake_case)]
-            pub struct Store<'itm, $($ty),+> {
-                $(pub $ty: &'itm mut $ty),+
-            }
 
-            impl<'itm, $($ty),+> From<&'itm mut ($($ty,)+)> for Store<'itm, $($ty,)+> {
-                #[expect(non_snake_case)]
-                fn from(($($ty,)+): &'itm mut ($($ty,)+)) -> Self {
-                    Self {$($ty,)+}
-                }
-            }
-        }
-    };
 }
 
 impl_tuple! {(A:0) -> Tuple1, Tuple1}
@@ -652,7 +665,7 @@ impl_tuple! {(A:0, B:1, C:2, D:3, E:4, F:5, G:6, H:7) -> Tuple8, Tuple8}
 impl_tuple! {(A:0, B:1, C:2, D:3, E:4, F:5, G:6, H:7, I:8) -> Tuple9, Tuple9}
 impl_tuple! {(A:0, B:1, C:2, D:3, E:4, F:5, G:6, H:7, I:8, J:9) -> Tuple10, Tuple10}
 impl_tuple! {(A:0, B:1, C:2, D:3, E:4, F:5, G:6, H:7, I:8, J:9, K:10) -> Tuple11, Tuple11}
-impl_tuple! {(A:0, B:1, C:2, D:3, E:4, F:5, G:6, H:7, I:8, J:9, K:10, L:11) -> Tuple12, Tuple12}
+impl_tuple! {(A:0, B:1, C:2, D:3, E:4, F:5, G:6, H:7, I:8, J:9, K:10, M:11) -> Tuple12, Tuple12}
 
 #[cfg(feature = "repr-rust")]
 impl<A: Niche> Niche for (A,) {
@@ -711,12 +724,13 @@ impl_tuple_niche_recursive! {
     (A, B, C, D, E, F, G, H, I) => ((A, B, C, D), (E, F, G, H, I)) : Tuple9((0, 0), (0, 1), (0, 2), (0, 3), (1, 0), (1, 1), (1, 2), (1, 3), (1, 4)): (|value: &Self::CType| { let value = &value.0; abi::Tuple4(value.0, value.1, value.2, value.3) }, |value: &Self::CType| { let value = &value.0; abi::Tuple5(value.4, value.5, value.6, value.7, value.8) }),
     (A, B, C, D, E, F, G, H, I, J) => ((A, B, C, D, E), (F, G, H, I, J)) : Tuple10((0, 0), (0, 1), (0, 2), (0, 3), (0, 4), (1, 0), (1, 1), (1, 2), (1, 3), (1, 4)): (|value: &Self::CType| { let value = &value.0; abi::Tuple5(value.0, value.1, value.2, value.3, value.4) }, |value: &Self::CType| { let value = &value.0; abi::Tuple5(value.5, value.6, value.7, value.8, value.9) }),
     (A, B, C, D, E, F, G, H, I, J, K) => ((A, B, C, D, E), (F, G, H, I, J, K)) : Tuple11((0, 0), (0, 1), (0, 2), (0, 3), (0, 4), (1, 0), (1, 1), (1, 2), (1, 3), (1, 4), (1, 5)): (|value: &Self::CType| { let value = &value.0; abi::Tuple5(value.0, value.1, value.2, value.3, value.4) }, |value: &Self::CType| { let value = &value.0; abi::Tuple6(value.5, value.6, value.7, value.8, value.9, value.10) }),
-    (A, B, C, D, E, F, G, H, I, J, K, L) => ((A, B, C, D, E, F), (G, H, I, J, K, L)) : Tuple12((0, 0), (0, 1), (0, 2), (0, 3), (0, 4), (0, 5), (1, 0), (1, 1), (1, 2), (1, 3), (1, 4), (1, 5)): (|value: &Self::CType| { let value = &value.0; abi::Tuple6(value.0, value.1, value.2, value.3, value.4, value.5) }, |value: &Self::CType| { let value = &value.0; abi::Tuple6(value.6, value.7, value.8, value.9, value.10, value.11) })
+    (A, B, C, D, E, F, G, H, I, J, K, M) => ((A, B, C, D, E, F), (G, H, I, J, K, M)) : Tuple12((0, 0), (0, 1), (0, 2), (0, 3), (0, 4), (0, 5), (1, 0), (1, 1), (1, 2), (1, 3), (1, 4), (1, 5)): (|value: &Self::CType| { let value = &value.0; abi::Tuple6(value.0, value.1, value.2, value.3, value.4, value.5) }, |value: &Self::CType| { let value = &value.0; abi::Tuple6(value.6, value.7, value.8, value.9, value.10, value.11) })
 }
 
 #[doc(hidden)]
 pub mod abi {
     use super::*;
+    use crate::lang::Language;
     macro_rules! impl_abi_tuple {
         ([$($ty:ident),+] [$($head:ident:$head_idx:tt,)*] $last:ident:$last_idx:tt -> $ffi_ty:ident) => {
         /// Tuple representation with lowered fields.
@@ -729,16 +743,16 @@ pub mod abi {
             type CType = Self;
         }
         unsafe impl<$($head: CType,)* $last: CType + ?Sized> CType for $ffi_ty<$($head,)* $last> {}
-        unsafe impl<$($head: CType,)* $last: CType + ?Sized> AbiCompatibleValidate for $ffi_ty<$($head,)* $last>
-where
-    Self: $crate::rust_spec::RustSpec<Layout = $crate::rust_spec::Specified>,
-{
+        unsafe impl<$($head: CType,)* $last: CType + ?Sized> AbiCompatible for $ffi_ty<$($head,)* $last>
+        where
+            Self: $crate::rust_spec::RustSpec<Layout = $crate::rust_spec::Specified>,
+        {}
+        unsafe impl<L: $crate::lang::Language, $($head: CType,)* $last: CType + ?Sized> AbiValidate<L> for $ffi_ty<$($head,)* $last>
+        where
+            Self: $crate::rust_spec::RustSpec<Layout = $crate::rust_spec::Specified>,
+        {
             unsafe fn is_valid(_: &Self) -> bool { true }
         }
-        unsafe impl<$($head: CType,)* $last: CType + ?Sized> AbiCompatible for $ffi_ty<$($head,)* $last>
-where
-    Self: $crate::rust_spec::RustSpec<Layout = $crate::rust_spec::Specified>,
-{}
 
         impl<$($head: CType,)* $last: CType> $ffi_ty<$($head,)* $last> {
             /// Return the lowered fields without decoding them.
@@ -776,22 +790,26 @@ where
             fn hash<__Hasher: core::hash::Hasher>(&self, state: &mut __Hasher) { $(core::hash::Hash::hash(&self.$head_idx, state);)* core::hash::Hash::hash(&self.$last_idx, state); }
         }
 
-
-        unsafe impl<$($ty: CType),*> EncodeMove for $ffi_ty<$($ty),*> {
+        unsafe impl<L: Language, $($ty: CType),*> EncodeMove<L> for $ffi_ty<$($ty),*> {
             type Store = ();
             fn soft_encode<'a>(self, _: &'a mut ()) -> Self where Self: 'a { self }
         }
-        unsafe impl<$($ty: CType),*> EncodeMoveUnchecked for $ffi_ty<$($ty),*> {
+        unsafe impl<$($ty: CType), *> EncodeMoveUnchecked for $ffi_ty<$($ty),*> {
             type SoftStore = ();
             unsafe fn soft_encode_unchecked<'a>(self, _: &'a mut ()) -> Self where Self: 'a { self }
         }
-        unsafe impl<'d, $($ty: CType),*> DecodeMove<'d> for $ffi_ty<$($ty),*> {
+        unsafe impl<'d,  $($ty: CType),*> DecodeMoveUnchecked<'d> for $ffi_ty<$($ty),*> {
+            type SoftStore = ();
+            unsafe fn soft_decode_unchecked<'a: 'd>(source: Self, _: &'a mut ()) -> Self { { source } }
+        }
+        unsafe impl<'d, L: Language, $($ty: CType),*> DecodeMove<'d, L> for $ffi_ty<$($ty),*> {
             type Store = ();
             unsafe fn soft_decode<'a: 'd>(source: Self, _: &'a mut ()) -> Option<Self> { Some(source) }
         }
-        impl<$($ty: CType),*> Encode for $ffi_ty<$($ty),*> {}
-        impl<$($ty: CType),*> crate::convert::EncodeUnchecked for $ffi_ty<$($ty),*> {}
-        impl<'d, $($ty: CType),*> Decode<'d> for $ffi_ty<$($ty),*> {}
+        impl<$($ty: CType), *> crate::convert::EncodeUnchecked for $ffi_ty<$($ty),*> {}
+        impl<L: Language, $($ty: CType),*> Encode<L> for $ffi_ty<$($ty),*> {}
+        impl<'d,  $($ty: CType),*> DecodeUnchecked<'d> for $ffi_ty<$($ty),*> {}
+        impl<'d, L: Language, $($ty: CType),*> Decode<'d, L> for $ffi_ty<$($ty),*> {}
         crate::borrow::__impl_borrowed_identity!([$($ty: CType,)* ] $ffi_ty<$($ty),*>);
         unsafe impl<$($ty: CType),*> CFnArg for $ffi_ty<$($ty),*>
         where Self: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>> {}
@@ -849,27 +867,31 @@ impl_abi_tuple!(@wide [$($head,)*] $last -> $ffi_ty);
     impl_abi_tuple!([A, B, C, D, E, F, G, H, I] [A:0, B:1, C:2, D:3, E:4, F:5, G:6, H:7,] I:8 -> Tuple9);
     impl_abi_tuple!([A, B, C, D, E, F, G, H, I, J] [A:0, B:1, C:2, D:3, E:4, F:5, G:6, H:7, I:8,] J:9 -> Tuple10);
     impl_abi_tuple!([A, B, C, D, E, F, G, H, I, J, K] [A:0, B:1, C:2, D:3, E:4, F:5, G:6, H:7, I:8, J:9,] K:10 -> Tuple11);
-    impl_abi_tuple!([A, B, C, D, E, F, G, H, I, J, K, L] [A:0, B:1, C:2, D:3, E:4, F:5, G:6, H:7, I:8, J:9, K:10,] L:11 -> Tuple12);
+    impl_abi_tuple!([A, B, C, D, E, F, G, H, I, J, K, M] [A:0, B:1, C:2, D:3, E:4, F:5, G:6, H:7, I:8, J:9, K:10,] M:11 -> Tuple12);
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::marker::Native;
+    use crate::{lang, marker::Native};
 
     #[test]
     fn tuple_families_lower_and_decode() {
         use crate::{decode, encode, tuple::Tuple2};
         let stable: Tuple2<_, _> = Tuple2(23_u32, true);
-        let encoded: super::abi::Tuple2<u32, crate::primitive::abi::bool> = encode(stable);
+        let encoded: super::abi::Tuple2<u32, crate::primitive::abi::bool> =
+            unsafe { encode::<_, lang::C>(stable) };
         assert_eq!(
-            unsafe { decode::<Tuple2<u32, bool>>(encoded) },
+            unsafe { decode::<Tuple2<u32, bool>, lang::C>(encoded) },
             Some(stable)
         );
 
         let encoded: Native<super::abi::Tuple2<u32, <bool as crate::ReprC>::CType>> =
-            encode((23_u32, true));
-        assert_eq!(unsafe { decode::<(u32, bool)>(encoded) }, Some((23, true)));
-        assert_eq!(encode(encoded), encoded);
+            unsafe { encode::<_, lang::C>((23_u32, true)) };
+        assert_eq!(
+            unsafe { decode::<(u32, bool), lang::C>(encoded) },
+            Some((23, true))
+        );
+        assert_eq!(unsafe { encode::<_, lang::C>(encoded) }, encoded);
         static_assertions::assert_type_ne_all!(super::abi::Tuple2<u32, <bool as crate::ReprC>::CType>, Tuple2<u32, bool>);
     }
 
@@ -969,16 +991,16 @@ mod tests {
 
     use super::*;
     #[cfg(feature = "alloc")]
-    use crate::{boxed::abi::Box as AbiBox, wide::abi::WideBox as AbiWideBox};
+    use crate::{
+        boxed::abi::Box as AbiBox,
+        convert::{DecodeMove, EncodeMove},
+        wide::abi::WideBox as AbiWideBox,
+        wide::abi::{SoftWideRef as AbiSoftWideRef, SoftWideRefMut as AbiSoftWideRefMut},
+    };
     use crate::{
         convert::{Decode, Encode},
         option::abi::Option as AbiOption,
         reference::abi::{SoftRef, SoftRefMut},
-    };
-    #[cfg(feature = "alloc")]
-    use crate::{
-        convert::{DecodeMove, EncodeMove},
-        wide::abi::{SoftWideRef as AbiSoftWideRef, SoftWideRefMut as AbiSoftWideRefMut},
     };
 
     #[test]
@@ -1063,8 +1085,8 @@ mod tests {
     #[test]
     fn unstable_sized_box_decode_releases_source_allocation() {
         type Value = Box<(u8, u8, u8)>;
-        let source = crate::convert::encode_move::<Value>(Box::new((1, 2, 3)));
-        let decoded = unsafe { crate::convert::decode_move::<Value>(source) };
+        let source = unsafe { crate::convert::encode_move::<Value, lang::C>(Box::new((1, 2, 3))) };
+        let decoded = unsafe { crate::convert::decode_move::<Value, lang::C>(source) };
         assert_eq!(decoded, Some(Box::new((1, 2, 3))));
     }
 
@@ -1073,8 +1095,8 @@ mod tests {
     fn unstable_slice_box_owned_round_trip() {
         type Value = Box<[(u8, u8, u8)]>;
         let input: Value = Vec::from([(1, 2, 3), (4, 5, 6)]).into_boxed_slice();
-        let source = crate::convert::encode_move(input);
-        let decoded = unsafe { crate::convert::decode_move::<Value>(source) };
+        let source = unsafe { crate::convert::encode_move::<_, lang::C>(input) };
+        let decoded = unsafe { crate::convert::decode_move::<Value, lang::C>(source) };
         assert_eq!(
             decoded,
             Some(Vec::from([(1, 2, 3), (4, 5, 6)]).into_boxed_slice())
@@ -1085,8 +1107,9 @@ mod tests {
     #[test]
     fn unstable_boxed_slice_uses_box_allocation_layout() {
         let value = Vec::from([(1u32,), (2,)]).into_boxed_slice();
-        let carrier = crate::convert::encode_move(value);
-        let decoded = unsafe { crate::convert::decode_move::<Box<[(u32,)]>>(carrier) }.unwrap();
+        let carrier = unsafe { crate::convert::encode_move::<_, lang::C>(value) };
+        let decoded =
+            unsafe { crate::convert::decode_move::<Box<[(u32,)]>, lang::C>(carrier) }.unwrap();
         assert_eq!(&*decoded, &[(1,), (2,)]);
     }
 
@@ -1094,8 +1117,10 @@ mod tests {
     #[test]
     fn unstable_interior_box_checked_round_trip() {
         use core::cell::Cell;
-        let encoded = crate::convert::encode_move(Box::new(Cell::new((7_u8,))));
-        let decoded = unsafe { crate::convert::decode_move::<Box<Cell<(u8,)>>>(encoded) }.unwrap();
+        let encoded =
+            unsafe { crate::convert::encode_move::<_, lang::C>(Box::new(Cell::new((7_u8,)))) };
+        let decoded =
+            unsafe { crate::convert::decode_move::<Box<Cell<(u8,)>>, lang::C>(encoded) }.unwrap();
         assert_eq!(decoded.get(), (7,));
     }
 

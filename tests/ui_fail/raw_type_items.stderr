@@ -39,16 +39,10 @@ error: omit `raw` on `raw!` companion declarations
    |            ^^^^^^^^
 
 error: omit `raw` on `raw!` companion declarations
-  --> tests/ui_fail/raw_type_items.rs:31:1
+  --> tests/ui_fail/raw_type_items.rs:33:9
    |
-31 | / raw! {
-32 | |     impl Host {
-33 | |         raw fn method(self);
-34 | |     }
-35 | | }
-   | |_^
-   |
-   = note: this error originates in the macro `raw` (in Nightly builds, run with -Z macro-backtrace for more info)
+33 |         raw fn method(self);
+   |         ^^^
 
 error: raw function declarations require a safe, synchronous function with at most 12 arguments
   --> tests/ui_fail/raw_type_items.rs:38:5

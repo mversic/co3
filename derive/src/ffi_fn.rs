@@ -11,6 +11,7 @@ use syn::{
 
 use crate::{
     argument::{self, Argument, Unpack, UnpackSyntax},
+    codec::{Boundary, Carrier, Conversion},
     dispatch::{StaticLifetimeNormalizer, set_token_stream_span, tag_id},
     generate::OwnershipMode,
     parse::FailureMode,
@@ -102,9 +103,9 @@ pub(crate) fn gen_unknown_tag_error(failure_mode: FailureMode) -> TokenStream {
 }
 
 pub(crate) fn emit_extern_definition(
+    boundary: Boundary<'_>,
     abi: &syn::Abi,
     attrs: &[syn::Attribute],
-    failure_mode: FailureMode,
     mut signature: syn::Signature,
     ffi_fn_body: TokenStream,
     borrow_output: bool,
@@ -116,7 +117,7 @@ pub(crate) fn emit_extern_definition(
     signature.abi = Some(abi.clone());
 
     emit_abi_function(
-        failure_mode,
+        boundary,
         attrs,
         quote!(),
         &signature,
@@ -131,7 +132,7 @@ pub(crate) fn raw_definition_name(name: &Ident) -> Ident {
 }
 
 pub(crate) fn emit_abi_function(
-    failure_mode: FailureMode,
+    boundary: Boundary<'_>,
     attrs: TokenStream,
     vis: TokenStream,
     signature: &syn::Signature,
@@ -139,12 +140,14 @@ pub(crate) fn emit_abi_function(
     body: TokenStream,
     borrow_output: bool,
 ) -> TokenStream {
+    let contract = boundary.contract;
+    let failure_mode = boundary.failure_mode;
     let error_handler = match failure_mode {
         FailureMode::Panic => gen_failure_panic(quote!(err)),
         FailureMode::Error if fn_return_ty(signature).is_none_or(is_identity_primitive) => {
             quote!(err)
         }
-        FailureMode::Error => gen_abi_return_encode(quote!(err), borrow_output),
+        FailureMode::Error => gen_abi_return_encode(contract, quote!(err), borrow_output),
     };
 
     quote! {
@@ -191,16 +194,18 @@ pub(crate) fn gen_abi_assertions(sig: &syn::Signature) -> TokenStream {
 }
 
 pub(crate) fn gen_definition_body(
+    boundary: Boundary<'_>,
     sig: syn::Signature,
     callee: TokenStream,
     fn_by_val: bool,
-    failure_mode: FailureMode,
 ) -> TokenStream {
+    let contract = boundary.contract;
+    let failure_mode = boundary.failure_mode;
     let inputs = argument::analyze(&sig.inputs);
     let return_ty = fn_return_ty(&sig);
 
     let pack_input_stmts = gen_pack_input_stmts(&inputs, failure_mode);
-    let decode_input_stmts = gen_analyzed_input_decode_stmts(&inputs, failure_mode);
+    let decode_input_stmts = gen_analyzed_input_decode_stmts(boundary, &inputs);
     let store_sync_stmts = gen_store_sync_stmts(inputs.len());
     let sync_error = gen_sync_error(failure_mode);
     let sync_check = gen_sync_check(store_sync_stmts, sync_error);
@@ -212,14 +217,18 @@ pub(crate) fn gen_definition_body(
     });
 
     let return_borrow_check = if let Some(return_ty) = &return_ty {
-        gen_return_borrow_check(return_ty, fn_by_val)
+        gen_return_borrow_check(contract, return_ty, fn_by_val)
     } else {
         quote! {}
     };
     let encoded_output = if return_ty.is_none_or(is_identity_primitive) {
         quote!(__co3_output)
     } else {
-        gen_abi_return_encode(quote!(__co3_output), borrows_return(&sig, fn_by_val))
+        gen_abi_return_encode(
+            contract,
+            quote!(__co3_output),
+            borrows_return(&sig, fn_by_val),
+        )
     };
     let output = match failure_mode {
         FailureMode::Panic => quote! { Ok::<_, ()>(#encoded_output) },
@@ -294,18 +303,27 @@ fn gen_pack_input_stmts(inputs: &[Argument<'_>], failure_mode: FailureMode) -> T
     quote!(#(#stmts)*)
 }
 
-pub(crate) fn gen_abi_return_encode(value: TokenStream, borrow_output: bool) -> TokenStream {
-    if borrow_output {
-        quote!(co3::borrow::encode(#value, &mut Default::default()))
-    } else {
-        quote!(co3::encode(#value))
-    }
+pub(crate) fn gen_abi_return_encode(
+    contract: &Conversion,
+    value: TokenStream,
+    borrow_output: bool,
+) -> TokenStream {
+    let owner = borrow_output.then(|| quote!(&mut Default::default()));
+    contract.encode(
+        Carrier::for_borrow(borrow_output),
+        quote!(_),
+        value,
+        None,
+        owner,
+    )
 }
 
 pub(crate) fn gen_opaque_drop_definition_body(
+    boundary: Boundary<'_>,
     sig: &syn::Signature,
-    failure_mode: FailureMode,
 ) -> TokenStream {
+    let contract = boundary.contract;
+    let failure_mode = boundary.failure_mode;
     let self_ty = sig
         .inputs
         .iter()
@@ -321,13 +339,21 @@ pub(crate) fn gen_opaque_drop_definition_body(
         .expect("`Drop::drop` requires a receiver");
 
     let decode_error = gen_decode_error(failure_mode);
+    let unit = contract.encode(Carrier::Value, quote!(()), quote!(()), None, None);
     let output = match failure_mode {
-        FailureMode::Panic => quote! { Ok::<_, ()>(co3::encode(())) },
-        FailureMode::Error => quote! { Ok(co3::encode(())) },
+        FailureMode::Panic => quote! { Ok::<_, ()>(#unit) },
+        FailureMode::Error => quote! { Ok(#unit) },
     };
 
+    let decode = contract.decode(
+        Carrier::Value,
+        quote!(co3::boxed::Box<#self_ty>),
+        None,
+        quote!(__co3_self),
+        None,
+    );
     quote! {{
-        let Some(__co3_value) = (unsafe { co3::decode::<co3::boxed::Box<#self_ty>>(__co3_self) }) else {
+        let Some(__co3_value) = (#decode) else {
             #decode_error
         };
         core::mem::drop(__co3_value);
@@ -337,9 +363,11 @@ pub(crate) fn gen_opaque_drop_definition_body(
 }
 
 pub(crate) fn gen_regular_drop_definition_body(
+    boundary: Boundary<'_>,
     sig: &syn::Signature,
-    failure_mode: FailureMode,
 ) -> TokenStream {
+    let contract = boundary.contract;
+    let failure_mode = boundary.failure_mode;
     let (self_ty, soft) = sig
         .inputs
         .iter()
@@ -355,14 +383,22 @@ pub(crate) fn gen_regular_drop_definition_body(
         })
         .expect("`Drop::drop` requires a receiver");
     let decode_error = gen_decode_error(failure_mode);
+    let unit = contract.encode(Carrier::Value, quote!(()), quote!(()), None, None);
     let output = match failure_mode {
-        FailureMode::Panic => quote! { Ok::<_, ()>(co3::encode(())) },
-        FailureMode::Error => quote! { Ok(co3::encode(())) },
+        FailureMode::Panic => quote! { Ok::<_, ()>(#unit) },
+        FailureMode::Error => quote! { Ok(#unit) },
     };
 
+    let decode = contract.decode(
+        Carrier::Move,
+        quote!(#self_ty),
+        None,
+        quote!(__co3_self),
+        soft.then(|| quote!(&mut __co3_store)),
+    );
     if !soft {
         return quote! {{
-            let Some(__co3_value) = (unsafe { co3::convert::decode_move::<#self_ty>(__co3_self) }) else {
+            let Some(__co3_value) = (#decode) else {
                 #decode_error
             };
             core::mem::drop(__co3_value);
@@ -371,11 +407,11 @@ pub(crate) fn gen_regular_drop_definition_body(
     }
 
     let sync_error = gen_sync_error(failure_mode);
+    let codec = contract.bound(Carrier::Move, Some(&parse_quote!('_)), quote!());
+    let store = contract.store();
     quote! {{
-        let mut __co3_store = <#self_ty as co3::convert::DecodeMove<'_>>::Store::default();
-        let __co3_value = unsafe {
-            <#self_ty as co3::convert::DecodeMove>::soft_decode(__co3_self, &mut __co3_store)
-        };
+        let mut __co3_store = <#self_ty as #codec>::#store::default();
+        let __co3_value = #decode;
         let Some(__co3_value) = __co3_value else {
             #decode_error
         };
@@ -406,16 +442,26 @@ pub(crate) fn drop_owned_receiver(sig: &mut syn::Signature, owned_ty: Option<&Ty
     arg.attrs.push(syn::parse_quote!(#[by_val]));
 }
 
-pub(crate) fn gen_return_borrow_check(return_ty: &syn::Type, fn_by_val: bool) -> TokenStream {
+pub(crate) fn gen_return_borrow_check(
+    contract: &Conversion,
+    return_ty: &syn::Type,
+    fn_by_val: bool,
+) -> TokenStream {
     if ownership_mode(return_ty, fn_by_val) == OwnershipMode::ByValue {
         return quote! {};
     }
 
+    let borrowed = contract.bound(Carrier::Borrowed, None, contract.empty_store());
     quote! {
         const {
+            trait __Co3BorrowedReturn {}
+            impl<T> __Co3BorrowedReturn for T
+            where
+                T: #borrowed
+                    + co3::borrow::BorrowedEncodeUnchecked<Owner: co3::convert::EmptyStore>,
+            {}
             assert!(
-                co3::impls!((#return_ty): co3::borrow::BorrowedEncode<Store: co3::convert::EmptyStore>)
-                    && co3::impls!((#return_ty): co3::borrow::BorrowedEncodeUnchecked<Owner: co3::convert::EmptyStore>),
+                co3::impls!((#return_ty): __Co3BorrowedReturn),
                 "Mark the return type with `move` to transfer ownership",
             );
         }
@@ -593,9 +639,11 @@ fn parameter_cfg(attrs: &[syn::Attribute]) -> Option<(TokenStream, TokenStream)>
 }
 
 pub(crate) fn gen_analyzed_input_decode_stmts(
+    boundary: Boundary<'_>,
     inputs: &[Argument<'_>],
-    failure_mode: FailureMode,
 ) -> TokenStream {
+    let contract = boundary.contract;
+    let failure_mode = boundary.failure_mode;
     let mut stmts = quote! {};
     let mut value_initializers = Vec::with_capacity(inputs.len());
     let mut store_initializers = Vec::with_capacity(inputs.len());
@@ -622,24 +670,33 @@ pub(crate) fn gen_analyzed_input_decode_stmts(
         let decode_ty = input.conversion_ty();
         let decode_arg = quote! { #arg_name };
 
+        let carrier = Carrier::for_borrow(input.is_borrowed());
         let decode_call = if input.identity {
             quote!(Some(#decode_arg))
-        } else if input.is_borrowed() {
-            if input.soft {
-                quote!(<#decode_ty as co3::borrow::BorrowedDecode<'_>>::soft_decode(#decode_arg.0, &mut __co3_input_stores.#idx))
-            } else {
-                quote!(co3::borrow::decode::<#decode_ty>(#decode_arg))
-            }
-        } else if input.soft {
-            quote!(co3::soft_decode(#decode_arg, &mut __co3_input_stores.#idx))
         } else {
-            quote!(co3::decode(#decode_arg))
+            let value = if input.is_borrowed() && input.soft {
+                quote!(#decode_arg.0)
+            } else {
+                decode_arg
+            };
+            let ty = if input.is_borrowed() {
+                quote!(#decode_ty)
+            } else {
+                quote!(_)
+            };
+            contract.decode(
+                carrier,
+                ty,
+                None,
+                value,
+                input.soft.then(|| quote!(&mut __co3_input_stores.#idx)),
+            )
         };
         let from_borrow = quote!(#arg_name);
 
         stmts.extend(quote! {
             #enabled
-            let #arg_name: Option<#decode_ty> = unsafe { #decode_call };
+            let #arg_name: Option<#decode_ty> = #decode_call;
             #enabled
             let #arg_name: Option<#arg_ty> = #from_borrow;
 
@@ -651,11 +708,17 @@ pub(crate) fn gen_analyzed_input_decode_stmts(
 
         value_initializers.push(quote!(#enabled <Option<#arg_ty> as core::default::Default>::default(), #inactive_value));
         let store_ty = if input.soft {
-            if input.is_borrowed() {
-                quote!(<#decode_ty as co3::borrow::BorrowedDecode<'_>>::Store)
-            } else {
-                quote!(<#decode_ty as co3::convert::DecodeMove<'_>>::Store)
-            }
+            let codec = contract.bound(
+                if input.is_borrowed() {
+                    Carrier::Borrowed
+                } else {
+                    Carrier::Move
+                },
+                Some(&syn::parse_quote!('_)),
+                quote!(),
+            );
+            let state = contract.store();
+            quote!(<#decode_ty as #codec>::#state)
         } else {
             quote!(())
         };
@@ -741,13 +804,13 @@ pub(crate) fn gen_store_sync_stmts(len: usize) -> TokenStream {
 }
 
 fn gen_fn_definition_body(
+    boundary: Boundary<'_>,
     item: &syn::ItemFn,
-    failure_mode: FailureMode,
     callee: syn::Expr,
 ) -> TokenStream {
     let fn_by_val = item.attrs.iter().any(is_by_val_attr);
     let signature_check = gen_static_fn_signature_drift_check(item.sig.clone(), callee.clone());
-    let body = gen_definition_body(item.sig.clone(), quote!(#callee), fn_by_val, failure_mode);
+    let body = gen_definition_body(boundary, item.sig.clone(), quote!(#callee), fn_by_val);
 
     quote! {{
         #signature_check
@@ -756,11 +819,13 @@ fn gen_fn_definition_body(
 }
 
 pub fn gen_impl_definition(
+    boundary: Boundary<'_>,
     abi: &syn::Abi,
-    failure_mode: FailureMode,
     impl_: syn::ItemImpl,
     declared_self: bool,
 ) -> TokenStream {
+    let contract = boundary.contract;
+    let failure_mode = boundary.failure_mode;
     let trait_ = impl_.trait_.as_ref().map(|(path, _)| path);
     let drop_impl = is_drop_impl(&impl_);
     let impl_attrs = &impl_.attrs;
@@ -778,18 +843,20 @@ pub fn gen_impl_definition(
             .any(|input| matches!(input, syn::FnArg::Receiver(_)));
         normalize_fn_signature(&mut item.sig, Some(self_ty));
 
-        let return_borrow_check =
-            if impl_.generics.params.is_empty() && item.sig.generics.params.is_empty() {
-                fn_return_ty(&item.sig).map(|ty| {
-                    let mut ty = ty.clone();
-                    crate::utils::ConcreteSelfType(self_ty).visit_type_mut(&mut ty);
-                    let check = gen_return_borrow_check(&ty, item.attrs.iter().any(is_by_val_attr));
-                    let cfg = cfg_attrs(&item.attrs);
-                    quote! { #(#cfg)* const _: () = { #check }; }
-                })
-            } else {
-                None
-            };
+        let return_borrow_check = if impl_.generics.params.is_empty()
+            && item.sig.generics.params.is_empty()
+        {
+            fn_return_ty(&item.sig).map(|ty| {
+                let mut ty = ty.clone();
+                crate::utils::ConcreteSelfType(self_ty).visit_type_mut(&mut ty);
+                let check =
+                    gen_return_borrow_check(contract, &ty, item.attrs.iter().any(is_by_val_attr));
+                let cfg = cfg_attrs(&item.attrs);
+                quote! { #(#cfg)* const _: () = { #check }; }
+            })
+        } else {
+            None
+        };
 
         let fn_name = &item.sig.ident;
         let callee = impl_method_callee(self_ty, trait_, fn_name);
@@ -834,11 +901,11 @@ pub fn gen_impl_definition(
             (!drop_impl)
                 .then(|| gen_static_fn_signature_drift_check(item.sig.clone(), check_callee));
         let body = if drop_impl && declared_self {
-            gen_opaque_drop_definition_body(&item.sig, failure_mode)
+            gen_opaque_drop_definition_body(boundary, &item.sig)
         } else if drop_impl {
-            gen_regular_drop_definition_body(&item.sig, failure_mode)
+            gen_regular_drop_definition_body(boundary, &item.sig)
         } else {
-            gen_definition_body(item.sig, quote!(#callee), fn_by_val, failure_mode)
+            gen_definition_body(boundary, item.sig, quote!(#callee), fn_by_val)
         };
 
         let ffi_fn_body = quote! {{
@@ -847,9 +914,9 @@ pub fn gen_impl_definition(
         }};
 
         let definition = emit_extern_definition(
+            boundary,
             abi,
             &item.attrs,
-            failure_mode,
             fn_signature,
             ffi_fn_body,
             borrow_output,
@@ -909,31 +976,34 @@ pub(crate) fn strip_dispatch_params(generics: &mut syn::Generics) {
 }
 
 pub fn gen_fn_definition(
+    boundary: Boundary<'_>,
     abi: &syn::Abi,
-    failure_mode: FailureMode,
     mut item: syn::ItemFn,
     callee: syn::Expr,
 ) -> TokenStream {
+    let contract = boundary.contract;
+    let failure_mode = boundary.failure_mode;
     normalize_fn_signature(&mut item.sig, None);
 
     let return_borrow_check = if item.sig.generics.params.is_empty() {
         fn_return_ty(&item.sig).map(|ty| {
-            let check = gen_return_borrow_check(ty, item.attrs.iter().any(is_by_val_attr));
+            let check =
+                gen_return_borrow_check(contract, ty, item.attrs.iter().any(is_by_val_attr));
             let cfg = cfg_attrs(&item.attrs);
             quote! { #(#cfg)* const _: () = { #check }; }
         })
     } else {
         None
     };
-    let ffi_fn_body = gen_fn_definition_body(&item, failure_mode, callee);
+    let ffi_fn_body = gen_fn_definition_body(boundary, &item, callee);
     let fn_by_val = item.attrs.iter().any(is_by_val_attr);
     let borrow_output = borrows_return(&item.sig, fn_by_val);
     let fn_signature = lower_abi_fn_signature(item.sig, failure_mode, fn_by_val);
 
     let definition = emit_extern_definition(
+        boundary,
         abi,
         &item.attrs,
-        failure_mode,
         fn_signature,
         ffi_fn_body,
         borrow_output,
@@ -1538,9 +1608,12 @@ mod tests {
         let abi: syn::Abi = parse_quote!(extern "C");
         let attrs = vec![parse_quote!(#[symbol_name = "public_symbol"])];
         let definition = emit_extern_definition(
+            Boundary {
+                contract: &Conversion::c(),
+                failure_mode: FailureMode::Panic,
+            },
             &abi,
             &attrs,
-            FailureMode::Panic,
             parse_quote!(fn example(value: u8) -> u8),
             quote!(Ok::<_, ()>(value)),
             false,

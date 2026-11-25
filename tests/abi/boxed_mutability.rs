@@ -1,6 +1,6 @@
 use core::cell::Cell;
 
-use co3::boxed::Box;
+use co3::{boxed::Box, lang};
 
 #[test]
 fn stable_interior_box_direct_round_trip_preserves_allocation() {
@@ -9,7 +9,8 @@ fn stable_interior_box_direct_round_trip_preserves_allocation() {
     let encoded = unsafe { co3::soft_encode_unchecked(value, &mut Default::default()) };
     assert_eq!(encoded.as_ptr().cast::<Cell<bool>>(), original.cast_mut());
     let decoded =
-        unsafe { co3::soft_decode::<Box<Cell<bool>>>(encoded, &mut Default::default()) }.unwrap();
+        unsafe { co3::soft_decode::<Box<Cell<bool>>, lang::C>(encoded, &mut Default::default()) }
+            .unwrap();
     assert_eq!(core::ptr::from_ref(&*decoded), original);
     assert!(decoded.get());
 }
@@ -21,7 +22,8 @@ fn stable_interior_slice_box_direct_round_trip_preserves_allocation() {
     let encoded = unsafe { co3::soft_encode_unchecked(value, &mut Default::default()) };
     assert_eq!(encoded.as_ptr().cast::<Cell<bool>>(), original.cast_mut());
     let decoded =
-        unsafe { co3::soft_decode::<Box<[Cell<bool>]>>(encoded, &mut Default::default()) }.unwrap();
+        unsafe { co3::soft_decode::<Box<[Cell<bool>]>, lang::C>(encoded, &mut Default::default()) }
+            .unwrap();
     assert_eq!(decoded.as_ptr(), original);
     assert_eq!(
         decoded.iter().map(Cell::get).collect::<Vec<_>>(),
@@ -54,10 +56,10 @@ fn recursive_box_keeps_child_writeback_until_sync() {
         })),
     };
     let mut store = Default::default();
-    let carrier = co3::soft_encode(node, &mut store);
+    let carrier = unsafe { co3::soft_encode::<_, lang::C>(node, &mut store) };
     // Encoding transferred ownership of the child allocation.
     let child = unsafe { carrier.next.0.0.into_box() }.unwrap();
-    unsafe { *child.flag.as_ptr() = co3::encode(true) };
+    unsafe { *child.flag.as_ptr() = co3::encode::<_, lang::C>(true) };
     drop(child);
     co3::convert::Store::sync(store).unwrap();
     assert_eq!(*unsafe { Box::from_raw(flags) }, [false, true]);

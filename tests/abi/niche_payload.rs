@@ -1,7 +1,7 @@
 use core::num::NonZeroU8;
 
 use co3::{
-    ReprC,
+    ReprC, lang,
     marker::Native,
     ops::CFn1,
     option::{self, OptionSome},
@@ -105,12 +105,14 @@ fn public_payload_wrappers_preserve_custom_niches_without_a_tag() {
 fn public_payload_wrappers_preserve_nonzero_validity() {
     use co3::marker::NonZero;
     assert_eq!(
-        unsafe { co3::decode::<OptionSome<NonZeroU8>>(option::abi::OptionSome::<_>(NonZero(0),)) },
+        unsafe {
+            co3::decode::<OptionSome<NonZeroU8>, lang::C>(option::abi::OptionSome::<_>(NonZero(0)))
+        },
         None
     );
     assert_eq!(
         unsafe {
-            co3::decode::<ResultOk<NonZeroU8>>(result::abi::ResultOk::<_, ()>(
+            co3::decode::<ResultOk<NonZeroU8>, lang::C>(result::abi::ResultOk::<_, ()>(
                 NonZero(0),
                 core::marker::PhantomData,
             ))
@@ -119,7 +121,7 @@ fn public_payload_wrappers_preserve_nonzero_validity() {
     );
     assert_eq!(
         unsafe {
-            co3::decode::<ResultErr<NonZeroU8>>(result::abi::ResultErr::<(), _>(
+            co3::decode::<ResultErr<NonZeroU8>, lang::C>(result::abi::ResultErr::<(), _>(
                 NonZero(0),
                 core::marker::PhantomData,
             ))
@@ -128,15 +130,25 @@ fn public_payload_wrappers_preserve_nonzero_validity() {
     );
     let value = NonZeroU8::new(7).unwrap();
     assert_eq!(
-        unsafe { co3::decode::<OptionSome<NonZeroU8>>(co3::encode(OptionSome(value))) },
+        unsafe {
+            co3::decode::<OptionSome<NonZeroU8>, lang::C>(co3::encode::<_, lang::C>(OptionSome(
+                value,
+            )))
+        },
         Some(OptionSome(value))
     );
     assert_eq!(
-        unsafe { co3::decode::<ResultOk<NonZeroU8>>(co3::encode(ResultOk(value))) },
+        unsafe {
+            co3::decode::<ResultOk<NonZeroU8>, lang::C>(co3::encode::<_, lang::C>(ResultOk(value)))
+        },
         Some(ResultOk(value))
     );
     assert_eq!(
-        unsafe { co3::decode::<ResultErr<NonZeroU8>>(co3::encode(ResultErr(value))) },
+        unsafe {
+            co3::decode::<ResultErr<NonZeroU8>, lang::C>(co3::encode::<_, lang::C>(ResultErr(
+                value,
+            )))
+        },
         Some(ResultErr(value))
     );
 }

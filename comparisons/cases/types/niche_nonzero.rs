@@ -1,8 +1,6 @@
 // Rust guarantees the nullable one-byte representation of this option.
 
-
-
-use co3::convert::{lang};
+use co3::convert::lang;
 
 include!("../support/mod.rs");
 
@@ -46,20 +44,36 @@ mod caller {
     }
 }
 
+#[cfg(feature = "co3")]
 fn main() {
-    #[cfg(feature = "co3")]
-    assert_eq!(core::mem::size_of_val(&unsafe { co3::encode::<_, lang::C>(None::<NonZeroU8>) }), 1);
+    assert_eq!(
+        core::mem::size_of_val(&unsafe { co3::encode::<_, lang::C>(None::<NonZeroU8>) }),
+        1
+    );
     for byte in 0..=u8::MAX {
         let expected = byte.wrapping_add(1);
-        #[cfg(feature = "co3")]
+
         assert_eq!(caller::advance(byte), expected);
-        #[cfg(any(feature = "abi_stable", feature = "stabby"))]
-        {
-            let export: extern "C" fn(Option<NonZeroU8>) -> Option<NonZeroU8> = advance;
-            assert_eq!(core::mem::size_of::<Option<NonZeroU8>>(), 1);
-            assert_eq!(export(NonZeroU8::new(byte)), NonZeroU8::new(expected));
-        }
-        #[cfg(feature = "diplomat")]
+    }
+}
+
+#[cfg(any(
+    feature = "uniffi",
+    feature = "interoptopus",
+    feature = "safer_ffi",
+    feature = "boltffi"
+))]
+fn main() {
+    for byte in 0..=u8::MAX {
+        let expected = byte.wrapping_add(1);
+    }
+}
+
+#[cfg(feature = "diplomat")]
+fn main() {
+    for byte in 0..=u8::MAX {
+        let expected = byte.wrapping_add(1);
+
         {
             use diplomat_runtime::DiplomatOption;
             unsafe extern "C" {
@@ -70,6 +84,19 @@ fn main() {
             assert_eq!(core::mem::size_of::<DiplomatOption<NonZeroU8>>(), 2);
             let output = unsafe { diplomat_external_advance(NonZeroU8::new(byte).into()) };
             assert_eq!(Option::from(output), NonZeroU8::new(expected));
+        }
+    }
+}
+
+#[cfg(any(feature = "abi_stable", feature = "stabby"))]
+fn main() {
+    for byte in 0..=u8::MAX {
+        let expected = byte.wrapping_add(1);
+
+        {
+            let export: extern "C" fn(Option<NonZeroU8>) -> Option<NonZeroU8> = advance;
+            assert_eq!(core::mem::size_of::<Option<NonZeroU8>>(), 1);
+            assert_eq!(export(NonZeroU8::new(byte)), NonZeroU8::new(expected));
         }
     }
 }

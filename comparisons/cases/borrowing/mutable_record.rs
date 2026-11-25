@@ -1,8 +1,6 @@
 // Mutable references to user-defined records.
 
-
-
-use co3::convert::{lang};
+use co3::convert::lang;
 
 include!("../support/mod.rs");
 
@@ -29,10 +27,7 @@ pub fn update(point: &mut Point) {
 #[cfg(feature = "diplomat")]
 #[diplomat::bridge]
 pub mod diplomat_case {
-use co3::convert::{lang};
-
-
-
+    use co3::convert::lang;
 
     #[diplomat::attr(auto, mut_struct_ref)]
     #[derive(Clone, Copy)]
@@ -54,37 +49,66 @@ co3::ffi! {
     fn update(point: &mut Point);
 }
 
+#[cfg(feature = "co3")]
 fn main() {
-    #[cfg(any(
-        feature = "co3",
-        feature = "diplomat",
-        feature = "interoptopus",
-        feature = "safer_ffi",
-        feature = "boltffi"
-    ))]
     {
-        #[cfg(feature = "diplomat")]
-        use diplomat_case::Point;
         let mut point = Point { x: 7, y: 11 };
-        #[cfg(any(
-            feature = "co3",
-            feature = "diplomat",
-            feature = "safer_ffi",
-            feature = "interoptopus"
-        ))]
+
         {
             unsafe extern "C" {
-                #[cfg_attr(feature = "co3", link_name = "mutable_record__update")]
-                #[cfg_attr(feature = "diplomat", link_name = "diplomat_external_update")]
-                #[cfg_attr(
-                    any(feature = "safer_ffi", feature = "interoptopus"),
-                    link_name = "update"
-                )]
+                #[link_name = "mutable_record__update"]
                 fn exported_update(point: &mut Point);
             }
             unsafe { exported_update(&mut point) };
         }
-        #[cfg(feature = "boltffi")]
+
+        assert_eq!((point.x, point.y), (8, 11));
+    }
+}
+
+#[cfg(any(feature = "uniffi", feature = "abi_stable", feature = "stabby"))]
+fn main() {}
+
+#[cfg(feature = "diplomat")]
+fn main() {
+    {
+        use diplomat_case::Point;
+        let mut point = Point { x: 7, y: 11 };
+
+        {
+            unsafe extern "C" {
+                #[link_name = "diplomat_external_update"]
+                fn exported_update(point: &mut Point);
+            }
+            unsafe { exported_update(&mut point) };
+        }
+
+        assert_eq!((point.x, point.y), (8, 11));
+    }
+}
+
+#[cfg(any(feature = "interoptopus", feature = "safer_ffi"))]
+fn main() {
+    {
+        let mut point = Point { x: 7, y: 11 };
+
+        {
+            unsafe extern "C" {
+                #[link_name = "update"]
+                fn exported_update(point: &mut Point);
+            }
+            unsafe { exported_update(&mut point) };
+        }
+
+        assert_eq!((point.x, point.y), (8, 11));
+    }
+}
+
+#[cfg(feature = "boltffi")]
+fn main() {
+    {
+        let mut point = Point { x: 7, y: 11 };
+
         assert!(unsafe { boltffi_function_14mutable_record6update(&mut point) }.is_ok());
         assert_eq!((point.x, point.y), (8, 11));
     }

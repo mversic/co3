@@ -37,8 +37,10 @@ pub mod abi {
     use crate::{
         CFnArg, CFnReturn, CType, ReprC,
         convert::{
-            AbiCompatibleValidate, Decode, DecodeMove, Encode, EncodeMove, EncodeMoveUnchecked,
+            AbiValidate, Decode, DecodeMove, DecodeMoveUnchecked, DecodeUnchecked, Encode,
+            EncodeMove, EncodeMoveUnchecked,
         },
+        lang::Language,
         marker::AbiCompatible,
     };
 
@@ -432,38 +434,50 @@ pub mod abi {
     }
 
     macro_rules! impl_reference_identity {
-        ($ty:ident, [$($params:tt)*], [$($args:tt)*]) => {
-            impl<$($params)*> ReprC for $ty<$($args)*> { type CType = Self; }
-            unsafe impl<$($params)*> EncodeMove for $ty<$($args)*> {
+    ($ty:ident, [$lifetime:lifetime, $($params:tt)*], [$($args:tt)*]) => {
+        impl_reference_identity!(@impl [$lifetime,] $ty, [$($params)*], [$($args)*]);
+    };
+    ($ty:ident, [$($params:tt)*], [$($args:tt)*]) => {
+        impl_reference_identity!(@impl [] $ty, [$($params)*], [$($args)*]);
+    };
+
+        (@impl [$($lifetimes:tt)*] $ty:ident, [$($params:tt)*], [$($args:tt)*]) => {
+            impl<$($lifetimes)* $($params)*> ReprC for $ty<$($args)*> { type CType = Self; }
+            unsafe impl<$($lifetimes)* L: Language, $($params)*> EncodeMove<L> for $ty<$($args)*> {
                 type Store = ();
                 fn soft_encode<'itm>(self, (): &mut ()) -> Self::CType where Self: 'itm {
                     self
                 }
             }
-            unsafe impl<$($params)*> EncodeMoveUnchecked for $ty<$($args)*> {
+            unsafe impl<$($lifetimes)* $($params)*> EncodeMoveUnchecked for $ty<$($args)*> {
                 type SoftStore = ();
                 unsafe fn soft_encode_unchecked<'itm>(self, (): &'itm mut ()) -> Self::CType where Self: 'itm { self }
             }
-            unsafe impl<'d, $($params)*> DecodeMove<'d> for $ty<$($args)*> {
+            unsafe impl<'d,$($lifetimes)*  $($params)*> DecodeMoveUnchecked<'d> for $ty<$($args)*> {
+                type SoftStore = ();
+                unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, (): &mut ()) -> Self { { source } }
+            }
+            unsafe impl<'d,$($lifetimes)* L: Language, $($params)*> DecodeMove<'d, L> for $ty<$($args)*> {
                 type Store = ();
                 unsafe fn soft_decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> { Some(source) }
             }
-            impl<$($params)*> Encode for $ty<$($args)*> {}
-            impl<$($params)*> crate::convert::EncodeUnchecked for $ty<$($args)*> {}
-            impl<'d, $($params)*> Decode<'d> for $ty<$($args)*> {}
-            unsafe impl<$($params)*> CType for $ty<$($args)*> {}
-            unsafe impl<$($params)*> CFnArg for $ty<$($args)*> {}
-            unsafe impl<$($params)*> CFnReturn for $ty<$($args)*> {}
-            unsafe impl<$($params)*> AbiCompatibleValidate for $ty<$($args)*>
-where
-    Self: $crate::rust_spec::RustSpec<Layout = $crate::rust_spec::Specified>,
-{
+            impl<$($lifetimes)* $($params)*> crate::convert::EncodeUnchecked for $ty<$($args)*> {}
+            impl<$($lifetimes)* L: Language, $($params)*> Encode<L> for $ty<$($args)*> {}
+            impl<'d,$($lifetimes)*  $($params)*> DecodeUnchecked<'d> for $ty<$($args)*> {}
+            impl<'d,$($lifetimes)* L: Language, $($params)*> Decode<'d, L> for $ty<$($args)*> {}
+            unsafe impl<$($lifetimes)* $($params)*> CType for $ty<$($args)*> {}
+            unsafe impl<$($lifetimes)* $($params)*> CFnArg for $ty<$($args)*> {}
+            unsafe impl<$($lifetimes)* $($params)*> CFnReturn for $ty<$($args)*> {}
+            unsafe impl<$($lifetimes)* $($params)*> AbiCompatible for $ty<$($args)*>
+            where
+                Self: $crate::rust_spec::RustSpec<Layout = $crate::rust_spec::Specified>,
+            {}
+            unsafe impl<$($lifetimes)* L: $crate::lang::Language, $($params)*> AbiValidate<L> for $ty<$($args)*>
+            where
+                Self: $crate::rust_spec::RustSpec<Layout = $crate::rust_spec::Specified>,
+            {
                 unsafe fn is_valid(_: &Self::CType) -> bool { true }
             }
-            unsafe impl<$($params)*> AbiCompatible for $ty<$($args)*>
-where
-    Self: $crate::rust_spec::RustSpec<Layout = $crate::rust_spec::Specified>,
-{}
         };
     }
 
@@ -497,6 +511,7 @@ mod tests {
     use crate::{
         CType, ReprC,
         convert::{Decode, Encode},
+        lang,
         marker::Native,
         niche::Niche,
     };
@@ -583,9 +598,12 @@ mod tests {
         );
 
         let value = 7_u8;
-        let carrier = crate::encode(&value);
+        let carrier = unsafe { crate::encode::<_, lang::C>(&value) };
         assert_eq!(carrier, Ref::from_ref(&value));
-        assert_eq!(unsafe { crate::decode::<&u8>(carrier) }, Some(&value));
+        assert_eq!(
+            unsafe { crate::decode::<&u8, lang::C>(carrier) },
+            Some(&value)
+        );
     }
 
     #[test]
@@ -608,7 +626,8 @@ mod tests {
 
         let mut cell = UnsafeCell::new(1_u8);
         let pointer = cell.get().cast::<core::cell::UnsafeCell<u8>>();
-        let exclusive: RefMut<'_, UnsafeCell<u8>> = crate::encode(&mut cell);
+        let exclusive: RefMut<'_, UnsafeCell<u8>> =
+            unsafe { crate::encode::<_, lang::C>(&mut cell) };
         assert_eq!(exclusive.as_ptr(), pointer);
         unsafe { exclusive.as_ptr().write(core::cell::UnsafeCell::new(2)) };
         assert_eq!(cell.into_inner(), 2);
@@ -623,10 +642,12 @@ mod tests {
 
     #[test]
     fn shared_interior_decode_rejects_null() {
-        assert!(unsafe { crate::decode::<&core::cell::Cell<u8>>(Ref::null()) }.is_none());
+        assert!(unsafe { crate::decode::<&core::cell::Cell<u8>, lang::C>(Ref::null()) }.is_none());
         assert!(
-            unsafe { crate::decode::<&[core::cell::Cell<u8>]>(crate::wide::abi::WideRef::null()) }
-                .is_none()
+            unsafe {
+                crate::decode::<&[core::cell::Cell<u8>], lang::C>(crate::wide::abi::WideRef::null())
+            }
+            .is_none()
         );
     }
 }

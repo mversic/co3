@@ -1,4 +1,4 @@
-use co3::ffi;
+use co3::{ffi, lang};
 
 ffi! {
     #![unsafe(extern("C"))]
@@ -168,20 +168,21 @@ fn owned_handle_has_null_niche() {
     let null: *mut OpaqueStruct = <OwnedOpaqueStruct as Niche>::NICHE;
     assert!(null.is_null());
     assert!(
-        unsafe { co3::soft_decode::<OwnedOpaqueStruct>(null, &mut Default::default()) }.is_none()
+        unsafe { co3::soft_decode::<OwnedOpaqueStruct, lang::C>(null, &mut Default::default()) }
+            .is_none()
     );
     assert!(matches!(
         unsafe {
-            co3::soft_decode::<Option<OwnedOpaqueStruct>>(
-                co3::soft_encode(None::<OwnedOpaqueStruct>, &mut None),
+            co3::soft_decode::<Option<OwnedOpaqueStruct>, lang::C>(
+                co3::soft_encode::<_, lang::C>(None::<OwnedOpaqueStruct>, &mut None),
                 &mut None,
             )
         },
         Some(None)
     ));
 
-    let raw = co3::soft_encode(Some(OpaqueStruct::new(42)), &mut None);
-    let decoded = unsafe { co3::soft_decode::<Option<OwnedOpaqueStruct>>(raw, &mut None) }
+    let raw = unsafe { co3::soft_encode::<_, lang::C>(Some(OpaqueStruct::new(42)), &mut None) };
+    let decoded = unsafe { co3::soft_decode::<Option<OwnedOpaqueStruct>, lang::C>(raw, &mut None) }
         .expect("valid carrier")
         .expect("non-null handle");
     assert_eq!(core::ptr::from_ref(&*decoded).cast_mut(), raw.0.0);

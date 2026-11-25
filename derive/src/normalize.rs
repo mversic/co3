@@ -1,7 +1,6 @@
-use quote::quote;
 use syn::{ItemFn, Result, parse_quote};
 
-use crate::{DeclKind, DispatchGroups, ForeignItem, ImportMode, ParsedItem, parse};
+use crate::{Co3Fn, DeclKind, DispatchGroups, ForeignItem, ImportMode, ParsedItem, parse};
 
 pub(crate) enum NormalizedItem {
     Foreign(ForeignItem),
@@ -40,8 +39,10 @@ pub(crate) fn normalize_items(
                     sig: raw_decl.sig,
                     block: Box::new(parse_quote!({})),
                 };
-                let ForeignItem::Fn(mut item) = ParsedItem::Fn(item).normalize()? else {
-                    unreachable!("function declaration normalizes to a function")
+                let mut item = Co3Fn {
+                    item,
+                    dispatch_args: raw_decl.dispatch_args,
+                    import_mode: ImportMode::Regular,
                 };
                 if mode == NormalizationMode::Ffi(DeclKind::Extern) {
                     item.import_mode = ImportMode::Raw;
@@ -50,53 +51,43 @@ pub(crate) fn normalize_items(
             }
             ParsedItem::Raw(raw_decl) => normalized.push(NormalizedItem::Raw(*raw_decl)),
             ParsedItem::Alias(alias) => aliases.push(alias),
-            ParsedItem::Fn(item) if mode == NormalizationMode::Raw => {
-                let ForeignItem::Fn(parsed) = ParsedItem::Fn(item.clone()).normalize()? else {
-                    unreachable!("function declaration normalizes to a function")
-                };
+            ParsedItem::Fn(parsed) if mode == NormalizationMode::Raw => {
+                let item = parsed.item;
                 let ident = &item.sig.ident;
                 normalized.push(NormalizedItem::Raw(parse::RawFnDecl {
                     attrs: item.attrs,
                     vis: item.vis,
-                    callee: quote!(#ident),
+                    callee: parse_quote!(#ident),
                     sig: item.sig,
                     owner: None,
                     dispatch_args: parsed.dispatch_args,
                 }));
             }
-            ParsedItem::Impl(mut item) => {
+            ParsedItem::Impl(parse::ParsedImpl {
+                item: mut parsed,
+                raw_methods,
+            }) => {
+                let item = &mut parsed.item;
+                crate::normalize_dyn_self_tag_ids(item);
                 let was_empty = item.items.is_empty();
-                let raw_dispatch = if mode == NormalizationMode::Raw {
-                    let ForeignItem::Impl(parsed) = ParsedItem::Impl(item.clone()).normalize()?
-                    else {
-                        unreachable!("impl declaration normalizes to an impl")
-                    };
-                    Some(parsed)
-                } else {
-                    None
-                };
                 let self_ty = item.self_ty.clone();
                 let trait_path = item.trait_.as_ref().map(|(path, _)| path.clone());
                 let mut impl_items = Vec::new();
                 let mut raw_impl_items = Vec::new();
-                for impl_item in core::mem::take(&mut item.items) {
+                for (index, impl_item) in core::mem::take(&mut item.items).into_iter().enumerate() {
                     let syn::ImplItem::Fn(mut method) = impl_item else {
                         impl_items.push(impl_item);
                         continue;
                     };
-                    let marker = method
-                        .attrs
-                        .iter()
-                        .position(|attr| attr.path().is_ident("raw"));
+                    let raw = raw_methods.get(&index);
                     if mode == NormalizationMode::Raw {
-                        if let Some(marker) = marker {
-                            return Err(syn::Error::new_spanned(
-                                &method.attrs[marker],
+                        if let Some(span) = raw {
+                            return Err(syn::Error::new(
+                                *span,
                                 "omit `raw` on `raw!` companion declarations",
                             ));
                         }
-                    } else if let Some(marker) = marker {
-                        method.attrs.remove(marker);
+                    } else if raw.is_some() {
                         crate::validate::validate_raw_signature(&method.sig)?;
                         if mode == NormalizationMode::Ffi(DeclKind::Export) {
                             impl_items.push(syn::ImplItem::Fn(method));
@@ -108,9 +99,9 @@ pub(crate) fn normalize_items(
                     }
                     let method_name = method.sig.ident.clone();
                     let callee = if let Some(trait_path) = &trait_path {
-                        quote!(<#self_ty as #trait_path>::#method_name)
+                        parse_quote!(<#self_ty as #trait_path>::#method_name)
                     } else {
-                        quote!(<#self_ty>::#method_name)
+                        parse_quote!(<#self_ty>::#method_name)
                     };
                     let mut sig = method.sig;
                     if let Some(syn::FnArg::Receiver(receiver)) = sig.inputs.first() {
@@ -135,37 +126,41 @@ pub(crate) fn normalize_items(
                                 trait_path: trait_path.clone(),
                                 self_ty: self_ty.clone(),
                             }),
-                            dispatch_args: raw_dispatch.as_ref().map_or_else(
-                                DispatchGroups::default,
-                                |parsed| {
-                                    parsed.dispatch_args.combined_with(
-                                        parsed
-                                            .method_dispatch_args
-                                            .get(&method_name)
-                                            .unwrap_or(&DispatchGroups::default()),
-                                    )
-                                },
+                            dispatch_args: parsed.dispatch_args.combined_with(
+                                parsed
+                                    .method_dispatch_args
+                                    .get(&method_name)
+                                    .unwrap_or(&DispatchGroups::default()),
                             ),
                         }));
                     }
                 }
-                let has_raw_impl_items = !raw_impl_items.is_empty();
-                if has_raw_impl_items {
-                    let mut raw_impl = item.clone();
-                    raw_impl.items = raw_impl_items;
-                    let ForeignItem::Impl(mut raw_impl) = ParsedItem::Impl(raw_impl).normalize()?
-                    else {
-                        unreachable!("impl declaration normalizes to an impl")
-                    };
-                    raw_impl.import_mode = ImportMode::Raw;
-                    normalized.push(NormalizedItem::Foreign(ForeignItem::Impl(raw_impl)));
-                }
                 item.items = impl_items;
-                if !item.items.is_empty() || was_empty {
-                    normalized.push(NormalizedItem::Foreign(ParsedItem::Impl(item).normalize()?));
+                if !raw_impl_items.is_empty() {
+                    let mut raw = parsed.clone();
+                    raw.item.items = raw_impl_items;
+                    raw.import_mode = ImportMode::Raw;
+                    let mut raw_dispatch = std::collections::HashMap::new();
+                    for method in &raw.item.items {
+                        if let syn::ImplItem::Fn(method) = method
+                            && let Some(groups) =
+                                parsed.method_dispatch_args.remove(&method.sig.ident)
+                        {
+                            raw_dispatch.insert(method.sig.ident.clone(), groups);
+                        }
+                    }
+                    raw.method_dispatch_args = raw_dispatch;
+                    normalized.push(NormalizedItem::Foreign(ForeignItem::Impl(raw)));
+                }
+                if !parsed.item.items.is_empty() || was_empty {
+                    normalized.push(NormalizedItem::Foreign(ForeignItem::Impl(parsed)));
                 }
             }
-            item => normalized.push(NormalizedItem::Foreign(item.normalize()?)),
+            ParsedItem::Type(ty) => normalized.push(NormalizedItem::Foreign(ForeignItem::Type(ty))),
+            ParsedItem::Static(item) => {
+                normalized.push(NormalizedItem::Foreign(ForeignItem::Static(item)))
+            }
+            ParsedItem::Fn(item) => normalized.push(NormalizedItem::Foreign(ForeignItem::Fn(item))),
         }
     }
     reject_implicit_extern_abi(&normalized, mode.macro_name())?;
