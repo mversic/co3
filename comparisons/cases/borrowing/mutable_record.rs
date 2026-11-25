@@ -1,7 +1,5 @@
 // Mutable references to user-defined records.
 
-use co3::convert::lang;
-
 include!("../support/mod.rs");
 
 #[derive(Clone, Copy)]
@@ -27,7 +25,6 @@ pub fn update(point: &mut Point) {
 #[cfg(feature = "diplomat")]
 #[diplomat::bridge]
 pub mod diplomat_case {
-    use co3::convert::lang;
 
     #[diplomat::attr(auto, mut_struct_ref)]
     #[derive(Clone, Copy)]

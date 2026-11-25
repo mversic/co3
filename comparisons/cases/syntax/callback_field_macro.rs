@@ -1,9 +1,5 @@
 // The macro expands to the exact field type in control_callback_field.
 
-
-
-use co3::convert::{lang};
-
 include!("../support/mod.rs");
 
 macro_rules! callback {

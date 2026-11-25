@@ -1,4 +1,3 @@
-use co3::convert::lang;
 
 include!("../support/mod.rs");
 
@@ -29,7 +28,6 @@ pub fn echo(node: Node) -> Node {
 #[cfg(feature = "diplomat")]
 #[diplomat::bridge]
 pub mod diplomat_case {
-    use co3::convert::lang;
 
     #[repr(C)]
     pub struct Node {

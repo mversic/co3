@@ -40,18 +40,17 @@ unsafe extern "C" fn write_byte(output: *mut u8, byte: u8) -> u8 {
 co3::ffi! {
     #![unsafe(extern("C"))]
     #[symbol_name = "comparison_write_nonzero"]
-    raw fn write_nonzero(#[soft] output: &mut NonZeroU8, byte: u8) -> u8;
+    fn write_nonzero(#[soft] output: &mut NonZeroU8, byte: u8) -> u8;
 }
 
 #[cfg(feature = "co3")]
 fn check_writeback() {
-    use co3::ops::CFn2;
-
-    let callback: unsafe extern "C" fn(_, _) -> _ = write_nonzero;
     for (byte, expected, final_value) in [(7u8, Some(0u8), 7), (0, None, 1)] {
         let mut value = NonZeroU8::MIN;
-        let result = unsafe { callback.soft_call(&mut value, byte) };
-        assert_eq!(result, expected);
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            write_nonzero(&mut value, byte)
+        }));
+        assert_eq!(result.ok(), expected);
         assert_eq!(value.get(), final_value);
     }
 }

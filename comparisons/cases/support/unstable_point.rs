@@ -1,9 +1,5 @@
 // The record under test has no explicit representation.
 
-
-
-use co3::convert::{lang};
-
 #[cfg(not(feature = "diplomat"))]
 #[cfg_attr(feature = "co3", derive(co3::rust_spec::RustSpec, co3::ReprC))]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]

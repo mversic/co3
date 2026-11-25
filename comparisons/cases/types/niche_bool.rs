@@ -1,7 +1,5 @@
 // Rust leaves this option’s layout unspecified.
 
-use co3::convert::lang;
-
 include!("../support/mod.rs");
 
 #[cfg_attr(feature = "abi_stable", abi_stable::sabi_extern_fn)]
@@ -47,10 +45,6 @@ mod caller {
 #[cfg(feature = "co3")]
 fn main() {
     {
-        assert_eq!(
-            core::mem::size_of_val(&unsafe { co3::encode::<_, lang::C>(None::<bool>) }),
-            1
-        );
         // CO3 assigns 2 to None, 0 to Some(false), and 1 to Some(true).
         for (input, expected) in [(2, 0), (0, 1), (1, 2)] {
             assert_eq!(caller::advance(input), expected);

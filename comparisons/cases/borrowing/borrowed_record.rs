@@ -1,9 +1,5 @@
 // A record containing a borrow and a lifetime parameter.
 
-
-
-use co3::convert::{lang};
-
 include!("../support/mod.rs");
 
 #[derive(Clone, Copy)]
@@ -28,7 +24,6 @@ pub fn read_view<'a>(view: View<'a>) -> u32 {
 #[cfg(feature = "diplomat")]
 #[diplomat::bridge]
 pub mod diplomat_case {
-use co3::convert::{lang};
 
 
 

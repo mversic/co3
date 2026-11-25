@@ -204,9 +204,15 @@ abi_stable's derive accepts a directly written function-pointer field but reject
 ```rust
 pub type Callback = extern "C" fn(u32) -> u32;
 
-// Field in an otherwise identical ABI record:
-pub apply: extern "C" fn(u32) -> u32, // abi_stable accepts
-pub apply: Callback,                 // abi_stable rejects
+// With abi_stable::StableAbi derived, the direct field is accepted:
+pub struct DirectCallbacks {
+    pub apply: extern "C" fn(u32) -> u32,
+}
+
+// With the same derive, the aliased field is rejected:
+pub struct AliasedCallbacks {
+    pub apply: Callback,
+}
 ```
 
 | Record derive | CO3 | abi_stable | stabby |

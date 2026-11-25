@@ -1,9 +1,5 @@
 // A custom dynamically sized type with a slice tail.
 
-
-
-use co3::convert::{lang};
-
 include!("../support/mod.rs");
 
 #[cfg_attr(feature = "abi_stable", derive(abi_stable::StableAbi))]
@@ -33,7 +29,6 @@ pub fn kind(packet: &Packet) -> u32 {
 #[cfg(feature = "diplomat")]
 #[diplomat::bridge]
 pub mod diplomat_case {
-use co3::convert::{lang};
 
 
 

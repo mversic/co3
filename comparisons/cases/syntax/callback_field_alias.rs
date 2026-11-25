@@ -1,9 +1,5 @@
 // Same function-pointer field, written through an alias.
 
-
-
-use co3::convert::{lang};
-
 include!("../support/mod.rs");
 
 pub type Callback = extern "C" fn(u32) -> u32;

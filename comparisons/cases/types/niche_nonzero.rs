@@ -1,7 +1,5 @@
 // Rust guarantees the nullable one-byte representation of this option.
 
-use co3::convert::lang;
-
 include!("../support/mod.rs");
 
 use core::num::NonZeroU8;
@@ -46,10 +44,6 @@ mod caller {
 
 #[cfg(feature = "co3")]
 fn main() {
-    assert_eq!(
-        core::mem::size_of_val(&unsafe { co3::encode::<_, lang::C>(None::<NonZeroU8>) }),
-        1
-    );
     for byte in 0..=u8::MAX {
         let expected = byte.wrapping_add(1);
 

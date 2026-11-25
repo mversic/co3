@@ -1,8 +1,4 @@
 
-
-
-use co3::convert::{lang};
-
 include!("../support/mod.rs");
 
 pub type LinkTarget = Node;

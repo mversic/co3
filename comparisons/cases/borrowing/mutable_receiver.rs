@@ -1,7 +1,5 @@
 // Export increment(&mut self) on a record whose field is visible to the caller.
 
-use co3::convert::lang;
-
 include!("../support/mod.rs");
 
 #[cfg(not(any(feature = "diplomat", feature = "safer_ffi")))]
@@ -28,7 +26,6 @@ impl Counter {
 #[cfg(feature = "diplomat")]
 #[diplomat::bridge]
 pub mod diplomat_case {
-    use co3::convert::lang;
 
     #[diplomat::attr(auto, mut_struct_ref)]
     #[repr(C)]
