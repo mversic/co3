@@ -146,7 +146,7 @@ impl<'a> Argument<'a> {
 
     /// Import conversion and synchronization must agree on whether a store exists.
     pub(crate) fn needs_encode_store(&self) -> bool {
-        !self.identity && self.soft
+        !self.identity && self.soft && crate::callback::BoundCallback::from_type(&self.ty).is_none()
     }
 
     pub(crate) fn conversion_ty(&self) -> Type {
@@ -165,6 +165,9 @@ impl<'a> Argument<'a> {
     pub(crate) fn abi_ty(&self) -> Type {
         if self.identity {
             return self.ty.clone();
+        }
+        if let Some(callback) = crate::callback::BoundCallback::from_type(&self.ty) {
+            return callback.abi_ty();
         }
         let ty = &self.ty;
         if self.is_borrowed() {

@@ -1,0 +1,15 @@
+error[E0308]: mismatched types
+  --> tests/ui_fail/raw_callback_static.rs:16:14
+   |
+16 |     register(progress_raw);
+   |     -------- ^^^^^^^^^^^^ one type is more general than the other
+   |     |
+   |     arguments to this function are incorrect
+   |
+   = note: expected fn pointer `for<'__co3_callback_type_0> unsafe extern "C" fn(WideRef<'__co3_callback_type_0, str>, f32)`
+                 found fn item `unsafe extern "C" fn(WideRef<'static, str>, f32) {progress_raw}`
+note: function defined here
+  --> tests/ui_fail/raw_callback_static.rs:12:8
+   |
+12 |     fn register(callback: raw fn(&str, f32));
+   |        ^^^^^^^^ ---------------------------

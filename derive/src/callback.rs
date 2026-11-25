@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
@@ -11,8 +11,9 @@ use crate::{
     utils::{ParamUseDetector, cfg_attrs, co3_path, soft_for_arg},
 };
 
-pub(crate) fn lower_fn_pointer_type(
+fn lower_fn_pointer_type(
     pointer: &syn::TypeFnPtr,
+    names: &mut BTreeSet<String>,
     failure_mode: FailureMode,
 ) -> Result<syn::Type> {
     let abi = match &pointer.abi {
@@ -61,14 +62,15 @@ pub(crate) fn lower_fn_pointer_type(
         .collect();
     sig.output = pointer.output.clone();
     crate::validate::validate_unpack(&sig, None)?;
-    lower_callback_fn_type(sig, &abi, failure_mode, false)
+    lower_callback_fn_type(sig, &abi, failure_mode, false, names)
 }
 
-pub(crate) fn lower_raw_alias_signature(
+fn lower_raw_alias_signature(
     mut sig: syn::Signature,
     move_fn: bool,
     failure_mode: FailureMode,
     block_abi: &syn::Abi,
+    names: &mut BTreeSet<String>,
 ) -> Result<syn::Type> {
     let abi = sig.abi.get_or_insert_with(|| block_abi.clone());
     let Some(name) = &abi.name else {
@@ -101,20 +103,22 @@ pub(crate) fn lower_raw_alias_signature(
         ));
     }
     crate::validate::validate_unpack(&sig, None)?;
-    lower_callback_fn_type(sig, &abi, failure_mode, move_fn)
+    lower_callback_fn_type(sig, &abi, failure_mode, move_fn, names)
 }
 
-struct RawTypeLowerer {
-    resolved: HashMap<syn::Ident, syn::Type>,
+struct RawTypeLowerer<'a> {
+    signatures: HashMap<syn::Ident, (syn::Signature, bool)>,
+    block_abi: &'a syn::Abi,
+    source_names: BTreeSet<String>,
     failure_mode: FailureMode,
     nested: bool,
     error: Option<syn::Error>,
 }
 
-impl RawTypeLowerer {
-    fn resolve(&self, ty: &syn::Type) -> Option<&syn::Type> {
+impl RawTypeLowerer<'_> {
+    fn signature(&self, ty: &syn::Type) -> Option<&(syn::Signature, bool)> {
         let syn::Type::Path(ty) = ty else { return None };
-        self.resolved.get(ty.path.get_ident()?)
+        self.signatures.get(ty.path.get_ident()?)
     }
 
     fn visit_groups(&mut self, groups: &mut crate::DispatchGroups) {
@@ -124,13 +128,25 @@ impl RawTypeLowerer {
     }
 }
 
-impl VisitMut for RawTypeLowerer {
+impl VisitMut for RawTypeLowerer<'_> {
     fn visit_type_mut(&mut self, ty: &mut syn::Type) {
         if self.error.is_some() {
             return;
         }
-        if let Some(callback) = self.resolve(ty) {
-            *ty = callback.clone();
+        if let Some((mut signature, moved)) = self.signature(ty).cloned() {
+            let previous = std::mem::replace(&mut self.nested, true);
+            self.visit_signature_mut(&mut signature);
+            self.nested = previous;
+            match lower_raw_alias_signature(
+                signature,
+                moved,
+                self.failure_mode,
+                self.block_abi,
+                &mut self.source_names,
+            ) {
+                Ok(lowered) => *ty = lowered,
+                Err(error) => self.error = Some(error),
+            }
         } else if let syn::Type::FnPtr(pointer) = ty
             && (self.nested
                 || pointer
@@ -142,7 +158,7 @@ impl VisitMut for RawTypeLowerer {
             self.visit_type_fn_ptr_mut(pointer);
             self.nested = previous;
             if self.error.is_none() {
-                match lower_fn_pointer_type(pointer, self.failure_mode) {
+                match lower_fn_pointer_type(pointer, &mut self.source_names, self.failure_mode) {
                     Ok(lowered) => *ty = lowered,
                     Err(error) => self.error = Some(error),
                 }
@@ -155,26 +171,22 @@ impl VisitMut for RawTypeLowerer {
 
 pub(crate) fn lower_raw_types(
     signatures: Vec<(syn::Ident, syn::Signature, bool)>,
+    source_names: BTreeSet<String>,
     items: &mut [parse::ParsedItem],
     failure_mode: FailureMode,
     block_abi: &syn::Abi,
 ) -> Result<()> {
     let mut lowerer = RawTypeLowerer {
-        resolved: HashMap::new(),
+        signatures: signatures
+            .into_iter()
+            .map(|(slot, sig, moved)| (slot, (sig, moved)))
+            .collect(),
+        block_abi,
+        source_names,
         failure_mode,
-        nested: true,
+        nested: false,
         error: None,
     };
-    // Nested signatures precede every signature that uses them.
-    for (slot, mut signature, moved) in signatures {
-        lowerer.visit_signature_mut(&mut signature);
-        if let Some(error) = lowerer.error.take() {
-            return Err(error);
-        }
-        let ty = lower_raw_alias_signature(signature, moved, failure_mode, block_abi)?;
-        lowerer.resolved.insert(slot, ty);
-    }
-    lowerer.nested = false;
     for item in items {
         match item {
             parse::ParsedItem::Fn(item) => {
@@ -209,12 +221,54 @@ pub(crate) fn lower_raw_types(
                 }
             }
             parse::ParsedItem::Alias(alias) => {
-                alias.raw_root = lowerer.resolve(&alias.item.ty).is_some();
+                alias.raw_root = lowerer.signature(&alias.item.ty).is_some();
                 lowerer.visit_item_type_mut(&mut alias.item);
             }
         }
     }
     lowerer.error.map_or(Ok(()), Err)
+}
+
+/// Higher-ranked function pointers cannot use the blanket, monomorphic function
+/// pointer codec. Their ABI representation is the same nullable pointer.
+pub(crate) struct BoundCallback<'a> {
+    pub(crate) pointer: &'a syn::TypeFnPtr,
+    pub(crate) optional: bool,
+}
+
+impl<'a> BoundCallback<'a> {
+    pub(crate) fn from_type(ty: &'a syn::Type) -> Option<Self> {
+        let ty = crate::utils::peel_grouped_type(ty);
+        let inner = ffi_fn::option_inner_type(ty);
+        let syn::Type::FnPtr(pointer) = crate::utils::peel_grouped_type(inner.unwrap_or(ty)) else {
+            return None;
+        };
+        (pointer.lifetimes.is_some() && pointer.abi.is_some()).then_some(Self {
+            pointer,
+            optional: inner.is_some(),
+        })
+    }
+
+    pub(crate) fn abi_ty(&self) -> syn::Type {
+        let pointer = self.pointer;
+        parse_quote!(::core::option::Option<#pointer>)
+    }
+
+    pub(crate) fn encode(&self, value: TokenStream) -> TokenStream {
+        if self.optional {
+            value
+        } else {
+            quote!(::core::option::Option::Some(#value))
+        }
+    }
+
+    pub(crate) fn decode(&self, value: TokenStream) -> TokenStream {
+        if self.optional {
+            quote!(::core::option::Option::Some(#value))
+        } else {
+            value
+        }
+    }
 }
 
 pub(crate) fn expand_companion(
@@ -227,11 +281,13 @@ pub(crate) fn expand_companion(
     let failure_mode = boundary.failure_mode;
     let fn_by_val = item.attrs.iter().any(ffi_fn::is_by_val_attr);
     let abi = parse_quote!(extern "C");
-    let mut raw_sig = ffi_fn::lower_abi_fn_signature(item.sig.clone(), failure_mode, fn_by_val);
+    let mut source = item.sig.clone();
+    ffi_fn::explicitize_signature_lifetimes(&mut source);
+    let mut raw_sig = lower_callback_signature(&source, failure_mode, fn_by_val);
     raw_sig.safety = syn::Safety::Unsafe(Default::default());
     raw_sig.abi = Some(abi);
     raw_sig.ident = ffi_fn::raw_definition_name(&item.sig.ident);
-    add_generic_companion_bounds(contract, &mut raw_sig, &item.sig, impl_generics, fn_by_val);
+    add_generic_companion_bounds(contract, &mut raw_sig, &source, impl_generics, fn_by_val);
     let generic_args = item
         .sig
         .generics
@@ -372,40 +428,89 @@ fn add_generic_companion_bounds(
         .extend(predicates);
 }
 
-pub(crate) fn lower_callback_fn_type(
-    sig: syn::Signature,
+// Rust requires a lifetime used by a function pointer's return type to occur
+// outside an associated-type projection in at least one input (E0581).
+fn borrowed_callback_input(ty: &syn::Type) -> Option<syn::Type> {
+    use crate::known_type::{Kind, recognize};
+    let syn::Type::Reference(reference) = ty else {
+        return None;
+    };
+    let elem = &reference.elem;
+    let lifetime = reference.lifetime.as_ref()?;
+    let primitive = |ty: &syn::Type| recognize(ty).is_some_and(|ty| ty.kind == Kind::Primitive);
+    let wide = match elem.as_ref() {
+        syn::Type::Slice(slice) if primitive(&slice.elem) => true,
+        ty if recognize(ty).is_some_and(|ty| ty.kind == Kind::Str) => true,
+        ty if primitive(ty) => false,
+        _ => return None,
+    };
+    // A mutable reference to a type with validity constraints uses a soft carrier.
+    if reference.mutability.is_some() {
+        let pointee = match elem.as_ref() {
+            syn::Type::Slice(slice) => &*slice.elem,
+            ty => ty,
+        };
+        if !ffi_fn::is_identity_primitive(pointee) {
+            return None;
+        }
+    }
+    let carrier: syn::Path = match (wide, reference.mutability.is_some()) {
+        (true, false) => parse_quote!(co3::wide::abi::WideRef),
+        (true, true) => parse_quote!(co3::wide::abi::WideRefMut),
+        (false, false) => parse_quote!(co3::reference::abi::Ref),
+        (false, true) => parse_quote!(co3::reference::abi::RefMut),
+    };
+    Some(parse_quote!(#carrier<#lifetime, <#elem as co3::ReprC>::CType>))
+}
+
+fn lower_callback_signature(
+    sig: &syn::Signature,
+    failure_mode: FailureMode,
+    move_fn: bool,
+) -> syn::Signature {
+    let mut lowered = ffi_fn::lower_abi_fn_signature(sig.clone(), failure_mode, move_fn);
+    let output_names = crate::utils::source_idents(quote::ToTokens::to_token_stream(&sig.output));
+    for arg in &sig.inputs {
+        let syn::FnArg::Typed(arg) = arg else {
+            continue;
+        };
+        let source = &arg.ty;
+        let syn::Type::Reference(reference) = &**source else {
+            continue;
+        };
+        if arg.attrs.iter().any(ffi_fn::is_unpack_attr) {
+            continue;
+        }
+        let Some(syn::FnArg::Typed(input)) = lowered
+            .inputs
+            .iter_mut()
+            .find(|input| matches!(input, syn::FnArg::Typed(input) if input.pat == arg.pat))
+        else {
+            continue;
+        };
+        let returned = reference
+            .lifetime
+            .as_ref()
+            .is_some_and(|lt| output_names.contains(&lt.ident.to_string()));
+        if !returned {
+            continue;
+        }
+        if let Some(ty) = borrowed_callback_input(source) {
+            *input.ty = ty;
+        }
+    }
+    lowered
+}
+
+fn lower_callback_fn_type(
+    mut sig: syn::Signature,
     abi: &syn::Abi,
     failure_mode: FailureMode,
     move_fn: bool,
+    names: &mut BTreeSet<String>,
 ) -> Result<syn::Type> {
-    let mut type_sig = ffi_fn::lower_abi_fn_signature(sig, failure_mode, move_fn);
-    let replacements = type_sig
-        .generics
-        .lifetimes()
-        .enumerate()
-        .map(|(index, param)| {
-            (
-                param.lifetime.ident.to_string(),
-                syn::Lifetime::new(
-                    &format!("'__co3_callback_type_{index}"),
-                    proc_macro2::Span::call_site(),
-                ),
-            )
-        })
-        .collect::<Vec<_>>();
-    struct RenameLifetimes(Vec<(String, syn::Lifetime)>);
-    impl VisitMut for RenameLifetimes {
-        fn visit_lifetime_mut(&mut self, lifetime: &mut syn::Lifetime) {
-            if let Some((_, replacement)) = self
-                .0
-                .iter()
-                .find(|(ident, _)| ident == &lifetime.ident.to_string())
-            {
-                *lifetime = replacement.clone();
-            }
-        }
-    }
-    RenameLifetimes(replacements).visit_signature_mut(&mut type_sig);
+    ffi_fn::explicitize_lifetimes(&mut sig, names, "__co3_callback_type_");
+    let type_sig = lower_callback_signature(&sig, failure_mode, move_fn);
     let lifetimes = (!type_sig.generics.params.is_empty()).then(|| syn::BoundLifetimes {
         lifetimes: type_sig.generics.params,
         ..Default::default()

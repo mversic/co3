@@ -84,6 +84,7 @@ It must always start with a declaration of direction and ABI (e.g. `#![unsafe(ex
 - `#[tag(TagTy)]` on a type declaration defines its tag type; `#[tag(TagTy, unsafe(val))]` also assigns its tag value.
 - `where use<T, ...> @ (<Type1> | ...)` opts into a kind of polymorphic dispatch where concrete types are known at compile time but erased at runtime.
 - `#[unpack(_, _)]` on an imported function argument unpacks the compound type into two funcion arguments (facilitates useing `&[T]` in legacy APIs).
+- In `raw fn(&T)`, each elided input lifetime is bound by the callback. A named lifetime from the enclosing declaration keeps its original scope.
 - A `type Name = T;` alias exposes the declared type's C-compatible representation, including lowered `raw` function signatures.
 - Using the `ffi` macro always carries a risk of UB as it relies on the correct user-provided argument types and lifetimes in the ABI.
 

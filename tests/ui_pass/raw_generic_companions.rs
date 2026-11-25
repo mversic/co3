@@ -48,7 +48,7 @@ ffi! {
     #![unsafe(extern("C"))]
 
     type ClonedRaw<T> = raw fn(T) -> move T;
-    type ReferenceRaw<'a> = raw fn(&'a u8) -> &'a u8;
+    type ReferenceRaw = raw fn(&u8) -> &u8;
     type StringRaw = raw extern "C" fn(move String) -> move String;
     type BytesRaw = raw extern "C" fn(move Vec<u8>) -> move Vec<u8>;
 }
@@ -61,7 +61,7 @@ fn main() {
     let _: ClonedRaw<u8> = cloned_raw::<u8>;
     let callback: unsafe extern "C" fn() -> _ = const_value_raw::<4>;
     assert_eq!(unsafe { callback.call() }, Some(4usize));
-    let _: ReferenceRaw<'_> = borrowed_raw;
+    let _: ReferenceRaw = borrowed_raw;
 
     let echo: BytesRaw = Host::<Vec<u8>>::echo_raw;
     let value: Vec<u8> = unsafe { echo.call(vec![1_u8, 2, 3]) }.unwrap();

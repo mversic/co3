@@ -165,14 +165,25 @@ pub(crate) fn emit_abi_function(
 }
 
 pub(crate) fn gen_abi_assertions(sig: &syn::Signature) -> TokenStream {
+    fn assertion_ty(mut ty: Type) -> Type {
+        // The blanket function pointer ABI impl checks a single instantiation.
+        // The declaration and the converted value retain the original binder.
+        if let Some(callback) = crate::callback::BoundCallback::from_type(&ty) {
+            let mut pointer = callback.pointer.clone();
+            pointer.lifetimes = None;
+            ty = parse_quote!(::core::option::Option<#pointer>);
+        }
+        StaticLifetimeNormalizer::default().visit_type_mut(&mut ty);
+        ty
+    }
     let arguments = sig.inputs.iter().map(|input| {
-        let (attrs, mut ty) = match input {
+        let (attrs, ty) = match input {
             syn::FnArg::Typed(arg) => (&arg.attrs, arg.ty.as_ref().clone()),
             syn::FnArg::Receiver(receiver) => {
                 (&receiver.attrs, crate::utils::receiver_ty(receiver))
             }
         };
-        StaticLifetimeNormalizer::default().visit_type_mut(&mut ty);
+        let ty = assertion_ty(ty);
         let cfg = cfg_attrs(attrs).collect::<Vec<_>>();
         quote! {
             #(#cfg)*
@@ -181,10 +192,10 @@ pub(crate) fn gen_abi_assertions(sig: &syn::Signature) -> TokenStream {
             };
         }
     });
-    let mut return_ty: syn::Type = fn_return_ty(sig)
+    let return_ty: syn::Type = fn_return_ty(sig)
         .cloned()
         .unwrap_or_else(|| parse_quote!(()));
-    StaticLifetimeNormalizer::default().visit_type_mut(&mut return_ty);
+    let return_ty = assertion_ty(return_ty);
     quote! {
         #(#arguments)*
         const {
@@ -221,15 +232,18 @@ pub(crate) fn gen_definition_body(
     } else {
         quote! {}
     };
-    let encoded_output = if return_ty.is_none_or(is_identity_primitive) {
-        quote!(__co3_output)
-    } else {
-        gen_abi_return_encode(
-            contract,
-            quote!(__co3_output),
-            borrows_return(&sig, fn_by_val),
-        )
-    };
+    let encoded_output =
+        if let Some(callback) = return_ty.and_then(crate::callback::BoundCallback::from_type) {
+            callback.encode(quote!(__co3_output))
+        } else if return_ty.is_none_or(is_identity_primitive) {
+            quote!(__co3_output)
+        } else {
+            gen_abi_return_encode(
+                contract,
+                quote!(__co3_output),
+                borrows_return(&sig, fn_by_val),
+            )
+        };
     let output = match failure_mode {
         FailureMode::Panic => quote! { Ok::<_, ()>(#encoded_output) },
         FailureMode::Error => match return_ty {
@@ -671,7 +685,10 @@ pub(crate) fn gen_analyzed_input_decode_stmts(
         let decode_arg = quote! { #arg_name };
 
         let carrier = Carrier::for_borrow(input.is_borrowed());
-        let decode_call = if input.identity {
+        let callback = crate::callback::BoundCallback::from_type(arg_ty);
+        let decode_call = if let Some(callback) = &callback {
+            callback.decode(decode_arg)
+        } else if input.identity {
             quote!(Some(#decode_arg))
         } else {
             let value = if input.is_borrowed() && input.soft {
@@ -707,7 +724,7 @@ pub(crate) fn gen_analyzed_input_decode_stmts(
         });
 
         value_initializers.push(quote!(#enabled <Option<#arg_ty> as core::default::Default>::default(), #inactive_value));
-        let store_ty = if input.soft {
+        let store_ty = if input.soft && callback.is_none() {
             let codec = contract.bound(
                 if input.is_borrowed() {
                     Carrier::Borrowed
@@ -1100,19 +1117,36 @@ fn lower_signature_output(sig: &mut syn::Signature) {
 }
 
 pub(crate) fn explicitize_signature_lifetimes(sig: &mut syn::Signature) {
+    let mut names = crate::utils::source_idents(quote!(#sig));
+    explicitize_lifetimes(sig, &mut names, "__co3_");
+}
+
+pub(crate) fn explicitize_lifetimes(
+    sig: &mut syn::Signature,
+    names: &mut BTreeSet<String>,
+    prefix: &str,
+) {
     struct InputLifetimeCollector<'a> {
         out_lifetime: Option<syn::Lifetime>,
         generics: &'a mut syn::Generics,
         multiple_lifetimes: bool,
         is_self: bool,
         next_idx: usize,
+        names: &'a mut BTreeSet<String>,
+        prefix: &'a str,
     }
 
     impl<'a> InputLifetimeCollector<'a> {
-        fn new(generics: &'a mut syn::Generics) -> Self {
+        fn new(
+            generics: &'a mut syn::Generics,
+            names: &'a mut BTreeSet<String>,
+            prefix: &'a str,
+        ) -> Self {
             Self {
                 generics,
                 next_idx: 0,
+                names,
+                prefix,
                 out_lifetime: None,
                 is_self: false,
                 multiple_lifetimes: false,
@@ -1137,11 +1171,16 @@ pub(crate) fn explicitize_signature_lifetimes(sig: &mut syn::Signature) {
                 return lifetime.clone();
             }
 
-            let new_lifetime = format!("'__co3_{}", self.next_idx);
+            let new_lifetime = loop {
+                let name = format!("{}{}", self.prefix, self.next_idx);
+                self.next_idx += 1;
+                if self.names.insert(name.clone()) {
+                    break format!("'{name}");
+                }
+            };
             let new_lifetime = syn::Lifetime::new(&new_lifetime, Span::call_site());
 
             self.push_lifetime_param(new_lifetime.clone());
-            self.next_idx += 1;
             *lifetime = new_lifetime.clone();
             new_lifetime
         }
@@ -1218,7 +1257,7 @@ pub(crate) fn explicitize_signature_lifetimes(sig: &mut syn::Signature) {
         }
     }
 
-    let mut input_collector = InputLifetimeCollector::new(&mut sig.generics);
+    let mut input_collector = InputLifetimeCollector::new(&mut sig.generics, names, prefix);
 
     for input in &mut sig.inputs {
         input_collector.visit_fn_arg_mut(input);
@@ -1243,12 +1282,28 @@ fn synthesize_lifetime_bounds(sig: &mut syn::Signature) {
     }
 
     impl<'a> syn::visit::Visit<'a> for LifetimeUseCollector<'a> {
-        fn visit_named_arg(&mut self, _: &'a syn::NamedArg) {}
+        fn visit_type_fn_ptr(&mut self, _: &'a syn::TypeFnPtr) {}
 
         fn visit_type_reference(&mut self, node: &'a syn::TypeReference) {
             if let Some(lifetime) = &node.lifetime {
-                self.implied_type_bounds
-                    .push(((*node.elem).clone(), lifetime.clone()));
+                // A redundant outlives predicate makes a companion lifetime
+                // early-bound and prevents coercion to a higher-ranked pointer.
+                fn always_static(ty: &Type) -> bool {
+                    match ty {
+                        Type::Slice(slice) => always_static(&slice.elem),
+                        Type::Array(array) => always_static(&array.elem),
+                        _ => crate::known_type::recognize(ty).is_some_and(|known| {
+                            matches!(
+                                known.kind,
+                                crate::known_type::Kind::Primitive | crate::known_type::Kind::Str
+                            )
+                        }),
+                    }
+                }
+                if !always_static(&node.elem) {
+                    self.implied_type_bounds
+                        .push(((*node.elem).clone(), lifetime.clone()));
+                }
                 let parents = &self.parent_lifetimes;
                 self.bounds.entry(lifetime).or_default().extend(parents);
 
@@ -1322,6 +1377,9 @@ fn synthesize_lifetime_bounds(sig: &mut syn::Signature) {
 }
 
 pub(crate) fn item_fn_output_type(return_ty: &Type) -> Type {
+    if let Some(callback) = crate::callback::BoundCallback::from_type(return_ty) {
+        return callback.abi_ty();
+    }
     if is_identity_primitive(return_ty) {
         return return_ty.clone();
     }

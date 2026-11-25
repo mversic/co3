@@ -31,11 +31,7 @@ raw! {
 
 #[test]
 fn call_returns_external_reference_while_synchronizing_argument_storage() {
-    type Callback<'a> = unsafe extern "C" fn(
-        <&mut bool as ReprC>::CType,
-        <&'a u32 as ReprC>::CType,
-    ) -> <&'a u32 as ReprC>::CType;
-    let callback: Callback<'_> = update_and_borrow_raw;
+    let callback: unsafe extern "C" fn(_, _) -> _ = update_and_borrow_raw;
     let mut changed = false;
     let value = 42;
     let output: &u32 = unsafe { callback.soft_call(&mut changed, &value) }.unwrap();

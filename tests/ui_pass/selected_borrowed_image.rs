@@ -23,14 +23,20 @@ ffi! {
 
     impl Transcoder {
         #[symbol_name = "convert_to_{To}"]
-        fn convert<dyn(u8) From, To>(&self, image: Image<From>) -> move Image<To>
+        fn convert<dyn(u8) From, To>(&self, image: Image<From>, on_progress: raw fn(&str, f32)) -> move Image<To>
         where
             use<From, To> @ (<Png, Jpeg> | <Jpeg, Png>);
     }
 }
 
+fn on_progress(_stage: &str, _fraction: f32) {}
+
+co3::raw! {
+    fn on_progress(stage: &str, fraction: f32);
+}
+
 fn convert(transcoder: &Transcoder, image: Image<Png>) -> Image<Jpeg> {
-    transcoder.convert::<Png, Jpeg>(image)
+    transcoder.convert::<Png, Jpeg>(image, on_progress_raw)
 }
 
 fn main() {}

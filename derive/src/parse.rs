@@ -401,7 +401,13 @@ impl ParsedInput {
         let failure_mode = parse_failure_attr(&mut attrs)?;
         let features = parse_feature_attrs(&mut attrs)?;
         let language = parse_language_attr(&mut attrs, kind)?;
-        crate::callback::lower_raw_types(raw.signatures, &mut items, failure_mode, &abi)?;
+        crate::callback::lower_raw_types(
+            raw.signatures,
+            raw.source_names,
+            &mut items,
+            failure_mode,
+            &abi,
+        )?;
 
         Ok(Self {
             kind,
@@ -1597,6 +1603,70 @@ fn normalize_const_args_in_fn(sig: &mut syn::Signature) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn inline_raw_callbacks_preserve_bound_and_free_lifetimes() {
+        let parsed = super::ParsedInput::parse(quote::quote! {
+            #![unsafe(extern("C"))]
+            fn accept<'__co3_callback_type_0>(
+                callback: raw fn(&'__co3_callback_type_0 u16, &u32),
+                value: &'__co3_callback_type_0 u8,
+            );
+        })
+        .unwrap();
+        let super::ParsedItem::Fn(item) = &parsed.items[0] else {
+            panic!("expected function");
+        };
+        let sig = &item.item.sig;
+        assert_eq!(sig.generics.lifetimes().count(), 1);
+        let syn::FnArg::Typed(first) = &sig.inputs[0] else {
+            panic!("expected callback argument");
+        };
+        let syn::Type::FnPtr(pointer) = first.ty.as_ref() else {
+            panic!("expected lowered callback");
+        };
+        let Some(bound) = &pointer.lifetimes else {
+            panic!("expected callback binder")
+        };
+        let expected: syn::BoundLifetimes = syn::parse_quote!(for<'__co3_callback_type_1>);
+        assert_eq!(bound, &expected);
+        let explicit = &pointer.inputs[0].ty;
+        let elided = &pointer.inputs[1].ty;
+        assert_eq!(
+            explicit,
+            &syn::parse_quote!(<&'__co3_callback_type_0 u16 as co3::ReprC>::CType)
+        );
+        assert_eq!(
+            elided,
+            &syn::parse_quote!(<&'__co3_callback_type_1 u32 as co3::ReprC>::CType)
+        );
+    }
+
+    #[test]
+    fn raw_aliases_and_explicit_function_binders_keep_their_lifetime_scope() {
+        let parsed = super::ParsedInput::parse(quote::quote! {
+            #![unsafe(extern("C"))]
+            type Callback = raw fn(&str);
+            fn accept(callback: for<'a> unsafe extern "C" fn(&'a u8));
+        })
+        .unwrap();
+        let super::ParsedItem::Alias(alias) = &parsed.items[0] else {
+            panic!("expected alias");
+        };
+        let syn::Type::FnPtr(pointer) = alias.item.ty.as_ref() else {
+            panic!("expected lowered callback");
+        };
+        assert!(pointer.lifetimes.is_some());
+        assert!(alias.item.generics.params.is_empty());
+        let super::ParsedItem::Fn(item) = &parsed.items[1] else {
+            panic!("expected function");
+        };
+        let expected: syn::Signature = syn::parse_quote!(
+            fn accept(callback: for<'a> unsafe extern "C" fn(&'a u8))
+        );
+        assert!(item.item.sig.generics.params.is_empty());
+        assert_eq!(item.item.sig.inputs, expected.inputs);
+    }
+
     #[test]
     fn export_languages_are_restricted_but_import_languages_are_open() {
         for name in [

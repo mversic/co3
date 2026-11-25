@@ -75,7 +75,11 @@ fn main() {
 
     let _: TakesReference<'_, u8> = take_raw::<u8>;
     let _: TakesReference<'_, u8> = ArgumentHost::take_raw::<u8>;
-    let _: ReturnsReference<'_, u8> = borrowed_generic_raw::<u8>;
+    let echo: ReturnsReference<'_, u8> = borrowed_generic_raw::<u8>;
+    let echo: unsafe extern "C" fn(_) -> _ = echo;
+    let value = 42u8;
+    let returned: &u8 = unsafe { echo.call(&value) }.unwrap();
+    assert!(core::ptr::eq(returned, &value));
     let _: ReturnsReference<'_, u8> = MethodHost::borrowed_generic_raw::<u8>;
     let _ = accept_raw;
     let callback: unsafe extern "C" fn(_) -> _ = existing_raw;

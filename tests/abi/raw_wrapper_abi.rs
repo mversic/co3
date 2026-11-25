@@ -81,3 +81,49 @@ fn explicit_abi_wraps_raw_imports() {
     assert_eq!(unsafe { value(4) }, 5);
     assert_eq!(unsafe { Host::method(4) }, 6);
 }
+
+mod borrowed_callbacks {
+    use co3::{ffi, ops::CFn1, raw};
+
+    ffi! {
+        #![unsafe(export("C"))]
+        #![symbol_prefix = "borrowed_callbacks"]
+
+        type Progress = raw fn(&str) -> usize;
+        fn dispatch(callback: Option<raw fn(&str) -> usize>) -> usize;
+        fn get() -> raw fn(&str) -> usize;
+    }
+
+    fn dispatch(callback: Option<Progress>) -> usize {
+        let Some(callback) = callback else { return 0 };
+        let stage = String::from("done");
+        let callback: unsafe extern "C" fn(_) -> _ = callback;
+        unsafe { callback.call(stage.as_str()) }.unwrap()
+    }
+
+    fn length(stage: &str) -> usize {
+        stage.len()
+    }
+
+    raw! { fn length(stage: &str) -> usize; }
+
+    fn get() -> Progress {
+        length_raw
+    }
+
+    mod imported {
+        co3::ffi! {
+            #![unsafe(extern("C"))]
+            #![symbol_prefix = "borrowed_callbacks"]
+
+            pub fn dispatch(callback: Option<raw fn(&str) -> usize>) -> usize;
+            pub fn get() -> raw fn(&str) -> usize;
+        }
+    }
+
+    #[test]
+    fn callbacks_accept_local_borrows_across_imports_and_exports() {
+        assert_eq!(imported::dispatch(None), 0);
+        assert_eq!(imported::dispatch(Some(imported::get())), 4);
+    }
+}

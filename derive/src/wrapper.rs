@@ -573,17 +573,21 @@ fn gen_wrapper_body_with_input_conversion<const DISPATCHED: bool>(
             gen_return_derase::<DISPATCHED>(self_ty, dispatch_generics, output_ty, fn_by_val);
         let return_borrow_check = gen_return_borrow_check(contract, output_ty, fn_by_val);
         let decode_error = gen_return_decode_error(failure_mode, output_ty);
-        let decode_output = if ffi_fn::is_identity_primitive(output_ty) {
-            quote! { let __co3_out: Option<#output_ty> = Some(__co3_out); }
-        } else {
-            let carrier = Carrier::for_borrow(
-                ffi_fn::ownership_mode(output_ty, fn_by_val)
-                    != crate::generate::OwnershipMode::ByValue,
-            );
-            let decode =
-                contract.decode(carrier, quote!(#output_ty), None, quote!(__co3_out), None);
-            quote!(let __co3_out: Option<#output_ty> = #decode;)
-        };
+        let decode_output =
+            if let Some(callback) = crate::callback::BoundCallback::from_type(output_ty) {
+                let value = callback.decode(quote!(__co3_out));
+                quote!(let __co3_out: Option<#output_ty> = #value;)
+            } else if ffi_fn::is_identity_primitive(output_ty) {
+                quote! { let __co3_out: Option<#output_ty> = Some(__co3_out); }
+            } else {
+                let carrier = Carrier::for_borrow(
+                    ffi_fn::ownership_mode(output_ty, fn_by_val)
+                        != crate::generate::OwnershipMode::ByValue,
+                );
+                let decode =
+                    contract.decode(carrier, quote!(#output_ty), None, quote!(__co3_out), None);
+                quote!(let __co3_out: Option<#output_ty> = #decode;)
+            };
 
         return quote! {
             #return_borrow_check
@@ -754,6 +758,10 @@ fn gen_input_conversion_stmts(contract: &Conversion, inputs: &[Argument<'_>]) ->
     let stmts = inputs.iter().filter(|input| !input.identity).map(|input| {
         let arg_name = input.name();
         let cfg = input.cfg().collect::<Vec<_>>();
+        if let Some(callback) = crate::callback::BoundCallback::from_type(&input.ty) {
+            let value = callback.encode(quote!(#arg_name));
+            return quote!(#(#cfg)* let #arg_name = #value;);
+        }
         let store_name = gen_store_name(arg_name);
         let ty = input.conversion_ty();
         let borrowed = input.is_borrowed();

@@ -52,11 +52,8 @@ raw! {
 }
 
 fn escape() -> &'static u32 {
-    use co3::reference::abi::Ref;
-
     let value = 42_u32;
-    type Callback<'a> = unsafe extern "C" fn(Ref<'a, u32>) -> Ref<'a, u32>;
-    let callback: Callback<'_> = echo_raw;
+    let callback: unsafe extern "C" fn(_) -> _ = echo_raw;
     unsafe { callback.call(&value) }.unwrap()
 }
 

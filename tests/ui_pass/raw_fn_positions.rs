@@ -31,6 +31,13 @@ ffi! {
     fn return_callback() -> raw fn(u8);
     fn use_pair(pair: (u8, raw fn(u8)));
     fn use_option(callback: Option<raw fn(u8)>);
+    fn use_borrowed(callback: raw fn(&str));
+    fn use_borrowed_pair<'__co3_callback_0>(
+        value: &'__co3_callback_0 u8,
+        first: raw fn(&str) -> &str,
+        second: Option<raw fn(&[u8])>,
+    );
+    fn use_explicit_lifetime<'a>(callback: raw fn(&'a str));
     fn use_macro(callback: macro_owned_type!(raw fn(u8)));
 
     type GenericDefault<T = raw fn()> = T;
