@@ -22,7 +22,7 @@ Check the [release article](https://mversic.github.io/co3/) for the motivation b
 
 ## Stable Intermediate Representation
 
-CO3 lowers Rust declarations into SIR (Stable Intermediate Representation), which specifies a compiler-independent Rust interface with a stable ABI. SIR gives binding generators for any language a common interface of lowered types, declarations, and ownership information. [Read the SIR specification](SIR.md).
+CO3 lowers Rust declarations into SIR (Stable Intermediate Representation), which **specifies a compiler-independent Rust interface with a stable ABI**. SIR gives binding generators for any language a common interface of lowered types, declarations, and ownership information. [Read the SIR specification](SIR.md).
 
 ## ABI Stability
 
@@ -184,7 +184,7 @@ Unlike `CO3`, **they don't provide**:
 * Automatic conversion of standard types like `Vec<T>` and `String` to stable ABI representations.
 * Validity checks on incoming values. For example, `CO3` rejects zero when decoding a `NonZeroU8`.
 
-In `CO3`, disable `repr-rust` and set `#![lang = "Rust"]` for a comparable stable ABI subset.
+In CO3, disable `repr-rust` and set `#![lang = "Rust"]` for **the same ABI-stable subset**.
 
 ### Cross-language interface generators
 

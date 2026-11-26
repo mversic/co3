@@ -7,9 +7,6 @@ macro_rules! byte {
     };
 }
 
-#[cfg_attr(feature = "abi_stable", abi_stable::sabi_extern_fn)]
-#[cfg_attr(feature = "stabby", no_mangle)]
-#[cfg_attr(feature = "stabby", stabby::stabby)]
 #[cfg_attr(feature = "uniffi", uniffi::export)]
 #[cfg_attr(feature = "boltffi", boltffi::export)]
 #[cfg_attr(feature = "interoptopus", interoptopus::ffi)]
@@ -34,16 +31,18 @@ co3::ffi! {
     fn fill(buf: &mut [byte!()]);
 }
 
-#[cfg(feature = "abi_stable")]
-abi_stable_signature!(fill: (&mut [byte!()]) -> ());
-
-#[cfg(feature = "co3")]
-#[path = "../support/byte_fill.rs"]
-mod caller;
-
 #[cfg(feature = "co3")]
 fn main() {
-    caller::check([42; 3]);
+    co3::ffi! {
+        #![unsafe(extern("C"))]
+
+        #[symbol_name = "slice_type_macro__fill"]
+        fn exported_fill(buf: &mut [u8]);
+    }
+
+    let mut buf = [9, 8, 7];
+    exported_fill(&mut buf);
+    assert_eq!(buf, [42; 3]);
 }
 
 #[cfg(any(
@@ -51,8 +50,6 @@ fn main() {
     feature = "diplomat",
     feature = "interoptopus",
     feature = "safer_ffi",
-    feature = "boltffi",
-    feature = "abi_stable",
-    feature = "stabby"
+    feature = "boltffi"
 ))]
 fn main() {}

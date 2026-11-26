@@ -48,65 +48,55 @@ co3::ffi! {
 
 #[cfg(feature = "co3")]
 fn main() {
-    {
-        let mut point = Point { x: 7, y: 11 };
+    co3::ffi! {
+        #![unsafe(extern("C"))]
 
-        {
-            unsafe extern "C" {
-                #[link_name = "mutable_record__update"]
-                fn exported_update(point: &mut Point);
-            }
-            unsafe { exported_update(&mut point) };
-        }
-
-        assert_eq!((point.x, point.y), (8, 11));
+        #[symbol_name = "mutable_record__update"]
+        fn imported_update(point: &mut Point);
     }
+
+    validate(imported_update);
 }
 
-#[cfg(any(feature = "uniffi", feature = "abi_stable", feature = "stabby"))]
+#[cfg(feature = "uniffi")]
 fn main() {}
 
 #[cfg(feature = "diplomat")]
 fn main() {
-    {
-        use diplomat_case::Point;
-        let mut point = Point { x: 7, y: 11 };
-
-        {
-            unsafe extern "C" {
-                #[link_name = "diplomat_external_update"]
-                fn exported_update(point: &mut Point);
-            }
-            unsafe { exported_update(&mut point) };
-        }
-
-        assert_eq!((point.x, point.y), (8, 11));
+    unsafe extern "C" {
+        #[link_name = "diplomat_external_update"]
+        fn exported_update(point: &mut TestPoint);
     }
+    validate(|point| {
+        unsafe { exported_update(point) };
+    });
 }
 
 #[cfg(any(feature = "interoptopus", feature = "safer_ffi"))]
 fn main() {
-    {
-        let mut point = Point { x: 7, y: 11 };
-
-        {
-            unsafe extern "C" {
-                #[link_name = "update"]
-                fn exported_update(point: &mut Point);
-            }
-            unsafe { exported_update(&mut point) };
-        }
-
-        assert_eq!((point.x, point.y), (8, 11));
+    unsafe extern "C" {
+        #[link_name = "update"]
+        fn exported_update(point: &mut TestPoint);
     }
+    validate(|point| {
+        unsafe { exported_update(point) };
+    });
 }
 
 #[cfg(feature = "boltffi")]
 fn main() {
-    {
-        let mut point = Point { x: 7, y: 11 };
+    validate(|point| {
+        assert!(unsafe { boltffi_function_14mutable_record6update(point) }.is_ok());
+    });
+}
 
-        assert!(unsafe { boltffi_function_14mutable_record6update(&mut point) }.is_ok());
-        assert_eq!((point.x, point.y), (8, 11));
-    }
+#[cfg(feature = "diplomat")]
+type TestPoint = diplomat_case::Point;
+#[cfg(not(feature = "diplomat"))]
+type TestPoint = Point;
+
+fn validate(call: impl FnOnce(&mut TestPoint)) {
+    let mut point = TestPoint { x: 7, y: 11 };
+    call(&mut point);
+    assert_eq!((point.x, point.y), (8, 11));
 }

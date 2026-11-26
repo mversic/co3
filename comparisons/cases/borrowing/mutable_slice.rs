@@ -25,58 +25,44 @@ co3::ffi! {
 }
 
 #[cfg(feature = "co3")]
-mod caller {
+fn main() {
     co3::ffi! {
         #![unsafe(extern("C"))]
-        pub fn fill(values: &mut [u32]);
+        #[symbol_name = "mutable_slice__fill"]
+        fn imported_fill(values: &mut [u32]);
     }
+
+    validate(|values| {
+        imported_fill(values);
+    });
 }
 
-#[cfg(feature = "co3")]
-fn main() {
-    {
-        let mut values = [500, 700, 900];
-
-        caller::fill(&mut values);
-
-        assert_eq!(values, [42; 3]);
-    }
-}
-
-#[cfg(any(
-    feature = "uniffi",
-    feature = "interoptopus",
-    feature = "safer_ffi",
-    feature = "abi_stable",
-    feature = "stabby"
-))]
+#[cfg(any(feature = "uniffi", feature = "interoptopus", feature = "safer_ffi"))]
 fn main() {}
 
 #[cfg(feature = "diplomat")]
 fn main() {
-    {
-        let mut values = [500, 700, 900];
-
-        {
-            unsafe extern "C" {
-                fn diplomat_external_fill(values: diplomat_runtime::DiplomatSliceMut<'_, u32>);
-            }
-            unsafe { diplomat_external_fill(values.as_mut_slice().into()) };
-        }
-
-        assert_eq!(values, [42; 3]);
+    unsafe extern "C" {
+        fn diplomat_external_fill(values: diplomat_runtime::DiplomatSliceMut<'_, u32>);
     }
+
+    validate(|values| {
+        unsafe { diplomat_external_fill(values.into()) };
+    });
 }
 
 #[cfg(feature = "boltffi")]
 fn main() {
-    {
-        let mut values = [500, 700, 900];
+    validate(|values| {
+        assert!(unsafe {
+            boltffi_function_13mutable_slice4fill(values.as_mut_ptr(), values.len())
+        }
+        .is_ok());
+    });
+}
 
-        assert!(
-            unsafe { boltffi_function_13mutable_slice4fill(values.as_mut_ptr(), values.len()) }
-                .is_ok()
-        );
-        assert_eq!(values, [42; 3]);
-    }
+fn validate(call: impl FnOnce(&mut [u32])) {
+    let mut values = [500, 700, 900];
+    call(&mut values);
+    assert_eq!(values, [42; 3]);
 }

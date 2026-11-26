@@ -4,8 +4,6 @@ include!("../support/mod.rs");
 
 use core::num::NonZeroU8;
 
-#[cfg_attr(feature = "abi_stable", abi_stable::sabi_extern_fn)]
-#[cfg_attr(feature = "stabby", no_mangle, stabby::stabby)]
 #[cfg_attr(feature = "uniffi", uniffi::export)]
 #[cfg_attr(feature = "boltffi", boltffi::export)]
 #[cfg_attr(feature = "interoptopus", interoptopus::ffi)]
@@ -31,24 +29,15 @@ co3::ffi! {
     fn advance(input: Option<NonZeroU8>) -> Option<NonZeroU8>;
 }
 
-#[cfg(feature = "abi_stable")]
-abi_stable_signature!(advance: (Option<NonZeroU8>) -> Option<NonZeroU8>);
-
-#[cfg(feature = "co3")]
-mod caller {
-    co3::ffi! {
-        #![unsafe(extern("C"))]
-        pub fn advance(input: u8) -> u8;
-    }
-}
-
 #[cfg(feature = "co3")]
 fn main() {
-    for byte in 0..=u8::MAX {
-        let expected = byte.wrapping_add(1);
-
-        assert_eq!(caller::advance(byte), expected);
+    co3::ffi! {
+        #![unsafe(extern("C"))]
+        #[symbol_name = "niche_nonzero__advance"]
+        fn imported_advance(input: u8) -> u8;
     }
+
+    validate(imported_advance);
 }
 
 #[cfg(any(
@@ -57,40 +46,25 @@ fn main() {
     feature = "safer_ffi",
     feature = "boltffi"
 ))]
-fn main() {
-    for byte in 0..=u8::MAX {
-        let expected = byte.wrapping_add(1);
-    }
-}
+fn main() {}
 
 #[cfg(feature = "diplomat")]
 fn main() {
-    for byte in 0..=u8::MAX {
-        let expected = byte.wrapping_add(1);
+    use diplomat_runtime::DiplomatOption;
 
-        {
-            use diplomat_runtime::DiplomatOption;
-            unsafe extern "C" {
-                fn diplomat_external_advance(
-                    input: DiplomatOption<NonZeroU8>,
-                ) -> DiplomatOption<NonZeroU8>;
-            }
-            assert_eq!(core::mem::size_of::<DiplomatOption<NonZeroU8>>(), 2);
-            let output = unsafe { diplomat_external_advance(NonZeroU8::new(byte).into()) };
-            assert_eq!(Option::from(output), NonZeroU8::new(expected));
-        }
+    unsafe extern "C" {
+        fn diplomat_external_advance(input: DiplomatOption<NonZeroU8>)
+            -> DiplomatOption<NonZeroU8>;
     }
+    assert_eq!(core::mem::size_of::<DiplomatOption<NonZeroU8>>(), 2);
+    validate(|byte| {
+        let output = unsafe { diplomat_external_advance(NonZeroU8::new(byte).into()) };
+        Option::from(output).map_or(0, NonZeroU8::get)
+    });
 }
 
-#[cfg(any(feature = "abi_stable", feature = "stabby"))]
-fn main() {
+fn validate(mut call: impl FnMut(u8) -> u8) {
     for byte in 0..=u8::MAX {
-        let expected = byte.wrapping_add(1);
-
-        {
-            let export: extern "C" fn(Option<NonZeroU8>) -> Option<NonZeroU8> = advance;
-            assert_eq!(core::mem::size_of::<Option<NonZeroU8>>(), 1);
-            assert_eq!(export(NonZeroU8::new(byte)), NonZeroU8::new(expected));
-        }
+        assert_eq!(call(byte), byte.wrapping_add(1));
     }
 }

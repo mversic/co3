@@ -25,9 +25,6 @@ pub fn read_view<'a>(view: View<'a>) -> u32 {
 #[diplomat::bridge]
 pub mod diplomat_case {
 
-
-
-
     #[derive(Clone, Copy)]
     #[repr(C)]
     pub struct View<'a> {

@@ -53,66 +53,63 @@ co3::ffi! {
 
 #[cfg(feature = "co3")]
 fn main() {
-    {
-        let mut counter = Counter { input: 7 };
+    co3::ffi! {
+        #![unsafe(extern("C"))]
 
-        {
-            unsafe extern "C" {
-                #[link_name = "opaque_mutable_receiver__Counter__increment"]
-                fn exported_increment(handle: *mut core::ffi::c_void);
-            }
-            unsafe { exported_increment(core::ptr::from_mut(&mut counter).cast()) };
-        }
-
-        assert_eq!(counter.input, 8);
+        #[symbol_name = "opaque_mutable_receiver__Counter__increment"]
+        fn imported_increment(counter: &mut Counter);
     }
+
+    validate(|mut counter| {
+        imported_increment(&mut counter);
+        counter
+    });
 }
 
-#[cfg(any(
-    feature = "uniffi",
-    feature = "safer_ffi",
-    feature = "abi_stable",
-    feature = "stabby"
-))]
+#[cfg(any(feature = "uniffi", feature = "safer_ffi"))]
 fn main() {}
 
 #[cfg(feature = "diplomat")]
 fn main() {
-    {
-        use diplomat_case::Counter;
-        let mut counter = Counter { input: 7 };
-
-        {
-            unsafe extern "C" {
-                #[link_name = "Counter_increment"]
-                fn exported_increment(handle: *mut core::ffi::c_void);
-            }
-            unsafe { exported_increment(core::ptr::from_mut(&mut counter).cast()) };
-        }
-
-        assert_eq!(counter.input, 8);
+    unsafe extern "C" {
+        #[link_name = "Counter_increment"]
+        fn exported_increment(handle: *mut core::ffi::c_void);
     }
+    validate(|mut counter| {
+        unsafe { exported_increment(core::ptr::from_mut(&mut counter).cast()) };
+
+        counter
+    });
 }
 
 #[cfg(feature = "interoptopus")]
 fn main() {
-    {
-        let mut counter = Counter { input: 7 };
-
+    validate(|mut counter| {
         unsafe { counter_increment(&mut counter) };
-        assert_eq!(counter.input, 8);
-    }
+        counter
+    });
 }
 
 #[cfg(feature = "boltffi")]
 fn main() {
-    {
-        let handle = __BoltffiCounterHandle::new(Counter { input: 7 });
+    validate(|mut counter| {
+        let handle = __BoltffiCounterHandle::new(counter);
         let status = unsafe {
             boltffi_method_class_23opaque_mutable_receiver7Counter9increment(handle as u64)
         };
         assert!(status.is_ok());
         let counter = unsafe { __BoltffiCounterHandle::take(handle) }.unwrap();
-        assert_eq!(counter.input, 8);
-    }
+        counter
+    });
+}
+
+#[cfg(feature = "diplomat")]
+type TestCounter = diplomat_case::Counter;
+#[cfg(not(any(feature = "diplomat", feature = "safer_ffi")))]
+type TestCounter = Counter;
+
+#[cfg(not(feature = "safer_ffi"))]
+fn validate(call: impl FnOnce(TestCounter) -> TestCounter) {
+    let counter = call(TestCounter { input: 7 });
+    assert_eq!(counter.input, 8);
 }

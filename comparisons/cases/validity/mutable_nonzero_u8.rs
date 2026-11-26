@@ -37,19 +37,11 @@ unsafe extern "C" fn write_byte(output: *mut u8, byte: u8) -> u8 {
 }
 
 #[cfg(feature = "co3")]
-co3::ffi! {
-    #![unsafe(extern("C"))]
-    #[symbol_name = "comparison_write_nonzero"]
-    fn write_nonzero(#[soft] output: &mut NonZeroU8, byte: u8) -> u8;
-}
-
-#[cfg(feature = "co3")]
-fn check_writeback() {
+fn check_writeback(mut call: impl FnMut(&mut NonZeroU8, u8) -> u8) {
     for (byte, expected, final_value) in [(7u8, Some(0u8), 7), (0, None, 1)] {
         let mut value = NonZeroU8::MIN;
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            write_nonzero(&mut value, byte)
-        }));
+        let result =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| call(&mut value, byte)));
         assert_eq!(result.ok(), expected);
         assert_eq!(value.get(), final_value);
     }
@@ -57,56 +49,44 @@ fn check_writeback() {
 
 #[cfg(feature = "co3")]
 fn main() {
-    {
-        unsafe extern "C" {
-            #[link_name = "mutable_nonzero_u8__update"]
-            fn exported_update(input: *mut u8);
-        }
+    co3::ffi! {
+        #![unsafe(extern("C"))]
 
-        let mut byte = 7u8;
-        // The caller supplies exclusively borrowed storage containing a valid NonZeroU8.
-        unsafe { exported_update(&mut byte) };
-        assert_eq!(byte, 1);
+        #[symbol_name = "mutable_nonzero_u8__update"]
+        fn imported_update(input: &mut u8);
+
+        #[symbol_name = "comparison_write_nonzero"]
+        fn write_nonzero(#[soft] output: &mut NonZeroU8, byte: u8) -> u8;
     }
 
-    check_writeback();
+    validate(imported_update);
+    check_writeback(write_nonzero);
 }
 
-#[cfg(any(
-    feature = "uniffi",
-    feature = "safer_ffi",
-    feature = "boltffi",
-    feature = "abi_stable",
-    feature = "stabby"
-))]
+#[cfg(any(feature = "uniffi", feature = "safer_ffi", feature = "boltffi"))]
 fn main() {}
 
 #[cfg(feature = "diplomat")]
 fn main() {
-    {
-        unsafe extern "C" {
-            #[link_name = "diplomat_external_update"]
-            fn exported_update(input: *mut u8);
-        }
-
-        let mut byte = 7u8;
-        // The caller supplies exclusively borrowed storage containing a valid NonZeroU8.
-        unsafe { exported_update(&mut byte) };
-        assert_eq!(byte, 1);
+    unsafe extern "C" {
+        #[link_name = "diplomat_external_update"]
+        fn exported_update(input: *mut u8);
     }
+    validate(|byte| unsafe { exported_update(byte) });
 }
 
 #[cfg(feature = "interoptopus")]
 fn main() {
-    {
-        unsafe extern "C" {
-            #[link_name = "update"]
-            fn exported_update(input: *mut u8);
-        }
-
-        let mut byte = 7u8;
-        // The caller supplies exclusively borrowed storage containing a valid NonZeroU8.
-        unsafe { exported_update(&mut byte) };
-        assert_eq!(byte, 1);
+    unsafe extern "C" {
+        #[link_name = "update"]
+        fn exported_update(input: *mut u8);
     }
+    validate(|byte| unsafe { exported_update(byte) });
+}
+
+fn validate(call: impl FnOnce(&mut u8)) {
+    let mut byte = 7u8;
+    // The caller supplies exclusively borrowed storage containing a valid NonZeroU8.
+    call(&mut byte);
+    assert_eq!(byte, 1);
 }

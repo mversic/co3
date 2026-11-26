@@ -26,51 +26,50 @@ co3::ffi! {
 
 #[cfg(feature = "co3")]
 fn main() {
-    {
-        unsafe extern "C" {
-            #[link_name = "mutable_scalar__increment"]
-            fn exported_increment(value: &mut u32);
-        }
-        let mut value = 7;
-        unsafe { exported_increment(&mut value) };
-        assert_eq!(value, 8);
+    co3::ffi! {
+        #![unsafe(extern("C"))]
+
+        #[symbol_name = "mutable_scalar__increment"]
+        fn imported_increment(value: &mut u32);
     }
+
+    validate(imported_increment);
 }
 
-#[cfg(any(feature = "uniffi", feature = "abi_stable", feature = "stabby"))]
+#[cfg(feature = "uniffi")]
 fn main() {}
 
 #[cfg(feature = "diplomat")]
 fn main() {
-    {
-        unsafe extern "C" {
-            #[link_name = "diplomat_external_increment"]
-            fn exported_increment(value: &mut u32);
-        }
-        let mut value = 7;
-        unsafe { exported_increment(&mut value) };
-        assert_eq!(value, 8);
+    unsafe extern "C" {
+        #[link_name = "diplomat_external_increment"]
+        fn exported_increment(value: &mut u32);
     }
+    validate(|value| {
+        unsafe { exported_increment(value) };
+    });
 }
 
 #[cfg(any(feature = "interoptopus", feature = "safer_ffi"))]
 fn main() {
-    {
-        unsafe extern "C" {
-            #[link_name = "increment"]
-            fn exported_increment(value: &mut u32);
-        }
-        let mut value = 7;
-        unsafe { exported_increment(&mut value) };
-        assert_eq!(value, 8);
+    unsafe extern "C" {
+        #[link_name = "increment"]
+        fn exported_increment(value: &mut u32);
     }
+    validate(|value| {
+        unsafe { exported_increment(value) };
+    });
 }
 
 #[cfg(feature = "boltffi")]
 fn main() {
-    {
-        // This entry point takes the integer by value and returns only the status.
-        let status = unsafe { boltffi_function_14mutable_scalar9increment(7) };
-        assert!(status.is_ok());
-    }
+    // This entry point takes the integer by value and returns only the status.
+    let status = unsafe { boltffi_function_14mutable_scalar9increment(7) };
+    assert!(status.is_ok());
+}
+
+fn validate(call: impl FnOnce(&mut u32)) {
+    let mut value = 7;
+    call(&mut value);
+    assert_eq!(value, 8);
 }

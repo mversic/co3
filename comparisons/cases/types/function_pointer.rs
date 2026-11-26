@@ -34,41 +34,37 @@ extern "C" fn increment(input: u32) -> u32 {
 
 #[cfg(feature = "co3")]
 fn main() {
-    {
-        unsafe extern "C" {
-            #[link_name = "function_pointer__apply"]
-            fn exported_apply(callback: Callback, input: u32) -> u32;
-        }
-        assert_eq!(unsafe { exported_apply(increment, 41) }, 42);
+    co3::ffi! {
+        #![unsafe(extern("C"))]
+
+        #[symbol_name = "function_pointer__apply"]
+        fn imported_apply(callback: Callback, input: u32) -> u32;
     }
+
+    validate(imported_apply);
 }
 
-#[cfg(any(
-    feature = "uniffi",
-    feature = "boltffi",
-    feature = "abi_stable",
-    feature = "stabby"
-))]
+#[cfg(any(feature = "uniffi", feature = "boltffi"))]
 fn main() {}
 
 #[cfg(feature = "diplomat")]
 fn main() {
-    {
-        unsafe extern "C" {
-            #[link_name = "diplomat_external_apply"]
-            fn exported_apply(callback: Callback, input: u32) -> u32;
-        }
-        assert_eq!(unsafe { exported_apply(increment, 41) }, 42);
+    unsafe extern "C" {
+        #[link_name = "diplomat_external_apply"]
+        fn exported_apply(callback: Callback, input: u32) -> u32;
     }
+    validate(|callback, input| unsafe { exported_apply(callback, input) });
 }
 
 #[cfg(any(feature = "interoptopus", feature = "safer_ffi"))]
 fn main() {
-    {
-        unsafe extern "C" {
-            #[link_name = "apply"]
-            fn exported_apply(callback: Callback, input: u32) -> u32;
-        }
-        assert_eq!(unsafe { exported_apply(increment, 41) }, 42);
+    unsafe extern "C" {
+        #[link_name = "apply"]
+        fn exported_apply(callback: Callback, input: u32) -> u32;
     }
+    validate(|callback, input| unsafe { exported_apply(callback, input) });
+}
+
+fn validate(call: impl FnOnce(Callback, u32) -> u32) {
+    assert_eq!(call(increment, 41), 42);
 }

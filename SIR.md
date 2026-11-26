@@ -2,6 +2,8 @@
 
 SIR specifies a **compiler-independent Rust interface with a stable ABI**.
 
+Foreign language generators can refer to SIR to **reconstruct the exact exported Rust API** in their target language.
+
 ## Quick Glossary
 
 | Term | Meaning |

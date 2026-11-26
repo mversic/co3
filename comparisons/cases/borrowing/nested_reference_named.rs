@@ -26,36 +26,35 @@ co3::ffi! {
 
 #[cfg(feature = "co3")]
 fn main() {
-    {
-        unsafe extern "C" {
-            #[link_name = "nested_reference_named__read_nested"]
-            fn exported_read(input: &&u32) -> u32;
-        }
-        for value in [17, 42] {
-            assert_eq!(unsafe { exported_read(&&value) }, value);
-        }
+    co3::ffi! {
+        #![unsafe(extern("C"))]
+
+        #[symbol_name = "nested_reference_named__read_nested"]
+        fn imported_read<'outer, 'inner: 'outer>(input: &'outer &'inner u32) -> u32;
     }
+
+    validate(|input| imported_read(input));
 }
 
 #[cfg(any(
     feature = "uniffi",
     feature = "diplomat",
     feature = "interoptopus",
-    feature = "boltffi",
-    feature = "abi_stable",
-    feature = "stabby"
+    feature = "boltffi"
 ))]
 fn main() {}
 
 #[cfg(feature = "safer_ffi")]
 fn main() {
-    {
-        unsafe extern "C" {
-            #[link_name = "read_nested"]
-            fn exported_read(input: &&u32) -> u32;
-        }
-        for value in [17, 42] {
-            assert_eq!(unsafe { exported_read(&&value) }, value);
-        }
+    unsafe extern "C" {
+        #[link_name = "read_nested"]
+        fn exported_read(input: &&u32) -> u32;
+    }
+    validate(|input| unsafe { exported_read(input) });
+}
+
+fn validate(mut call: impl FnMut(&&u32) -> u32) {
+    for value in [17, 42] {
+        assert_eq!(call(&&value), value);
     }
 }

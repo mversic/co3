@@ -54,66 +54,51 @@ co3::ffi! {
 
 #[cfg(feature = "co3")]
 fn main() {
-    {
-        let mut counter = Counter { input: 7 };
-        for expected in [8, 9] {
-            {
-                unsafe extern "C" {
-                    #[link_name = "mutable_receiver__Counter__increment"]
-                    fn exported_increment(counter: &mut Counter);
-                }
-                unsafe { exported_increment(&mut counter) };
-            }
+    co3::ffi! {
+        #![unsafe(extern("C"))]
 
-            assert_eq!(counter.input, expected);
-        }
+        #[symbol_name = "mutable_receiver__Counter__increment"]
+        fn imported_increment(counter: &mut Counter);
     }
+
+    validate(imported_increment);
 }
 
-#[cfg(any(
-    feature = "uniffi",
-    feature = "interoptopus",
-    feature = "safer_ffi",
-    feature = "abi_stable",
-    feature = "stabby"
-))]
+#[cfg(any(feature = "uniffi", feature = "interoptopus", feature = "safer_ffi"))]
 fn main() {}
 
 #[cfg(feature = "diplomat")]
 fn main() {
-    {
-        use diplomat_case::Counter;
-        let mut counter = Counter { input: 7 };
-        for expected in [8, 9] {
-            {
-                unsafe extern "C" {
-                    #[link_name = "Counter_increment"]
-                    fn exported_increment(counter: &mut Counter);
-                }
-                unsafe { exported_increment(&mut counter) };
-            }
-
-            assert_eq!(counter.input, expected);
-        }
+    unsafe extern "C" {
+        #[link_name = "Counter_increment"]
+        fn exported_increment(counter: &mut TestCounter);
     }
+    validate(|counter| {
+        unsafe { exported_increment(counter) };
+    });
 }
 
 #[cfg(feature = "boltffi")]
 fn main() {
-    {
-        let mut counter = Counter { input: 7 };
-        for expected in [8, 9] {
-            {
-                // BoltFFI returns the updated record through a separate output pointer.
-                let status = unsafe {
-                    boltffi_method_record_16mutable_receiver7Counter9increment(
-                        counter,
-                        &mut counter,
-                    )
-                };
-                assert!(status.is_ok());
-            }
-            assert_eq!(counter.input, expected);
-        }
+    validate(|counter| {
+        // BoltFFI returns the updated record through a separate output pointer.
+        let status = unsafe {
+            boltffi_method_record_16mutable_receiver7Counter9increment(*counter, counter)
+        };
+        assert!(status.is_ok());
+    });
+}
+
+#[cfg(feature = "diplomat")]
+type TestCounter = diplomat_case::Counter;
+#[cfg(not(any(feature = "diplomat", feature = "safer_ffi")))]
+type TestCounter = Counter;
+
+#[cfg(not(feature = "safer_ffi"))]
+fn validate(mut call: impl FnMut(&mut TestCounter)) {
+    let mut counter = TestCounter { input: 7 };
+    for expected in [8, 9] {
+        call(&mut counter);
+        assert_eq!(counter.input, expected);
     }
 }

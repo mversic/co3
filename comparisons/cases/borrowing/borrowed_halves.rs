@@ -25,21 +25,17 @@ co3::ffi! {
 }
 
 #[cfg(feature = "co3")]
-mod caller {
+fn main() {
     co3::ffi! {
         #![unsafe(extern("C"))]
-        pub fn halves(input: &[u8]) -> (&[u8], &[u8]);
+        #[symbol_name = "borrowed_halves__halves"]
+        fn imported_halves(input: &[u8]) -> (&[u8], &[u8]);
     }
-}
 
-#[cfg(feature = "co3")]
-fn main() {
-    {
-        let data = [11, 22, 33, 44, 55];
-        let (left, right) = caller::halves(&data);
-        assert!(std::ptr::eq(left, &data[..2]));
-        assert!(std::ptr::eq(right, &data[2..]));
-    }
+    let data = [11, 22, 33, 44, 55];
+    let (left, right) = imported_halves(&data);
+    assert!(std::ptr::eq(left, &data[..2]));
+    assert!(std::ptr::eq(right, &data[2..]));
 }
 
 #[cfg(any(
@@ -47,8 +43,6 @@ fn main() {
     feature = "diplomat",
     feature = "interoptopus",
     feature = "safer_ffi",
-    feature = "boltffi",
-    feature = "abi_stable",
-    feature = "stabby"
+    feature = "boltffi"
 ))]
 fn main() {}

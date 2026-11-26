@@ -3,9 +3,6 @@ include!("../support/mod.rs");
 
 use core::num::NonZeroU8;
 
-#[cfg_attr(feature = "abi_stable", abi_stable::sabi_extern_fn)]
-#[cfg_attr(feature = "stabby", no_mangle)]
-#[cfg_attr(feature = "stabby", stabby::stabby)]
 #[cfg_attr(feature = "uniffi", uniffi::export)]
 #[cfg_attr(feature = "boltffi", boltffi::export)]
 #[cfg_attr(feature = "interoptopus", interoptopus::ffi)]
@@ -30,8 +27,5 @@ co3::ffi! {
 
     fn update(#[soft] input: &mut core::cell::UnsafeCell<NonZeroU8>);
 }
-
-#[cfg(feature = "abi_stable")]
-abi_stable_signature!(update: (&mut core::cell::UnsafeCell<NonZeroU8>) -> ());
 
 fn main() {}

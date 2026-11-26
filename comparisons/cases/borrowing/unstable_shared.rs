@@ -1,10 +1,28 @@
 include!("../support/mod.rs");
-include!("../support/unstable_point.rs");
+// The record under test has no explicit representation.
 
 #[cfg(not(feature = "diplomat"))]
-#[cfg_attr(feature = "abi_stable", abi_stable::sabi_extern_fn)]
-#[cfg_attr(feature = "stabby", no_mangle)]
-#[cfg_attr(feature = "stabby", stabby::stabby)]
+#[cfg_attr(feature = "co3", derive(co3::rust_spec::RustSpec, co3::ReprC))]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+#[cfg_attr(feature = "interoptopus", interoptopus::ffi)]
+#[cfg_attr(feature = "safer_ffi", safer_ffi::derive_ReprC)]
+#[cfg_attr(feature = "boltffi", derive(Clone, Copy))]
+#[cfg_attr(feature = "boltffi", boltffi::data)]
+pub struct Point {
+    pub x: u8,
+    pub y: u32,
+}
+
+// The C caller declares its own record in field order.
+#[cfg(any(feature = "co3", feature = "diplomat", feature = "interoptopus"))]
+#[cfg_attr(feature = "co3", derive(co3::rust_spec::RustSpec, co3::ReprC))]
+#[repr(C)]
+struct CallerPoint {
+    x: u8,
+    y: u32,
+}
+
+#[cfg(not(feature = "diplomat"))]
 #[cfg_attr(feature = "uniffi", uniffi::export)]
 #[cfg_attr(feature = "interoptopus", interoptopus::ffi)]
 #[cfg_attr(feature = "safer_ffi", safer_ffi::ffi_export)]
@@ -32,31 +50,21 @@ co3::ffi! {
     fn read_point(#[soft] point: &Point) -> u32;
 }
 
-#[cfg(feature = "abi_stable")]
-abi_stable_signature!(read_point: (&Point) -> u32);
-
 #[cfg(feature = "co3")]
 fn main() {
-    use CallerPoint as Point;
+    co3::ffi! {
+        #![unsafe(extern("C"))]
 
-    for (x, y) in [(7, 1024), (13, 65537)] {
-        let point = Point { x, y };
-
-        let result = {
-            unsafe extern "C" {
-                #[link_name = "unstable_shared__read_point"]
-                fn exported_read(point: &Point) -> u32;
-            }
-            unsafe { exported_read(&point) }
-        };
-
-        assert_eq!(result, y - u32::from(x));
+        #[symbol_name = "unstable_shared__read_point"]
+        fn imported_read(point: &CallerPoint) -> u32;
     }
+
+    validate(|x, y| imported_read(&CallerPoint { x, y }));
 }
 
 #[cfg(feature = "uniffi")]
 fn main() {
-    for (x, y) in [(7, 1024), (13, 65537)] {
+    validate(|x, y| {
         let point = Point { x, y };
 
         let result = {
@@ -67,15 +75,15 @@ fn main() {
             output
         };
 
-        assert_eq!(result, y - u32::from(x));
-    }
+        result
+    });
 }
 
 #[cfg(feature = "diplomat")]
 fn main() {
     use CallerPoint as Point;
 
-    for (x, y) in [(7, 1024), (13, 65537)] {
+    validate(|x, y| {
         let point = Point { x, y };
 
         let result = {
@@ -86,15 +94,15 @@ fn main() {
             unsafe { exported_read(&point) }
         };
 
-        assert_eq!(result, y - u32::from(x));
-    }
+        result
+    });
 }
 
 #[cfg(feature = "interoptopus")]
 fn main() {
     use CallerPoint as Point;
 
-    for (x, y) in [(7, 1024), (13, 65537)] {
+    validate(|x, y| {
         let point = Point { x, y };
 
         let result = {
@@ -105,41 +113,33 @@ fn main() {
             unsafe { exported_read(&point) }
         };
 
-        assert_eq!(result, y - u32::from(x));
-    }
+        result
+    });
 }
 
 #[cfg(feature = "safer_ffi")]
 fn main() {
-    for (x, y) in [(7, 1024), (13, 65537)] {
+    validate(|x, y| {
         let point = Point { x, y };
 
         let result = read_point(&point);
 
-        assert_eq!(result, y - u32::from(x));
-    }
+        result
+    });
 }
 
 #[cfg(feature = "boltffi")]
 fn main() {
-    for (x, y) in [(7, 1024), (13, 65537)] {
+    validate(|x, y| {
         let point = Point { x, y };
 
         let result = unsafe { boltffi_function_15unstable_shared10read_point(&point) };
-        assert_eq!(result, y - u32::from(x));
-    }
+        result
+    });
 }
 
-#[cfg(any(feature = "abi_stable", feature = "stabby"))]
-fn main() {
+fn validate(mut call: impl FnMut(u8, u32) -> u32) {
     for (x, y) in [(7, 1024), (13, 65537)] {
-        let point = Point { x, y };
-
-        let result = {
-            let exported_read: extern "C" fn(&Point) -> u32 = read_point;
-            exported_read(&point)
-        };
-
-        assert_eq!(result, y - u32::from(x));
+        assert_eq!(call(x, y), y - u32::from(x));
     }
 }

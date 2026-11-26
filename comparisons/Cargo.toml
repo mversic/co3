@@ -11,8 +11,6 @@ autoexamples = false
 diplomat-audit = ["dep:diplomat_core", "dep:syn"]
 default = []
 tracing = []
-abi_stable = ["dep:abi_stable"]
-stabby = ["dep:stabby"]
 co3 = ["dep:co3"]
 uniffi = ["dep:uniffi"]
 boltffi = ["dep:boltffi"]
@@ -23,8 +21,6 @@ diplomat = ["dep:diplomat", "dep:diplomat-runtime"]
 [dependencies]
 diplomat_core = { version = "=0.17.0", features = ["hir"], optional = true }
 syn = { version = "3", features = ["full"], optional = true }
-abi_stable = { version = "=0.11.3", optional = true }
-stabby = { version = "=36.2.2", optional = true }
 comparison-types = { path = "support/types" }
 co3 = { path = "..", optional = true }
 uniffi = { git = "https://github.com/mozilla/uniffi-rs", rev = "2124d553b73444890fd913b90d8fdd98620def1d", default-features = false, features = ["macro-scaffolding"], optional = true }
@@ -240,42 +236,6 @@ name = "trait_object"
 path = "cases/traits/trait_object.rs"
 
 [[example]]
-name = "control_stable_slice"
-path = "cases/controls/control_stable_slice.rs"
-
-[[example]]
-name = "stable_slice_alias"
-path = "cases/syntax/stable_slice_alias.rs"
-
-[[example]]
-name = "control_callback_field"
-path = "cases/controls/control_callback_field.rs"
-
-[[example]]
-name = "callback_field_alias"
-path = "cases/syntax/callback_field_alias.rs"
-
-[[example]]
-name = "callback_field_macro"
-path = "cases/syntax/callback_field_macro.rs"
-
-[[example]]
-name = "control_recursive_pointer"
-path = "cases/controls/control_recursive_pointer.rs"
-
-[[example]]
-name = "recursive_pointer_alias"
-path = "cases/syntax/recursive_pointer_alias.rs"
-
-[[example]]
-name = "control_recursive_reference"
-path = "cases/controls/control_recursive_reference.rs"
-
-[[example]]
-name = "recursive_reference_alias"
-path = "cases/syntax/recursive_reference_alias.rs"
-
-[[example]]
 name = "control_optional_box"
 path = "cases/controls/control_optional_box.rs"
 
@@ -290,14 +250,6 @@ path = "cases/controls/control_vector_field.rs"
 [[example]]
 name = "recursive_vector_field"
 path = "cases/types/recursive_vector_field.rs"
-
-[[example]]
-name = "control_stable_vector_field"
-path = "cases/controls/control_stable_vector_field.rs"
-
-[[example]]
-name = "recursive_stable_vector_field"
-path = "cases/types/recursive_stable_vector_field.rs"
 
 [[example]]
 name = "recursive_vector_default_repr"
@@ -330,7 +282,3 @@ path = "cases/types/niche_nonzero.rs"
 [[example]]
 name = "niche_bool"
 path = "cases/types/niche_bool.rs"
-
-[[example]]
-name = "framework_option_bool"
-path = "cases/types/framework_option_bool.rs"

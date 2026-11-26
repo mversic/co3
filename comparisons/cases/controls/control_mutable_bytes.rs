@@ -1,9 +1,6 @@
 // Positive control: literal mutable byte slices work in both backends.
 include!("../support/mod.rs");
 
-#[cfg_attr(feature = "abi_stable", abi_stable::sabi_extern_fn)]
-#[cfg_attr(feature = "stabby", no_mangle)]
-#[cfg_attr(feature = "stabby", stabby::stabby)]
 #[cfg_attr(feature = "uniffi", uniffi::export)]
 #[cfg_attr(feature = "boltffi", boltffi::export)]
 #[cfg_attr(feature = "interoptopus", interoptopus::ffi)]
@@ -27,72 +24,55 @@ co3::ffi! {
     fn fill(buf: &mut [u8]);
 }
 
-#[cfg(feature = "abi_stable")]
-abi_stable_signature!(fill: (&mut [u8]) -> ());
-
-#[cfg(feature = "co3")]
-#[path = "../support/byte_fill.rs"]
-mod caller;
-
 #[cfg(feature = "co3")]
 fn main() {
-    let mut bytes = [1u8, 2, 3];
+    co3::ffi! {
+        #![unsafe(extern("C"))]
 
-    caller::fill(&mut bytes);
+        #[symbol_name = "control_mutable_bytes__fill"]
+        fn exported_fill(buf: &mut [u8]);
+    }
 
-    assert_eq!(bytes, [42; 3]);
+    validate(exported_fill);
 }
 
 #[cfg(feature = "uniffi")]
 fn main() {
-    let mut bytes = [1u8, 2, 3];
-
-    {
+    validate(|bytes| {
         let mut status = uniffi::RustCallStatus::default();
         // The synchronous call borrows the live array exclusively.
         let buf = unsafe { uniffi::ForeignBytesMut::from_raw_parts(bytes.as_mut_ptr(), 3) };
         uniffi_co3_framework_comparisons_fn_func_fill(buf, &mut status);
         assert_eq!(status.code, uniffi::RustCallStatusCode::Success);
-    }
-
-    assert_eq!(bytes, [42; 3]);
+    });
 }
 
 #[cfg(feature = "diplomat")]
 fn main() {
-    let mut bytes = [1u8, 2, 3];
-
-    {
-        unsafe extern "C" {
-            fn diplomat_external_fill(buf: diplomat_runtime::DiplomatSliceMut<'_, u8>);
-        }
-        unsafe { diplomat_external_fill(bytes.as_mut_slice().into()) };
+    unsafe extern "C" {
+        fn diplomat_external_fill(buf: diplomat_runtime::DiplomatSliceMut<'_, u8>);
     }
 
-    assert_eq!(bytes, [42; 3]);
+    validate(|bytes| {
+        unsafe { diplomat_external_fill(bytes.into()) };
+    });
 }
 
-#[cfg(any(
-    feature = "interoptopus",
-    feature = "safer_ffi",
-    feature = "abi_stable",
-    feature = "stabby"
-))]
-fn main() {
-    let mut bytes = [1u8, 2, 3];
-
-    assert_eq!(bytes, [42; 3]);
-}
+#[cfg(any(feature = "interoptopus", feature = "safer_ffi"))]
+fn main() {}
 
 #[cfg(feature = "boltffi")]
 fn main() {
-    let mut bytes = [1u8, 2, 3];
-
-    {
+    validate(|bytes| {
         let status = unsafe {
             boltffi_function_21control_mutable_bytes4fill(bytes.as_mut_ptr(), bytes.len())
         };
         assert!(status.is_ok());
-    }
+    });
+}
+
+fn validate(call: impl FnOnce(&mut [u8])) {
+    let mut bytes = [1u8, 2, 3];
+    call(&mut bytes);
     assert_eq!(bytes, [42; 3]);
 }
